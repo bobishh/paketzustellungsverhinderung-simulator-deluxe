@@ -21,7 +21,7 @@ pub(crate) fn update(
     people: Query<(&Resident, &Transform)>,
     peers: Query<&Transform, With<RemoteActor>>,
     mut timer: Local<f32>,
-    mut version: Local<Option<u64>>,
+    mut version: Local<Option<(u64, u64)>>,
 ) {
     if !cfg!(target_arch = "wasm32") {
         return;
@@ -34,8 +34,8 @@ pub(crate) fn update(
     let Ok((p, t, velocity)) = player.single() else {
         return;
     };
-    if *version != Some(roads.generation) {
-        *version = Some(roads.generation);
+    if *version != Some((roads.generation, shift.day())) {
+        *version = Some((roads.generation, shift.day()));
         crate::platform::ui_event("paket-map-roads", &roads.radar());
     }
     let xy = |p: Vec3| [p.x, p.z];
@@ -43,6 +43,8 @@ pub(crate) fn update(
     crate::platform::ui_event("paket-radar", &data.to_string());
     let mut hud = jobs.hud_data(t.translation);
     hud["minute"] = serde_json::json!(shift.minute());
+    hud["day"] = serde_json::json!(shift.day());
+    hud["vote"] = shift.hud(&ride);
     hud["ready"] = serde_json::json!(shift.ready);
     hud["ended"] = serde_json::json!(shift.ended());
     hud["difficulty"] = serde_json::json!(shift.difficulty);
@@ -73,6 +75,7 @@ pub(crate) fn update(
 }
 
 pub(crate) fn input(
+    mut commands: Commands,
     mut jobs: ResMut<Jobs>,
     mut shift: ResMut<Shift>,
     mut ride: ResMut<Ride>,
@@ -83,6 +86,11 @@ pub(crate) fn input(
         serde_json::from_str(&crate::platform::ui_commands()).unwrap_or_default();
     for c in values {
         match c["action"].as_str().unwrap_or("") {
+            "shift-vote" => {
+                if let Some(i) = c["choice"].as_u64().filter(|i| *i < 3) {
+                    shift.vote(i as u8);
+                }
+            }
             "delivery" => {
                 if let Some(i) = c["index"].as_u64() {
                     jobs.select_delivery(i as usize);
@@ -112,7 +120,9 @@ pub(crate) fn input(
                     shift.difficulty = d as u8;
                 }
             }
-            "map" if !jobs.interaction_active() => next.set(Mode::Map),
+            "change-location" if !jobs.interaction_active() => {
+                crate::change_location(&mut commands, &ride, &mut next)
+            }
             _ => {}
         }
     }

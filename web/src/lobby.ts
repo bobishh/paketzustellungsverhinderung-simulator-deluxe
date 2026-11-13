@@ -88,6 +88,10 @@ window.addEventListener('paket-lobby', ((event: CustomEvent<any>) => {
   if (lobbyPending && locating) cancelLocation();
   locationButton.disabled = lobbyPending || locating;
   selected.textContent = chosen && Math.abs(chosen.lat - s.lat) < 1e-6 && Math.abs(chosen.lon - s.lon) < 1e-6 ? chosen.name : s.label;
+  document.querySelectorAll<HTMLButtonElement>('.city-grid button').forEach((button, index) => {
+    const city = cities[index];
+    button.setAttribute('aria-pressed', String(Math.abs(city[2] - s.lat) < 1e-5 && Math.abs(city[3] - s.lon) < 1e-5));
+  });
   if (s.status) status.textContent = s.status;
   if (s.pending) sawPending = true;
   document.querySelectorAll<HTMLButtonElement>('#solo,#friends,#join-form button').forEach(b => b.disabled = s.pending);

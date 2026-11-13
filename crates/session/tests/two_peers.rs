@@ -18,6 +18,34 @@ fn two_local_peers_share_delivery_and_pose() {
     let link = invite_link(&host.invitation);
     assert_eq!(invite_origin(&link).unwrap(), origin);
     let guest = join(&link).expect("guest");
+    let next_world = Origin {
+        lat: 35.6616,
+        lon: 139.6682,
+    };
+    host.publish(Fact::Shift {
+        origin,
+        device: host.device.clone(),
+        day: 2,
+        elapsed_ms: 0,
+        difficulty: 1,
+        world: Some(next_world),
+        choices: vec![],
+        remaining_ms: 0,
+    })
+    .unwrap();
+    guest
+        .publish(Fact::Ballot {
+            origin,
+            device: guest.device.clone(),
+            day: 2,
+            sequence: 1,
+            courier: true,
+            score: 25,
+            delivered: 0,
+            finished: false,
+            choice: None,
+        })
+        .unwrap();
     let mut forged: serde_json::Value = serde_json::from_str(&host.invitation).unwrap();
     forged["origin"] = json!({"lat": 1.0, "lon": 2.0});
     let outsider = join(&forged.to_string()).expect("outsider");
@@ -51,9 +79,17 @@ fn two_local_peers_share_delivery_and_pose() {
     let mut delivery = false;
     let mut pose = false;
     let mut leaked = false;
-    while start.elapsed() < Duration::from_secs(8) && !(delivery && pose) {
+    let mut shared_day = false;
+    let mut ballot = false;
+    while start.elapsed() < Duration::from_secs(8) && !(delivery && pose && shared_day && ballot) {
+        ballot |= host.poll().into_iter().any(|fact| matches!(fact, Fact::Ballot { day: 2, score: 25, device, .. } if device == guest.device));
         for fact in guest.poll() {
             match fact {
+                Fact::Shift {
+                    day: 2,
+                    world: Some(world),
+                    ..
+                } if world == next_world => shared_day = true,
                 Fact::Delivery {
                     origin: got,
                     building_id,
@@ -86,6 +122,11 @@ fn two_local_peers_share_delivery_and_pose() {
     }
     assert!(delivery, "guest did not see the delivery");
     assert!(pose, "guest did not see the bicycle");
+    assert!(
+        shared_day,
+        "guest did not receive the next day and neighbourhood"
+    );
+    assert!(ballot, "host did not receive the guest score/ballot");
     assert!(!leaked, "a different origin applied the session");
 }
 

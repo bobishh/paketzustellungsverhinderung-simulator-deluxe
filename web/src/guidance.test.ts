@@ -3,6 +3,11 @@ import {deliveryGuidance,type GuidanceState,type DeliveryStop} from './guidance'
 const stop:DeliveryStop={index:0,address:'Example 12',name:'Alex',distance:2,parcelDistance:null,rung:false,state:'in-van'};
 const state:GuidanceState={selected:0,active:0,routes:[stop],ready:true,ended:false,form:'courier',photo:false,photoReady:false,bulk:null,vanDistance:3,stunSeconds:0};
 describe('delivery guidance',()=>{
+ it('starts another day in place instead of directing players to leave',()=>{
+  const guidance=deliveryGuidance({...state,ended:true});
+  expect(guidance.detail).toContain('vote for tomorrow');
+  expect(guidance.action).toBe('Vote for the next day');
+ });
  it('explains getting out and collecting the box after driving to a house',()=>{
   expect(deliveryGuidance({...state,form:'van'}).action).toContain('V · Leave van');
   expect(deliveryGuidance(state).action).toBe('E · Collect this parcel');

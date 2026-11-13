@@ -26,6 +26,7 @@ pub(crate) use service::{service_ui, service_update};
 
 #[derive(Resource, Default)]
 pub(crate) struct Jobs {
+    day: u64,
     service: service::Service,
     parcels: Vec<Parcel>,
     selected: usize,
@@ -122,9 +123,35 @@ pub(crate) struct Door {
 }
 
 impl Jobs {
+    pub fn delivering(&self) -> bool {
+        self.parcels.iter().any(|p| {
+            matches!(
+                p.state,
+                ParcelState::Carrying | ParcelState::Flying { .. } | ParcelState::Dropped { .. }
+            )
+        })
+    }
+    pub fn traffic_bonus(&mut self, pedestrian: bool) {
+        let points = if pedestrian { 5 } else { 25 };
+        self.service.bonus += points;
+        self.status = format!(
+            "{} · +{points} KPI",
+            if pedestrian {
+                "Pavement blocked"
+            } else {
+                "Traffic blocked during delivery"
+            }
+        );
+    }
+    pub fn day(&self) -> u64 {
+        self.day.max(1)
+    }
     /// Inspect another stop without teleporting or losing the parcel in hand.
     pub fn select_delivery(&mut self, index: usize) {
-        if index >= self.parcels.len() || self.interaction_active() || self.service.bulk.is_some() {
+        if index >= self.parcels.len()
+            || self.service.modal.is_some()
+            || self.service.bulk.is_some()
+        {
             return;
         }
         self.navigation = index;
@@ -174,6 +201,7 @@ impl Jobs {
             "selected":self.navigation,"active":self.selected,
             "routes":self.parcels.iter().enumerate().map(|(i,p)|serde_json::json!({
                 "index":i,"address":p.label,"name":service::citizen(&p.address).name,
+                "point":[p.point.x,p.point.z],
                 "distance":actors::horizontal_distance(position,p.point),
                 "parcelDistance":match p.state { ParcelState::Flying{position:p}|ParcelState::Dropped{position:p,..}=>Some(position.distance(p)),_=>None },
                 "rung":self.service.visited.contains(&p.address),
@@ -286,7 +314,8 @@ impl Jobs {
         if let Some(session) = &ride.session {
             self.sequence += 1;
             let _ = session.publish(Fact::StreetAction {
-                origin: ride.origin.into(),
+                origin: session.origin,
+                day: self.day(),
                 device: session.device.clone(),
                 sequence: self.sequence,
                 event,
@@ -339,7 +368,7 @@ impl Jobs {
                 .is_some_and(|parcel| matches!(parcel.state, ParcelState::InVan))
     }
 
-    fn complete(&self) -> bool {
+    pub(crate) fn complete(&self) -> bool {
         !self.parcels.is_empty()
             && self
                 .parcels
@@ -430,6 +459,109 @@ impl Jobs {
             format!("Marked van · {:.0} m · {:+.0}°", delta.length(), angle)
         })
     }
+}
+
+/// Refill the same neighbourhood without replacing the world or the mesh connection.
+pub(crate) fn new_day(
+    mut commands: Commands,
+    mut jobs: ResMut<Jobs>,
+    mut shift: ResMut<crate::shift::Shift>,
+    mut residents: Query<(Entity, &mut Resident, &mut Transform), Without<Door>>,
+    mut doors: Query<(Entity, &mut Door, &mut Transform), Without<Resident>>,
+    mut players: Query<(Entity, &mut Player)>,
+    mut dogs: Query<&mut crate::dogs::Dog>,
+    ride: Res<Ride>,
+    mut next: ResMut<NextState<Mode>>,
+) {
+    if !shift.ready || jobs.day == shift.day() {
+        return;
+    }
+    let initial = jobs.day == 0;
+    if initial {
+        jobs.day = shift.day();
+        if shift.world.is_none_or(|p| {
+            (p.lat - ride.origin.lat).abs() + (p.lon - ride.origin.lon).abs() < 1e-8
+        }) {
+            return;
+        }
+    }
+    let day = shift.day();
+    let mut progress = jobs.progress();
+    progress["ended"] = serde_json::json!(true);
+    if !initial {
+        crate::platform::ui_event("paket-progress", &progress.to_string());
+    }
+    if let Some(world) = shift.world {
+        if (world.lat - ride.origin.lat).abs() + (world.lon - ride.origin.lon).abs() > 1e-8 {
+            *jobs = Jobs::default();
+            jobs.day = day;
+            jobs.menu_open = true;
+            commands.insert_resource(crate::NextNeighbourhood(world.into()));
+            crate::platform::ui_event(
+                if initial { "paket-travel" } else { "paket-day" },
+                &serde_json::json!({"day":day,"travel":true}).to_string(),
+            );
+            next.set(Mode::Travel);
+            return;
+        }
+    }
+    for parcel in &mut jobs.parcels {
+        if let Some(prop) = parcel.prop.take() {
+            commands.entity(prop).try_despawn();
+        }
+        parcel.state = ParcelState::InVan;
+        parcel.dropped_at = None;
+    }
+    if !jobs.parcels.is_empty() {
+        jobs.parcels.rotate_left(1);
+    }
+    for (entity, mut resident, mut transform) in &mut residents {
+        if let Some(prop) = resident.held.take() {
+            commands.entity(prop).try_despawn();
+        }
+        commands.entity(entity).remove::<actors::HoldingParcel>();
+        resident.state = ResidentState::Inside;
+        resident.watching = false;
+        resident.answered = false;
+        resident.memory_until = 0.;
+        resident.stunned_until = 0.;
+        resident.settled = None;
+        resident.last_seen = resident.home;
+        *transform =
+            Transform::from_translation(resident.home).looking_to(resident.heading, Vec3::Y);
+    }
+    for (entity, mut door, mut transform) in &mut doors {
+        door.opened = false;
+        transform.rotation = door.closed;
+        commands.entity(entity).remove::<ColliderDisabled>();
+    }
+    for (entity, mut player) in &mut players {
+        player.photo = false;
+        player.stunned_until = 0.;
+        commands.entity(entity).remove::<actors::HoldingParcel>();
+        commands.entity(player.visual).insert(Visibility::Inherited);
+    }
+    for mut dog in &mut dogs {
+        dog.reset_day();
+    }
+    let revision = jobs.service.revision + 1;
+    jobs.service = service::Service::default();
+    jobs.service.revision = revision;
+    jobs.day = day;
+    jobs.selected = 0;
+    jobs.navigation = 0;
+    jobs.open_doors.clear();
+    jobs.marks.clear();
+    jobs.seen.clear();
+    jobs.scratches = 0;
+    jobs.proof_pending = None;
+    jobs.caught = false;
+    jobs.pursued = false;
+    jobs.photo_ready = false;
+    jobs.prompt.clear();
+    jobs.status.clear();
+    shift.locked = false;
+    crate::platform::ui_event("paket-day", &serde_json::json!({"day":day}).to_string());
 }
 
 pub(crate) fn spawn_door(
@@ -684,7 +816,7 @@ pub(crate) fn courier(
     jobs.photo_ready = false;
     if !shift.ready || shift.ended() {
         jobs.prompt = if shift.ended() {
-            "17:00 · SHIFT OVER · Return to the depot. [M] New shift"
+            "17:00 · Next day starting… Same neighbourhood, fresh parcels."
         } else {
             "Waiting for the shared shift clock…"
         }
@@ -1326,6 +1458,36 @@ mod tests {
     use super::*;
 
     use crate::ride_tests::{headless_ride, press};
+
+    #[test]
+    fn next_day_refills_parcels_without_restarting_the_world_or_skipping_a_day() {
+        let mut app = headless_ride(Role::Courier);
+        let origin = app.world().resource::<Ride>().origin;
+        let count = app.world().resource::<Jobs>().parcels.len();
+        {
+            let mut jobs = app.world_mut().resource_mut::<Jobs>();
+            for p in &mut jobs.parcels {
+                p.state = ParcelState::Filed(100);
+            }
+            jobs.service.visited.insert("old-door".into());
+            jobs.service.bonus = 25;
+        }
+        app.update();
+        assert!(app.world().resource::<crate::shift::Shift>().ended());
+        app.world_mut()
+            .resource_mut::<crate::shift::Shift>()
+            .receive_snapshot(2, 0, 1, Some(origin.into()), vec![], 0);
+        app.update();
+        app.update();
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.day(), 2);
+        assert_eq!(jobs.parcels.len(), count);
+        assert!(jobs.parcels.iter().all(|p| p.state == ParcelState::InVan));
+        assert!(jobs.service.visited.is_empty());
+        assert_eq!(jobs.progress()["score"], 0);
+        assert_eq!(app.world().resource::<crate::shift::Shift>().minute(), 540);
+        assert_eq!(app.world().resource::<Ride>().origin, origin);
+    }
 
     fn player(app: &mut App) -> Entity {
         let world = app.world_mut();

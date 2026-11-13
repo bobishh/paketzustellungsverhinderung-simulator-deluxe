@@ -1,7 +1,7 @@
 import './hud.css';
 import {deliveryGuidance, type DeliveryStop} from './guidance';
 type Stop = DeliveryStop;
-type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number };
+type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; day:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number };
 const root=document.querySelector<HTMLElement>('#ride-hud')!;
 const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!;
 const settings=document.querySelector<HTMLButtonElement>('#settings')!;
@@ -19,7 +19,6 @@ const meters=(value:number)=>value>=1000?`${(value/1000).toFixed(1)} km`:`${Math
 function select(index:number){send({action:'delivery',index});canvas.focus({preventScroll:true});}
 function showStops(open:boolean){expanded=open;el('route-list').hidden=!open;el('route-toggle').setAttribute('aria-expanded',String(open));}
 el('route-toggle').onclick=()=>showStops(!expanded);
-el('hud-map').onclick=()=>send({action:'map'});
 function openSettings(){
   if(!ride||state?.interaction||document.querySelector('dialog[open]'))return;
   send({action:'menu',open:true});void document.exitPointerLock();dialog.showModal();
@@ -30,6 +29,7 @@ function closeSettings(){
 settings.onclick=openSettings;
 el('settings-close').onclick=closeSettings;
 el('resume-game').onclick=closeSettings;
+el('change-location').onclick=()=>{closeSettings();send({action:'change-location'});};
 dialog.addEventListener('cancel',e=>{e.preventDefault();closeSettings();});
 slider.oninput=()=>{
   sensitivity=Number(slider.value);send({action:'sensitivity',value:sensitivity});
@@ -66,7 +66,7 @@ window.addEventListener('paket-mode',((e:CustomEvent<string>)=>{
 window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
   const s=state=event.detail;root.classList.toggle('interacting',s.interaction);
   put('shift-time',s.ready?`${String(Math.floor(s.minute/60)).padStart(2,'0')}:${String(s.minute%60).padStart(2,'0')}`:'—:—');
-  put('shift-label',s.ended?'OFF DUTY':s.ready?'SHIFT ENDS 17:00':'JOINING SHIFT');
+  put('shift-label',s.ended?`DAY ${s.day} COMPLETE`:s.ready?`DAY ${s.day} · ENDS 17:00`:'JOINING SHIFT');
   el('shift-progress').style.width=`${Math.max(0,Math.min(100,(s.minute-540)/480*100))}%`;
   put('hud-score',String(s.score));put('route-total',`${s.delivered} / ${s.routes.length}`);
   put('speed-value',String(Math.round(s.speed)).padStart(2,'0'));el('speedometer').hidden=s.form!=='van';

@@ -795,7 +795,7 @@ pub fn update_lobby(
     }
 }
 
-fn location_name(point: LatLon) -> String {
+pub(crate) fn location_name(point: LatLon) -> String {
     let near = |preset: LatLon| {
         (point.lat - preset.lat).abs() < 1e-6 && (point.lon - preset.lon).abs() < 1e-6
     };

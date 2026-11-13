@@ -2,6 +2,7 @@ import './style.css';
 import './lobby';
 import './minimap';
 import './hud';
+import './shift-vote';
 import './help';
 import './bite-audio';
 import { initGameAnalytics } from './analytics';

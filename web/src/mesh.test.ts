@@ -23,7 +23,15 @@ it('recognizes a browser invite and rejects incompatible native or malformed inv
 it('bounds the shared clock and difficulty', () => {
   const fact={kind:'shift',origin,device:'host',elapsed_ms:1000,difficulty:1};
   expect(validFact(fact,origin,'host')).toBe(true);
+  expect(validFact({...fact,day:2,elapsed_ms:0},origin)).toBe(true);
   expect(validFact({...fact,elapsed_ms:2880001},origin)).toBe(false);
   expect(validFact({...fact,difficulty:3},origin)).toBe(false);
   expect(validFact({...fact,elapsed_ms:-1},origin)).toBe(false);
+});
+it('validates day-scoped street actions while accepting legacy first-day peers',()=>{
+  const fact={kind:'streetAction',origin,device:'dog',sequence:1,event:{action:'bite',target:'courier'}};
+  expect(validFact(fact,origin)).toBe(true);
+  expect(validFact({...fact,day:2},origin)).toBe(true);
+  expect(validFact({...fact,day:0},origin)).toBe(false);
+  expect(validFact({...fact,day:1.5},origin)).toBe(false);
 });

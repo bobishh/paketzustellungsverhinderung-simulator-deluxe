@@ -186,6 +186,7 @@ async fn run(
 
     let mut latest_pose: Option<Fact> = None;
     let mut shift: Option<Fact> = None;
+    let mut ballot: Option<Fact> = None;
     let mut delivery: Option<Fact> = None;
     let mut actions = VecDeque::new();
     let mut delivery_sent = Instant::now() - Duration::from_secs(1);
@@ -202,6 +203,7 @@ async fn run(
             match outbound_rx.try_recv() {
                 Ok(fact) if fact.origin().matches(origin) => match fact {
                     Fact::Shift { .. } => shift = Some(fact),
+                    Fact::Ballot { .. } => ballot = Some(fact),
                     Fact::Pose { .. } | Fact::Actor { .. } => latest_pose = Some(fact),
                     Fact::StreetAction { .. } => {
                         if actions.len() == 64 {
@@ -221,6 +223,9 @@ async fn run(
         }
         if delivery_sent.elapsed() >= Duration::from_millis(400) {
             if let Some(fact) = &shift {
+                broadcast_fact(&sender, fact).await;
+            }
+            if let Some(fact) = &ballot {
                 broadcast_fact(&sender, fact).await;
             }
             if let Some(fact) = &delivery {

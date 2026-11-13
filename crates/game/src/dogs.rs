@@ -29,6 +29,11 @@ enum Mood {
     },
     Recover(f32),
 }
+impl Dog {
+    pub(crate) fn reset_day(&mut self) {
+        self.mood = Mood::Patrol;
+    }
+}
 pub(crate) fn leap_height(progress: f32) -> f32 {
     (progress.clamp(0., 1.) * std::f32::consts::PI).sin() * 0.65
 }

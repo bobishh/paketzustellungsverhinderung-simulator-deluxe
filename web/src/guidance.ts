@@ -1,5 +1,5 @@
 export type DeliveryStop = {
-  index:number; address:string; name:string; distance:number; parcelDistance:number|null; rung:boolean;
+  index:number; address:string; name:string; distance:number; parcelDistance:number|null; rung:boolean; point?:[number,number];
   state:'in-van'|'carrying'|'in-flight'|'photo-due'|'filed'|'handed';
 };
 export type GuidanceState = {
@@ -10,7 +10,7 @@ export function deliveryGuidance(s:GuidanceState) {
   const parcel=s.routes[s.active];
   const result=(step:string,detail:string,action:string)=>({step,detail,action});
   if(!s.ready)return result('Joining shift','Waiting for the shared clock.','Joining the shift…');
-  if(s.ended)return result('Off duty','Open the map to start another shift.','M · Choose a new shift');
+  if(s.ended)return result('Day complete','Compare scores and vote for tomorrow’s neighbourhood.','Vote for the next day');
   if(s.stunSeconds>0)return result('Bitten · recovering','A short shock. Your parcel and KPI are safe.',`OUCH! · ${s.stunSeconds.toFixed(1)}s`);
   if(s.form==='dog')return result('Cause trouble','Bite nearby couriers or scratch a closed door.','E · Bite / scratch     Space · Jump     G · Mark a van');
   if(s.form==='van')return result('1 / 4 · Get the parcel','Park at the orange delivery marker. Exit, then collect the selected parcel beside your van.','V · Leave van     then E · Collect parcel');

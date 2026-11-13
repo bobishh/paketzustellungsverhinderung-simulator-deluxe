@@ -80,8 +80,27 @@ pub enum Fact {
     Shift {
         origin: Origin,
         device: String,
+        #[serde(default = "first_day")]
+        day: u64,
         elapsed_ms: u64,
         difficulty: u8,
+        #[serde(default)]
+        world: Option<Origin>,
+        #[serde(default)]
+        choices: Vec<Origin>,
+        #[serde(default)]
+        remaining_ms: u64,
+    },
+    Ballot {
+        origin: Origin,
+        device: String,
+        day: u64,
+        sequence: u64,
+        courier: bool,
+        score: i32,
+        delivered: u32,
+        finished: bool,
+        choice: Option<u8>,
     },
     Actor {
         origin: Origin,
@@ -91,6 +110,8 @@ pub enum Fact {
     },
     StreetAction {
         origin: Origin,
+        #[serde(default = "first_day")]
+        day: u64,
         device: String,
         sequence: u64,
         event: StreetAction,
@@ -120,11 +141,16 @@ fn legacy_bike_height() -> f32 {
     0.7
 }
 
+fn first_day() -> u64 {
+    1
+}
+
 impl Fact {
     pub fn origin(&self) -> Origin {
         match self {
             Self::Delivery { origin, .. }
             | Self::Shift { origin, .. }
+            | Self::Ballot { origin, .. }
             | Self::Pose { origin, .. }
             | Self::Actor { origin, .. }
             | Self::StreetAction { origin, .. } => *origin,
@@ -135,6 +161,7 @@ impl Fact {
         match self {
             Self::Pose { device, .. }
             | Self::Shift { device, .. }
+            | Self::Ballot { device, .. }
             | Self::Actor { device, .. }
             | Self::StreetAction { device, .. } => Some(device),
             Self::Delivery { .. } => None,

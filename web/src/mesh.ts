@@ -19,12 +19,19 @@ export function decodeInvite(value: string): Invite {
 export function validFact(fact: Fact, origin: Origin, device?: string): boolean {
   if (!fact || !fact.origin || Math.abs(fact.origin.lat - origin.lat) > 1e-9 || Math.abs(fact.origin.lon - origin.lon) > 1e-9 ||
       !Number.isFinite(fact.origin.lat) || !Number.isFinite(fact.origin.lon) || JSON.stringify(fact).length > 4096) return false;
-  if (!['actor', 'pose', 'delivery', 'streetAction', 'shift'].includes(fact.kind)) return false;
+  if (!['actor', 'pose', 'delivery', 'streetAction', 'shift', 'ballot'].includes(fact.kind)) return false;
   if (fact.kind !== 'delivery' && (typeof fact.device !== 'string' || (device !== undefined && fact.device !== device))) return false;
-  if (fact.kind === 'shift') return Number.isSafeInteger(fact.elapsed_ms) && Number(fact.elapsed_ms) >= 0 && Number(fact.elapsed_ms) <= 2_880_000 && [0,1,2].includes(fact.difficulty as number);
+  const day = fact.day === undefined ? 1 : Number(fact.day);
+  if (!Number.isSafeInteger(day) || day < 1 || day > 36_500) return false;
+  const point=(o:any)=>o&&typeof o.lat==='number'&&Number.isFinite(o.lat)&&Math.abs(o.lat)<=85&&typeof o.lon==='number'&&Number.isFinite(o.lon)&&Math.abs(o.lon)<=180;
+  if (fact.kind === 'shift') return Number.isSafeInteger(fact.elapsed_ms) && Number(fact.elapsed_ms) >= 0 && Number(fact.elapsed_ms) <= 2_880_000 && [0,1,2].includes(fact.difficulty as number)
+    && (fact.world==null||point(fact.world)) && (fact.choices===undefined||(Array.isArray(fact.choices)&&[0,3].includes(fact.choices.length)&&fact.choices.every(point)))
+    && (fact.remaining_ms===undefined||(Number.isSafeInteger(fact.remaining_ms)&&Number(fact.remaining_ms)>=0&&Number(fact.remaining_ms)<=20000));
+  if (fact.kind === 'streetAction' && fact.day !== undefined && (!Number.isSafeInteger(fact.day) || Number(fact.day) < 1 || Number(fact.day) > 36_501)) return false;
   const label = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 256;
   if (fact.kind === 'delivery') return label(fact.building_id);
   if (!Number.isSafeInteger(fact.sequence) || fact.sequence! < 0) return false;
+  if (fact.kind==='ballot')return typeof fact.courier==='boolean'&&typeof fact.finished==='boolean'&&Number.isSafeInteger(fact.score)&&Math.abs(Number(fact.score))<=1_000_000&&Number.isSafeInteger(fact.delivered)&&Number(fact.delivered)>=0&&Number(fact.delivered)<=100&&(fact.choice==null||[0,1,2].includes(fact.choice as number));
   const finite = (value: any, fields: string[]) => value && fields.every(key => typeof value[key] === 'number' && Number.isFinite(value[key]) && Math.abs(value[key]) <= 1e7);
   if (fact.kind === 'pose') return !!finite(fact, ['east', 'north', 'heading']);
   if (fact.kind === 'actor') {
@@ -37,7 +44,7 @@ export function validFact(fact: Fact, origin: Origin, device?: string): boolean 
     e?.action === 'markVan' && label(e.owner) && !!finite(e, ['east', 'north']);
 }
 function retain(s: State, fact: Fact) {
-  const key = fact.kind === 'shift' ? 'shift' : fact.kind === 'actor' || fact.kind === 'pose' ? `pose:${fact.device}` : `${fact.kind}:${fact.device ?? ''}:${fact.sequence ?? fact.building_id ?? ''}`;
+  const key = fact.kind === 'shift' ? 'shift' : fact.kind==='ballot'?`ballot:${fact.device}`:fact.kind === 'actor' || fact.kind === 'pose' ? `pose:${fact.device}` : `${fact.kind}:${fact.device ?? ''}:${fact.sequence ?? fact.building_id ?? ''}`;
   s.latest.set(key, fact);
   if (s.latest.size > 128) s.latest.delete(s.latest.keys().next().value!);
 }

@@ -11,6 +11,7 @@ mod shapes;
 mod shift;
 mod surfaces;
 mod terrain;
+mod traffic;
 #[cfg(debug_assertions)]
 mod visual_check;
 
@@ -93,6 +94,7 @@ fn main() {
     .insert_state(if direct { Mode::Ride } else { Mode::Map })
     .add_systems(OnEnter(Mode::Map), map::setup)
     .add_systems(OnExit(Mode::Map), map::cleanup)
+    .add_systems(OnEnter(Mode::Travel), travel)
     .add_systems(
         Update,
         (map::input, map::update_lobby, map::tiles)
@@ -157,7 +159,7 @@ fn install_ride(app: &mut App) {
         .add_systems(OnExit(Mode::Ride), cleanup_ride)
         .add_systems(
             FixedUpdate,
-            (actors::drive, stay_on_ground)
+            (actors::drive, traffic::drive, stay_on_ground)
                 .chain()
                 .run_if(in_state(Mode::Ride)),
         )
@@ -167,7 +169,7 @@ fn install_ride(app: &mut App) {
                 (
                     stream_tiles,
                     browser_ui::input,
-                    shift::tick,
+                    (shift::tick, jobs::new_day).chain(),
                     jobs::service_update,
                     cursor_control,
                     actors::interact,
@@ -193,6 +195,7 @@ fn install_ride(app: &mut App) {
                 actors::animate_vehicles,
                 terrain::finish,
                 roads::rebuild,
+                traffic::spawn,
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
                 capture_frame,
@@ -229,6 +232,27 @@ enum Mode {
     #[default]
     Map,
     Ride,
+    Travel,
+}
+
+#[derive(Resource)]
+struct NextNeighbourhood(LatLon);
+
+fn travel(
+    mut commands: Commands,
+    mut ride: ResMut<Ride>,
+    destination: Res<NextNeighbourhood>,
+    mut next: ResMut<NextState<Mode>>,
+) {
+    ride.origin = destination.0;
+    ride.loaded.clear();
+    ride.pending.clear();
+    ride.retry.clear();
+    ride.spawned.clear();
+    ride.waiting_for_tile = false;
+    commands.insert_resource(Jobs::default());
+    commands.remove_resource::<NextNeighbourhood>();
+    next.set(Mode::Ride);
 }
 
 type SessionResult = Result<SharedStreet, String>;
@@ -303,6 +327,7 @@ fn start_ride(
 
 fn cleanup_ride(
     mut commands: Commands,
+    continuing: Option<Res<NextNeighbourhood>>,
     mut cursor: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
     #[cfg(target_arch = "wasm32")]
@@ -312,11 +337,14 @@ fn cleanup_ride(
         cursor.grab_mode = CursorGrabMode::None;
     }
     commands.remove_resource::<terrain::Landscape>();
-    commands.remove_resource::<Ride>();
+    if continuing.is_none() {
+        commands.remove_resource::<Ride>();
+    }
     commands.remove_resource::<Models>();
     commands.remove_resource::<Jobs>();
     commands.remove_resource::<StreetMaterials>();
     commands.remove_resource::<roads::Roads>();
+    commands.remove_resource::<traffic::TrafficWorld>();
 }
 
 fn cursor_control(
@@ -358,22 +386,26 @@ struct MapButton;
 
 fn return_to_map(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
     buttons: Query<(), (With<MapButton>, Added<bevy::ui::Pressed>)>,
     ride: Res<Ride>,
     mut next: ResMut<NextState<Mode>>,
 ) {
-    if keys.just_pressed(KeyCode::KeyM) || !buttons.is_empty() {
-        commands.insert_resource(
-            map::Map::new(
-                ride.cache.with_file_name("map"),
-                !ride.allow_network,
-                ride.origin,
-            )
-            .with_role(ride.role),
-        );
-        next.set(Mode::Map);
+    if !buttons.is_empty() {
+        change_location(&mut commands, &ride, &mut next);
     }
+}
+
+fn change_location(commands: &mut Commands, ride: &Ride, next: &mut NextState<Mode>) {
+    // Every route to the selector must create its required resource before OnEnter.
+    commands.insert_resource(
+        map::Map::new(
+            ride.cache.with_file_name("map"),
+            !ride.allow_network,
+            ride.origin,
+        )
+        .with_role(ride.role),
+    );
+    next.set(Mode::Map);
 }
 
 #[derive(Component)]
@@ -617,6 +649,7 @@ fn setup(
     mut scattering: ResMut<Assets<ScatteringMedium>>,
 ) {
     commands.insert_resource(roads::Roads::default());
+    commands.insert_resource(traffic::TrafficWorld::new(&mut meshes, &mut materials));
     commands.insert_resource(Models::new(&mut meshes, &mut materials, &mut images));
     let earth = scattering.add(ScatteringMedium::earth(256, 256));
     commands.spawn((Atmosphere::earth(earth), DespawnOnExit(Mode::Ride)));
@@ -827,7 +860,7 @@ fn setup(
             ..default()
         },
         BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.85)),
-        children![Text::new("Map")],
+        children![Text::new("Change neighbourhood")],
     ));
     commands.spawn((
         PhotoReticle,
@@ -1090,7 +1123,7 @@ fn sync_peers(
         {
             let parked = player.parked.and_then(|entity| vans.get(entity).ok());
             let _ = session.publish(Fact::Actor {
-                origin: ride.origin.into(),
+                origin: session.origin,
                 device: session.device.clone(),
                 sequence: ride.sequence,
                 pose: actors::pose(player, transform, velocity, parked),
@@ -1106,13 +1139,40 @@ fn sync_peers(
         let (device, sequence, pose) = match fact {
             Fact::Shift {
                 device,
+                day,
                 elapsed_ms,
                 difficulty,
+                world,
+                choices,
+                remaining_ms,
                 ..
             } => {
                 if !session.is_host && device == session.host_device() {
-                    shift.receive(elapsed_ms, difficulty);
+                    shift.receive_snapshot(
+                        day,
+                        elapsed_ms,
+                        difficulty,
+                        world,
+                        choices,
+                        remaining_ms,
+                    );
                 }
+                continue;
+            }
+            Fact::Ballot {
+                device,
+                day,
+                sequence,
+                courier,
+                score,
+                delivered,
+                finished,
+                choice,
+                ..
+            } => {
+                shift.receive_ballot(
+                    device, day, sequence, courier, score, delivered, finished, choice,
+                );
                 continue;
             }
             Fact::Actor {
@@ -1146,11 +1206,15 @@ fn sync_peers(
                 },
             ),
             Fact::StreetAction {
+                day,
                 device,
                 sequence,
                 event,
                 ..
             } => {
+                if day != jobs.day() || day != shift.day() {
+                    continue;
+                }
                 let player = players.single_mut().ok().map(|(player, _, _)| player);
                 jobs.receive(
                     &session.device,
@@ -1736,6 +1800,54 @@ fn push_triangle(
 #[cfg(test)]
 mod ride_tests {
     use super::*;
+
+    #[test]
+    fn location_selector_creates_map_before_leaving_the_3d_scene() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = headless_ride(Role::Courier);
+        app.world_mut()
+            .run_system_once(
+                |mut commands: Commands, ride: Res<Ride>, mut next: ResMut<NextState<Mode>>| {
+                    change_location(&mut commands, &ride, &mut next)
+                },
+            )
+            .unwrap();
+        app.update();
+        assert_eq!(*app.world().resource::<State<Mode>>().get(), Mode::Map);
+        assert!(app.world().contains_resource::<map::Map>());
+        assert!(!app.world().contains_resource::<Ride>());
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<Camera3d>>()
+                .iter(app.world())
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn voted_neighbourhood_rebuilds_the_scene_and_keeps_the_shared_day() {
+        let mut app = headless_ride(Role::Courier);
+        app.add_systems(OnEnter(Mode::Travel), travel);
+        let destination = map::CITIES[1].1;
+        app.world_mut()
+            .resource_mut::<shift::Shift>()
+            .receive_snapshot(2, 0, 1, Some(destination.into()), vec![], 0);
+        for _ in 0..4 {
+            app.update();
+        }
+        assert_eq!(*app.world().resource::<State<Mode>>().get(), Mode::Ride);
+        assert_eq!(app.world().resource::<Ride>().origin, destination);
+        assert_eq!(app.world().resource::<shift::Shift>().day(), 2);
+        assert_eq!(app.world().resource::<Jobs>().day(), 2);
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<Camera3d>>()
+                .iter(app.world())
+                .count(),
+            1
+        );
+    }
 
     #[test]
     fn koertestrasse_courtyard_passages_have_no_invisible_walls() {

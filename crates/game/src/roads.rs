@@ -25,6 +25,9 @@ pub(crate) struct Roads {
 }
 
 impl Roads {
+    pub fn streets(&self) -> impl Iterator<Item = &Street> {
+        self.streets.values()
+    }
     pub fn insert(&mut self, street: &Street) {
         if !self.streets.contains_key(&street.id) {
             self.streets.insert(street.id.clone(), street.clone());

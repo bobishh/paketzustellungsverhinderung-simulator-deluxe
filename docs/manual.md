@@ -29,3 +29,11 @@ NPC dogs growl for **2.8 seconds** before jumping. Leave their five-metre range 
 A bite makes the courier jump once, flail their arms and briefly lose control, with a small camera jolt and a browser yelp. The HUD shows the remaining shock time: **1.2 seconds** for an NPC dog, **1.5 seconds** for a player's dog. The parcel and KPI are preserved. Sound effects can be disabled in settings.
 
 As a dog: **E** bites a nearby courier (20 KPI) or scratches a shut door; **Space** jumps, **B** barks and **G** marks another player's van. Biting a resident stops them for three seconds.
+
+## Neighbourhood map and the next day
+
+**M** (or the HUD’s Map button) opens a map of your current streets, van and numbered delivery stops. Zoom or fit the route, click a numbered stop to inspect it, then press M or Esc to return. This keeps the current shift and parcel. **Settings → Change neighbourhood** is the separate action for leaving the shift and choosing a new place.
+
+Solo and multiplayer use the same end-of-day rules: 17:00, or all active couriers completing their routes. The score table then opens a 20-second vote: the current neighbourhood and two randomly proposed cities. Each player gets one vote and may change it until the decision. A unique majority wins; ties or no votes keep the current area. The host commits the result to the mesh. Day 2, Day 3 and subsequent days keep the connection and career totals, refill parcels, reset residents and close doors.
+
+Neighbourhood cars stop for obstacles, and pedestrians walk along street edges and try to go around obstructions. Block a car with your parked van for at least four seconds while a parcel is being delivered to earn **25 KPI**. Blocking a pedestrian earns **5 KPI**. Each NPC awards this bonus at most once per day. Parking without an active parcel earns nothing.

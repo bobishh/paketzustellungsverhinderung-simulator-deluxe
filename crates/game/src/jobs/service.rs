@@ -12,7 +12,7 @@ pub(super) struct Service {
     bell_awards: HashSet<String>,
     pub rare_used: bool,
     pub bulk: Option<(Vec3, bool)>,
-    revision: u64,
+    pub revision: u64,
     pub dog_ready: f32,
 }
 pub(super) struct Modal {

@@ -117,6 +117,12 @@ export function initGameAnalytics(options: { target?: Window; fetch?: typeof fet
     // First snapshot is a baseline: joining an existing shift is not a burst of new deliveries.
     baseline = value;
   });
+  listen(target, 'paket-day', () => {
+    if (!riding) return;
+    if (!ended) record('game.shift.completed', undefined, now() - startedAt);
+    ended = false; baseline = undefined; startedAt = now();
+    record('game.shift.started'); flush();
+  });
   for (const type of ['pointerdown', 'keydown', 'touchstart']) listen(doc, type, () => { lastActivity = now(); });
   listen(doc, 'visibilitychange', () => { lastTick = now(); if (doc.visibilityState === 'hidden') flush(); });
   listen(target, 'pagehide', flush);

@@ -25,6 +25,16 @@ const emptyProgress = { delivered: 0, photos: 0, rings: 0, markedVans: 0, specia
 describe('game analytics privacy and transitions', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+  it('counts consecutive days without leaving the neighbourhood or repeating old deliveries',()=>{
+    const f=fixture(),stop=f.init();
+    f.emit('paket-mode','ride');f.emit('paket-progress',emptyProgress);
+    f.emit('paket-progress',{...emptyProgress,delivered:12,ended:true});
+    f.emit('paket-day',{day:2});f.emit('paket-progress',emptyProgress);
+    f.emit('paket-progress',{...emptyProgress,delivered:1});stop();
+    expect(f.telemetry().filter(e=>e.event==='game.shift.started')).toHaveLength(2);
+    expect(f.telemetry().filter(e=>e.event==='game.shift.completed')).toHaveLength(1);
+    expect(f.telemetry().filter(e=>e.event==='game.delivery.completed').map(e=>e.attrs.object_count)).toEqual([12,1]);
+  });
 
   it('sends only allowlisted counters despite private URL and 10 Hz HUD payloads', () => {
     const f = fixture(analyticsConfig.origin, '?lat=52.49012&lon=13.39999&identity=SECRET_QUERY');

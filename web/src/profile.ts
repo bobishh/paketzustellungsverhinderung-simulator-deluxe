@@ -67,5 +67,6 @@ if(typeof document!=='undefined'){
     for(const k of ['delivered','photos','score','rings','markedVans','special']as const){const n=Number(p[k]);if(Number.isFinite(n)&&n>=0){local.stats[k]+=Math.max(0,n-previous[k]);previous[k]=n;}}
     dirty=true;
   })as EventListener);
+  window.addEventListener('paket-day',()=>{previous=zero();lastTick=Date.now();if(playing&&initialized){local.stats.shifts++;dirty=true;}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)void flush().catch(()=>undefined);});
 }
