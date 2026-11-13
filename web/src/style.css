@@ -5,3 +5,5 @@
 .brand{display:flex;align-items:center;gap:10px;letter-spacing:0;font-size:15px}.brand svg{color:#f58b43;flex-shrink:0}.brand-title{line-height:1.15;font-weight:750}.brand-title small{display:block;font-size:10px;color:#adb9aa;font-weight:500;margin-top:3px;letter-spacing:.06em}@media(max-width:850px){.brand{font-size:12px}.brand-title{max-width:180px;white-space:normal}.brand-title small{font-size:9px}}
 /* Project-wide UI preference: square corners, including controls and overlays. */
 *,*::before,*::after{border-radius:0!important}
+
+.stamp{position:absolute;right:clamp(24px,5vw,90px);bottom:100px;display:grid;gap:3px;padding:14px 22px;border:5px double #ae431d;color:#ae431d;background:#eee6d9e8;transform:rotate(-8deg);font-family:Fira,monospace;text-align:center;pointer-events:none}.stamp span{font-size:15px;letter-spacing:.16em}.stamp strong{font-size:27px;line-height:1.2;letter-spacing:-.04em}@media(max-width:600px){.stamp{right:20px;bottom:88px;padding:10px 15px}.stamp span{font-size:11px}.stamp strong{font-size:21px}}

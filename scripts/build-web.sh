@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Set RUSTC/CARGO_HOME only if using a separate writable toolchain cache.
-cargo build -p paket-game --profile web-release --target wasm32-unknown-unknown
+cargo build --locked -p paket-game --profile web-release --target wasm32-unknown-unknown
 mkdir -p web/public/game web/public/mesh web/public/assets/fonts web/public/osm
 wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir web/public/game --out-name paket_game target/wasm32-unknown-unknown/web-release/paket-game.wasm
 cp assets/fonts/FiraMono-Medium.ttf assets/fonts/FiraMono-LICENSE web/public/assets/fonts/
