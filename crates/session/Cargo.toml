@@ -1,0 +1,23 @@
+[package]
+name = "paket-session"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+paket-geo = { path = "../geo" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+iroh = "1.2.0"
+meta-mesh-native = { path = "../../../mesh/crates/meta-mesh-native" }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+socket2 = { version = "0.6", features = ["all"] }

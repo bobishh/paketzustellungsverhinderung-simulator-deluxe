@@ -1,0 +1,29 @@
+[package]
+name = "paket-game"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bevy = { version = "0.20", default-features = false }
+avian3d = "0.8"
+paket-geo = { path = "../geo" }
+paket-session = { path = "../session" }
+serde_json = "1"
+geo = { version = "0.29.3", default-features = false }
+earcutr = "0.4.3"
+
+web-time = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = "0.20"
+arboard = { version = "3", default-features = false }
+ureq = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = { version = "0.20", default-features = false, features = ["std", "default_app", "3d_bevy_render", "ui_bevy_render", "bevy_ui_widgets", "bevy_winit", "bevy_clipboard", "scene", "picking", "png", "webgpu"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
