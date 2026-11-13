@@ -1,3 +1,5 @@
+import { requestNeighbourhood } from './geolocation';
+
 type Command = { action: string; [key: string]: unknown };
 declare global { var paketCommands: Command[]; }
 globalThis.paketCommands = [];
@@ -14,9 +16,44 @@ const status = document.querySelector<HTMLElement>('#lobby-status')!;
 const lobby = document.querySelector<HTMLElement>('#lobby')!;
 const results = document.querySelector('#address-results')!;
 const selected = document.querySelector('#selected-place')!;
+const locationButton = document.querySelector<HTMLButtonElement>('#my-location')!;
+const locationStatus = document.querySelector<HTMLElement>('#location-status')!;
+let locationRequest = 0, locating = false, lobbyPending = false;
+function cancelLocation() {
+  locationRequest++; locating = false;
+  locationButton.disabled = lobbyPending;
+  locationButton.removeAttribute('aria-busy');
+  locationButton.querySelector('span')!.textContent = 'My location';
+  locationStatus.hidden = true;
+}
+locationButton.addEventListener('click', async () => {
+  if (locating || lobbyPending) return;
+  const request = ++locationRequest;
+  locating = true; locationButton.disabled = true;
+  locationButton.setAttribute('aria-busy', 'true');
+  locationButton.querySelector('span')!.textContent = 'Locating…';
+  locationStatus.hidden = false;
+  locationStatus.textContent = 'Allow location in your browser to find your neighbourhood.';
+  try {
+    const point = await requestNeighbourhood(navigator.geolocation);
+    if (request !== locationRequest || lobby.hidden) return;
+    select(point.lat, point.lon, 'Your neighbourhood');
+    results.replaceChildren();
+    locationStatus.textContent = 'Neighbourhood selected. Drag the map to fine-tune your start.';
+    locationStatus.hidden = false;
+  } catch (error) {
+    if (request !== locationRequest || lobby.hidden) return;
+    cancelLocation();
+    locationStatus.textContent = error instanceof Error ? error.message : 'Location unavailable. Search for an address instead.';
+    locationStatus.hidden = false;
+  }
+});
+// A late permission response must not overwrite a newer selection or start a ride elsewhere.
+document.querySelector('#game')!.addEventListener('pointerdown', () => { if (!lobby.hidden && locating) cancelLocation(); });
 let chosen: { lat: number; lon: number; name: string } | undefined;
 let autoStart = false, sawPending = false, inviteLink = '';
 function select(lat: number, lon: number, name: string) {
+  cancelLocation();
   chosen = { lat, lon, name }; selected.textContent = name;
   send({ action: 'select', lat, lon });
   document.querySelectorAll<HTMLButtonElement>('.city-grid button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.city === name)));
@@ -32,20 +69,24 @@ document.querySelectorAll<HTMLButtonElement>('[data-role]').forEach(button => bu
   document.querySelectorAll('[data-role]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
 });
 document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach(b => b.onclick = () => send({ action: b.dataset.command! }));
-document.querySelector('#solo')!.addEventListener('click', () => send({ action: 'solo' }));
-document.querySelector('#friends')!.addEventListener('click', () => { autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
+document.querySelector('#solo')!.addEventListener('click', () => { cancelLocation(); send({ action: 'solo' }); });
+document.querySelector('#friends')!.addEventListener('click', () => { cancelLocation(); autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
 document.querySelector('#join-form')!.addEventListener('submit', e => {
-  e.preventDefault(); autoStart = true; sawPending = false;
+  e.preventDefault(); cancelLocation(); autoStart = true; sawPending = false;
   send({ action: 'join', link: document.querySelector<HTMLInputElement>('#invite')!.value.trim() });
 });
 document.querySelector('#share')!.addEventListener('click', () => { void navigator.clipboard.writeText(inviteLink).then(() => paketNotify('Invite copied. Send it to a friend.')).catch(() => { paketNotify('Select and copy the invite link.'); window.prompt('Invite link', inviteLink); }); });
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
   lobby.hidden = event.detail !== 'map';
+  if (lobby.hidden) cancelLocation();
   document.querySelector<HTMLElement>('#minimap')!.hidden = event.detail !== 'ride';
   if (event.detail === 'ride') { document.querySelector<HTMLCanvasElement>('#game')!.focus(); }
 }) as EventListener);
 window.addEventListener('paket-lobby', ((event: CustomEvent<any>) => {
   const s = event.detail;
+  lobbyPending = Boolean(s.pending);
+  if (lobbyPending && locating) cancelLocation();
+  locationButton.disabled = lobbyPending || locating;
   selected.textContent = chosen && Math.abs(chosen.lat - s.lat) < 1e-6 && Math.abs(chosen.lon - s.lon) < 1e-6 ? chosen.name : s.label;
   if (s.status) status.textContent = s.status;
   if (s.pending) sawPending = true;

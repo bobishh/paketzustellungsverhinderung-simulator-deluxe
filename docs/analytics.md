@@ -15,6 +15,15 @@ The client sends no cookies, request referrer, persistent visitor ID, mesh ID, I
 Page paths are fixed to `/`, excluding query strings, hash fragments and callback paths.
 TinSink may add its existing server-side request context; the client does not add fingerprinting.
 
+The lobby’s **My location** button requests one browser location fix only after a click.
+`geolocation.ts` rounds it to a 0.01° neighbourhood grid inside the success callback;
+the precise coordinates never enter game commands, map requests, browser storage,
+Identity/profile records, invitation links or analytics. No location watcher or reverse-geocoding request is created.
+Only the coarse neighbourhood enters the existing map flow: map providers receive the
+requested area and map responses can be cached. Multiplayer invitations and game peers
+also receive that neighbourhood origin. This is why the UI promises not to save the
+**precise location**, rather than claiming the map area is never transmitted or cached.
+
 | Stream | Events |
 | --- | --- |
 | Analytics v1 | Page view; one event after 30 visible, focused, active seconds |
