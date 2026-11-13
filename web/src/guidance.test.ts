@@ -16,6 +16,7 @@ describe('delivery guidance',()=>{
  it('distinguishes airborne parcels from photographable boxes',()=>{
   expect(deliveryGuidance({...state,routes:[{...stop,state:'in-flight'}]}).action).toContain('Wait');
   expect(deliveryGuidance({...state,routes:[{...stop,state:'photo-due'}],photo:true,photoReady:true}).action).toBe('Space · Take delivery photo');
+  expect(deliveryGuidance({...state,photo:true,routes:[{...stop,state:'carrying',rung:true}]}).action).toBe('F · Put camera away');
  });
  it('explains a different selected address without pretending the held box changed',()=>{
   expect(deliveryGuidance({...state,selected:1,routes:[{...stop,state:'carrying'}, {...stop,index:1}]}).detail).toContain('Example 12');
