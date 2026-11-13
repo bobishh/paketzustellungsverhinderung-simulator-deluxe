@@ -13,7 +13,7 @@ cd web && npm ci --install-links && cd ..
 ./scripts/build-web.sh
 ```
 
-The wasm-bindgen CLI version must match the version in Cargo.lock. The local MetaMesh packages are expected in `../mesh/packages/`; build their `dist/` files and the `mesh-transport/transport-wasm/` runtime first if missing.
+The wasm-bindgen CLI version must match the version in Cargo.lock. The local MetaMesh repository is expected at `../mesh`; its packages export TypeScript directly and its checked-in `mesh-transport/transport-wasm/` runtime must be present. CI pins MetaMesh to the revision in `.github/workflows/ci.yml` so a clean checkout can reproduce the same dependencies.
 
 For development, run Wrangler from `web/` on port 8788 and `npm run dev` in another terminal (port 4188). For a production preview, serve `web/dist` through the Worker so large precompressed WASM modules and map requests are handled correctly.
 
@@ -53,10 +53,17 @@ The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lo
 ## Checks
 
 ```sh
-cargo test -p paket-game -p paket-geo
+cargo fmt -- --check
+cargo test --workspace --locked
 cd web
 npm run check
 npm test
 ```
+
+GitHub Actions runs these checks on pushes to `main`, pull requests and manual dispatches. The browser job also builds the real WASM game and saves a `browser-build` artifact for seven days. The native job includes the two-peer session integration tests on Linux; local sandbox restrictions can prevent their networking setup on macOS. The cached-map terrain test remains ignored unless its external fixture is prepared. CI does not deploy automatically or require Cloudflare credentials.
+
+The CI artifact contains the Worker and browser assets, but does not fetch live city geometry during tests. Run `python3 scripts/cache-cities.py` before a public release to include the six starter neighbourhoods; uncached places use the runtime map endpoint.
+
+For the native distribution gaps and Steam publication steps, see [the Steam release plan](docs/steam.md).
 
 Map geometry comes from OpenStreetMap, with bundled public neighbourhood data for first load and a bounded, cached Overpass endpoint for additional areas. See THIRD_PARTY.md for licenses.
