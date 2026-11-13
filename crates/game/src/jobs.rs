@@ -226,7 +226,7 @@ impl Jobs {
                 label: address
                     .address
                     .clone()
-                    .unwrap_or_else(|| address.id.clone()),
+                    .unwrap_or_else(|| "Unnumbered building".into()),
                 point: self.doorstep(&address),
                 state: ParcelState::InVan,
                 dropped_at: None,
