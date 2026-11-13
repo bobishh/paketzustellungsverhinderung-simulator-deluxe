@@ -37,7 +37,15 @@ pub(crate) fn doorway(building: &Building) -> (usize, Vec3, Vec3) {
         .iter()
         .zip(points.iter().cycle().skip(1))
         .enumerate()
-        .filter(|(_, (a, b))| a.distance(**b) >= DOOR_WIDTH + 0.4)
+        .filter(|(edge, (a, b))| {
+            let half = a.distance(**b) * 0.5;
+            half >= (DOOR_WIDTH + 0.4) * 0.5
+                && !building.passages.iter().any(|p| {
+                    p.edge == *edge
+                        && f64::from(half + DOOR_WIDTH * 0.5 + 0.2) > p.start
+                        && f64::from(half - DOOR_WIDTH * 0.5 - 0.2) < p.end
+                })
+        })
         .map(|(i, (a, b))| {
             (
                 i,
@@ -50,6 +58,55 @@ pub(crate) fn doorway(building: &Building) -> (usize, Vec3, Vec3) {
                 .total_cmp(&b.1.distance_squared(target))
         })
         .unwrap_or((0, target, Vec3::NEG_Z))
+}
+
+// A shared wall partition drives both visible masonry and physics, so an arch
+// cannot look open while retaining an invisible collider (or the reverse).
+fn openings(building: &Building, edge: usize) -> Vec<(f32, f32, f32)> {
+    let a = to_world(building.footprint[edge], 0.0);
+    let b = to_world(
+        building.footprint[(edge + 1) % building.footprint.len()],
+        0.0,
+    );
+    let width = a.distance(b);
+    let mut gaps: Vec<_> = building
+        .passages
+        .iter()
+        .filter(|p| p.edge == edge)
+        .map(|p| (p.start as f32, p.end as f32, p.height as f32))
+        .collect();
+    if !building.accessory && doorway(building).0 == edge && width > DOOR_WIDTH + 0.2 {
+        gaps.push((
+            (width - DOOR_WIDTH) * 0.5,
+            (width + DOOR_WIDTH) * 0.5,
+            DOOR_HEIGHT,
+        ));
+    }
+    gaps
+}
+pub(crate) fn wall_sections(building: &Building, edge: usize) -> Vec<(f32, f32, f32, f32)> {
+    let a = building.footprint[edge];
+    let b = building.footprint[(edge + 1) % building.footprint.len()];
+    let width = (b.east - a.east).hypot(b.north - a.north) as f32;
+    let gaps = openings(building, edge);
+    let mut cuts = vec![0.0, width];
+    for &(start, end, _) in &gaps {
+        cuts.extend([start.clamp(0.0, width), end.clamp(0.0, width)]);
+    }
+    cuts.sort_by(f32::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() < 0.001);
+    cuts.windows(2)
+        .filter_map(|s| {
+            let mid = (s[0] + s[1]) * 0.5;
+            let bottom = gaps
+                .iter()
+                .filter(|&&(a, b, _)| mid >= a && mid <= b)
+                .map(|p| p.2)
+                .fold(0.0, f32::max);
+            let top = building.height as f32;
+            (s[1] - s[0] > 0.001 && top > bottom).then_some((s[0], s[1] - s[0], bottom, top))
+        })
+        .collect()
 }
 
 pub(crate) fn mesh(building: &Building) -> Mesh {
@@ -96,26 +153,19 @@ pub(crate) fn mesh(building: &Building) -> Mesh {
             let width = a.distance(b);
             let door = !building.accessory && index == door_edge && width > DOOR_WIDTH + 0.2;
             let interior = linear([214, 210, 196]);
-            if door {
-                let side = (width - DOOR_WIDTH) * 0.5;
-                for (start, span, height) in [
-                    (a, along * side, eave),
-                    (a + along * (side + DOOR_WIDTH), along * side, eave),
-                    (
-                        a + along * side + Vec3::Y * DOOR_HEIGHT,
-                        along * DOOR_WIDTH,
-                        (eave - DOOR_HEIGHT).max(0.0),
-                    ),
-                ] {
-                    mesh.wall_panel(start, span, height, outward, wall);
-                    mesh.wall_panel(start - outward * 0.13, span, height, -outward, interior);
-                }
-            } else {
-                mesh.wall_panel(a, b - a, eave, outward, wall);
-                mesh.wall_panel(a - outward * 0.13, b - a, eave, -outward, interior);
+            for (start, span, bottom, top) in wall_sections(building, index) {
+                let base = a + along * start + Vec3::Y * bottom;
+                mesh.wall_panel(base, along * span, top - bottom, outward, wall);
+                mesh.wall_panel(
+                    base - outward * 0.13,
+                    along * span,
+                    top - bottom,
+                    -outward,
+                    interior,
+                );
             }
             if !building.accessory {
-                mesh.facade(a, b, eave, outward, door);
+                mesh.facade(a, b, eave, outward, door, &openings(building, index));
             }
         }
     }
@@ -238,7 +288,15 @@ impl BuildingMesh {
         );
     }
 
-    fn facade(&mut self, a: Vec3, b: Vec3, height: f32, outward: Vec3, door: bool) {
+    fn facade(
+        &mut self,
+        a: Vec3,
+        b: Vec3,
+        height: f32,
+        outward: Vec3,
+        _door: bool,
+        openings: &[(f32, f32, f32)],
+    ) {
         let edge = b - a;
         let width = edge.length();
         if width < 2.7 || height < 2.7 {
@@ -248,18 +306,22 @@ impl BuildingMesh {
         let trim = linear([212, 207, 192]);
         let glass = linear([53, 72, 78]);
         let plinth = linear([117, 112, 103]);
-        if door {
-            let side = (width - DOOR_WIDTH) * 0.5;
-            self.wall_panel(a + outward * 0.018, along * side, 0.35, outward, plinth);
-            self.wall_panel(
-                a + along * (side + DOOR_WIDTH) + outward * 0.018,
-                along * side,
-                0.35,
-                outward,
-                plinth,
-            );
-        } else {
-            self.wall_panel(a + outward * 0.018, edge, 0.35, outward, plinth);
+        let mut boundaries = vec![0.0, width];
+        for &(start, end, _) in openings {
+            boundaries.extend([start, end]);
+        }
+        boundaries.sort_by(f32::total_cmp);
+        for span in boundaries.windows(2) {
+            let mid = (span[0] + span[1]) * 0.5;
+            if !openings.iter().any(|&(s, e, _)| mid > s && mid < e) {
+                self.wall_panel(
+                    a + along * span[0] + outward * 0.018,
+                    along * (span[1] - span[0]),
+                    0.35,
+                    outward,
+                    plinth,
+                );
+            }
         }
         let bays = (width / 3.2).floor().max(1.0) as usize;
         let floors = (height / 2.8).round().max(1.0) as usize;
@@ -268,14 +330,12 @@ impl BuildingMesh {
         for floor in 0..floors {
             for bay in 0..bays {
                 let x = (bay as f32 + 0.5) * width / bays as f32 - window_width * 0.5;
-                if door
-                    && floor == 0
-                    && x < (width + DOOR_WIDTH) * 0.5 + 0.12
-                    && x + window_width > (width - DOOR_WIDTH) * 0.5 - 0.12
-                {
+                let y = (floor as f32 + 0.30) * floor_height;
+                if openings.iter().any(|&(start, end, top)| {
+                    y < top + 0.12 && x < end + 0.12 && x + window_width > start - 0.12
+                }) {
                     continue;
                 }
-                let y = (floor as f32 + 0.30) * floor_height;
                 let corner = a + along * x + Vec3::Y * y;
                 let window_height = (floor_height * 0.46).min(1.5);
                 self.wall_panel(

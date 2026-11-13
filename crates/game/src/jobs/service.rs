@@ -122,6 +122,9 @@ pub(crate) fn service_update(
         return;
     };
     let now = time.elapsed_secs();
+    if jobs.menu_open {
+        return;
+    }
     if shift.ended() || !shift.ready {
         if jobs.service.modal.take().is_some() {
             jobs.service.revision += 1;
@@ -334,6 +337,10 @@ pub(crate) fn service_update(
         }
     }
     if keys.just_pressed(KeyCode::KeyR) {
+        let address = jobs
+            .parcels
+            .get(jobs.navigation)
+            .map_or(address, |p| p.address.clone());
         if let Some(b) = buildings.iter().find(|b| {
             b.id == address && actors::horizontal_distance(b.entrance, actor.translation) < 4.5
         }) {
@@ -538,7 +545,7 @@ pub(crate) fn service_ui(
     let (Ok((camera, ct)), Ok(actor), Some(parcel)) = (
         camera.single(),
         player.single(),
-        jobs.parcels.get(jobs.selected),
+        jobs.parcels.get(jobs.navigation),
     ) else {
         return;
     };

@@ -48,12 +48,22 @@ pub struct Building {
     pub triangles: Vec<[u32; 3]>,
     pub height: f64,
     pub entrance: EastNorth,
+    /// Ground-level openings where an OSM building passage crosses a facade.
+    pub passages: Vec<Passage>,
     pub accessory: bool,
     pub open_sided: bool,
     pub roof: Roof,
     pub roof_height: Option<f32>,
     pub wall_color: Option<[u8; 3]>,
     pub roof_color: Option<[u8; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Passage {
+    pub edge: usize,
+    pub start: f64,
+    pub end: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,6 +174,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
     let doc: Overpass = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
     let mut buildings = Vec::new();
     let mut streets = Vec::new();
+    let mut passage_ways = Vec::new();
     let mut skipped = 0;
     for element in doc.elements {
         if element.kind != "way" {
@@ -244,6 +255,19 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
                     element.tags.get("bicycle").map(String::as_str),
                     Some("no" | "dismount")
                 );
+                if element
+                    .tags
+                    .get("tunnel")
+                    .is_some_and(|v| v == "building_passage")
+                {
+                    let height = element
+                        .tags
+                        .get("maxheight")
+                        .and_then(|v| parse_meters(v))
+                        .unwrap_or(3.2)
+                        .clamp(2.2, 6.0);
+                    passage_ways.push((line.clone(), f64::from(width_m), height));
+                }
                 streets.push(Street {
                     id,
                     centerline: line,
@@ -256,6 +280,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
             }
         }
     }
+    assign_passages(&mut buildings, &passage_ways);
     assign_entrances(&mut buildings, &streets);
     Ok(Scene {
         buildings,
@@ -486,6 +511,7 @@ fn building_from_ring(
         triangles,
         height,
         entrance,
+        passages: Vec::new(),
         accessory,
         open_sided: matches!(kind, "carport" | "roof"),
         roof,
@@ -514,6 +540,56 @@ fn color_tag(tags: &HashMap<String, String>, key: &str) -> Option<[u8; 3]> {
         }
     };
     Some([(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8])
+}
+
+fn assign_passages(buildings: &mut [Building], ways: &[(Vec<EastNorth>, f64, f64)]) {
+    let cross = |a: EastNorth, b: EastNorth| a.east * b.north - a.north * b.east;
+    let sub = |a: EastNorth, b: EastNorth| EastNorth {
+        east: a.east - b.east,
+        north: a.north - b.north,
+    };
+    for building in buildings {
+        for (edge, (a, b)) in building
+            .footprint
+            .iter()
+            .zip(building.footprint.iter().cycle().skip(1))
+            .enumerate()
+        {
+            let wall = sub(*b, *a);
+            let length = wall.east.hypot(wall.north);
+            if length < 0.01 {
+                continue;
+            }
+            for (line, width, height) in ways {
+                for segment in line.windows(2) {
+                    let road = sub(segment[1], segment[0]);
+                    let road_length = road.east.hypot(road.north);
+                    let determinant = cross(wall, road);
+                    if determinant.abs() < 1e-8 || road_length < 0.01 {
+                        continue;
+                    }
+                    let delta = sub(segment[0], *a);
+                    let t = cross(delta, road) / determinant;
+                    let u = cross(delta, wall) / determinant;
+                    // OSM passage endpoints can stop at the facade rather than cross it.
+                    if !(0.0..=1.0).contains(&t)
+                        || u < -0.4 / road_length
+                        || u > 1.0 + 0.4 / road_length
+                    {
+                        continue;
+                    }
+                    let sin = (determinant / (length * road_length)).abs();
+                    let half = (width.max(2.0) * 0.5 + 0.16) / sin.max(0.15);
+                    building.passages.push(Passage {
+                        edge,
+                        start: (t * length - half).max(0.0),
+                        end: (t * length + half).min(length),
+                        height: height.min((building.height - 0.3).max(0.0)),
+                    });
+                }
+            }
+        }
+    }
 }
 
 fn assign_entrances(buildings: &mut [Building], streets: &[Street]) {
@@ -548,8 +624,16 @@ fn assign_entrances(buildings: &mut [Building], streets: &[Street]) {
             .footprint
             .iter()
             .zip(building.footprint.iter().cycle().skip(1))
-            .filter(|(a, b)| (b.east - a.east).hypot(b.north - a.north) >= 1.8)
-            .map(|(a, b)| EastNorth {
+            .enumerate()
+            .filter(|(edge, (a, b))| {
+                let half = (b.east - a.east).hypot(b.north - a.north) * 0.5;
+                half >= 0.9
+                    && !building
+                        .passages
+                        .iter()
+                        .any(|p| p.edge == *edge && half + 0.85 > p.start && half - 0.85 < p.end)
+            })
+            .map(|(_, (a, b))| EastNorth {
                 east: (a.east + b.east) * 0.5,
                 north: (a.north + b.north) * 0.5,
             })

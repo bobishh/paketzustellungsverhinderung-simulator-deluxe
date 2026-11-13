@@ -1,0 +1,70 @@
+/* Square, compact instrumentation. The route expands only when requested. */
+#ride-hud { position:absolute; inset:0; pointer-events:none; font-size:13px; color:#f6f1e6 }
+#ride-hud button, #ride-hud a { pointer-events:auto }
+.hud-top { position:absolute; top:18px; left:18px; display:flex; align-items:stretch; gap:8px }
+.shift-clock { position:relative; min-width:146px; background:#14251ff0; padding:12px 16px 10px }
+.shift-clock small { display:block; font-size:9px; letter-spacing:.12em; color:#b5c0ae }
+.shift-clock time { display:block; font:600 30px Fira,monospace; line-height:1.4 }
+.shift-track { position:absolute; bottom:0; left:0; right:0; height:3px; background:#ffffff20 }
+.shift-track i { display:block; background:#f58b43; height:100%; width:0 }
+.score-box { display:flex; gap:7px; align-items:baseline; align-self:flex-start; padding:13px 16px; background:#14251ff0 }
+.score-box strong { font-size:24px }
+.score-box small { font-size:10px; color:#b5c0ae }
+.hud-top>button { align-self:flex-start; background:#14251ff0; border-color:#ffffff25; font-size:12px; padding:14px }
+#hud-loading { position:absolute; top:110px; left:18px; background:#14251fe6; padding:8px 12px; font-size:11px }
+#delivery-card { position:absolute; bottom:38px; left:18px; width:302px; padding:16px 18px 12px; background:#14251ff5; border-top:3px solid #f58b43; box-shadow:0 8px 28px #0003 }
+.stop-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; font:10px Fira,monospace; color:#bbc5b2; letter-spacing:.06em }
+#delivery-card h2 { font-size:22px; margin:12px 0 5px; line-height:1.15; letter-spacing:-.025em }
+#stop-recipient { margin:0; color:#c6cbbb; font-size:13px }
+.stop-meta { display:flex; justify-content:space-between; gap:12px; margin:16px 0 14px; font-size:11px }
+.stop-meta>span { color:#f6ad77 }
+.stop-meta b { font-family:Fira,monospace }
+#held-parcel { font-size:11px; line-height:1.5; color:#f7c991; border-top:1px solid #ffffff20; padding-top:10px }
+#route-toggle { width:100%; display:flex; justify-content:space-between; padding:10px 0; border:0; border-top:1px solid #ffffff30; font-size:12px }
+.route-hint { display:block; font-size:9px; color:#99aa97 }
+.route-stop { display:grid; grid-template-columns:25px 1fr auto; gap:9px; width:100%; text-align:left; padding:12px; border:0; border-bottom:1px solid #ffffff18; font-size:12px }
+.route-stop[aria-pressed=true] { background:#e5e1d2; color:#182a22 }
+.route-index { font:11px Fira,monospace; opacity:.65 }
+.route-copy b, .route-copy small, .route-copy em { display:block }
+.route-copy small { font-size:10px; opacity:.7; margin-top:3px }
+.route-copy em { font-size:9px; font-style:normal; opacity:.7; margin-top:5px }
+.route-distance { font:10px Fira,monospace; white-space:nowrap }
+#route-list { position:absolute; bottom:calc(100% + 8px); left:0; right:0; max-height:32vh; overflow-y:auto; background:#14251ff7; border:1px solid #8c9a8055; pointer-events:auto }
+#hud-action { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); max-width:calc(100% - 710px); text-align:center; padding:11px 15px; background:#14251fe8; font-size:12px; line-height:1.5 }
+.photo-ready { color:#a5e7ae!important }
+#speedometer { position:absolute; bottom:38px; right:22px; display:flex; align-items:baseline; gap:7px; background:#14251fe6; padding:13px 18px }
+#speedometer strong { font:32px Fira,monospace }
+#speedometer span { font-size:11px; color:#bbc5b2 }
+.ride-attribution { position:absolute; bottom:11px; left:18px; font-size:9px; text-decoration:none; color:#f1f0df; text-shadow:0 1px 2px #000 }
+.interacting #delivery-card, .interacting #hud-action { visibility:hidden }
+#settings-dialog { width:600px; max-height:90vh; overflow:auto }
+#settings-dialog h2 { font-size:27px; margin-bottom:10px }
+.settings-note { font-size:12px; line-height:1.5; color:#b3bda9 }
+.settings-fields { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin:25px 0 }
+#sensitivity { accent-color:#f58b43; padding:0; margin:14px 0; height:20px }
+select { display:block; margin-top:10px; width:100%; font:inherit; background:#102019; color:#f1f0df; border:1px solid #607367; padding:10px }
+.settings-fields small { display:block; font-size:10px; line-height:1.5; margin-top:8px; color:#b3bda9 }
+.control-list { display:grid; grid-template-columns:150px 1fr; gap:10px 16px; font-size:12px; line-height:1.4 }
+.control-list dt { font:11px Fira,monospace; color:#f8b180 }
+.control-list dd { margin:0; color:#c6cfbf }
+#resume-game { margin-top:24px; width:100% }
+.press-shot #ride-hud { display:none!important }
+@media(max-width:1000px) {
+  #hud-action { left:auto; right:18px; transform:none; bottom:122px; max-width:calc(100% - 360px) }
+  .hud-top>button { display:none }
+}
+@media(max-width:650px) {
+  #delivery-card { width:250px; left:10px; bottom:30px; padding:12px }
+  .hud-top { left:10px; top:10px; gap:5px }
+  .shift-clock { min-width:120px; padding:10px }
+  .score-box { padding:10px }
+  .shift-clock time { font-size:24px }
+  #hud-action { bottom:275px; left:10px; right:auto; max-width:250px; text-align:left }
+  #speedometer { padding:8px; right:10px }
+  .settings-fields { grid-template-columns:1fr; gap:12px }
+  .control-list { grid-template-columns:110px 1fr }
+  #route-list { max-height:26vh }
+}
+
+@font-face { font-family:PaketJP; src:url("/assets/fonts/NotoSansJP-Variable.ttf") format("truetype"); font-display:swap; unicode-range:U+2E80-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-2FFFF }
+body { font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",PaketJP,sans-serif }

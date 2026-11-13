@@ -33,6 +33,10 @@ Browser multiplayer uses the existing MetaMesh Iroh WASM transport and relay. Ch
 
 The starting screen offers Berlin, New York, São Paulo, Tokyo, Cape Town and Sydney, or a street-address search. Address searches run only on form submission, use a cached Photon proxy, and can fall back to Photon directly. `PHOTON_ORIGIN` can replace the proxy upstream. `python3 scripts/cache-cities.py` prepares public OSM starter geometry before a release.
 
+A shift fills a route of up to 12 unique delivery stops as neighbouring map tiles load. Delivery navigation is separate from the parcel in hand: inspecting another address never swaps or teleports a box. Successful handovers and saved delivery photos automatically select the next unfinished parcel. Courtyard passages tagged in OpenStreetMap cut matching openings in building facades and collision geometry.
+
+The browser HUD shows the shift clock, KPI, current delivery, an expandable route and context controls. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
+
 The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Residents have deterministic names, away slots and different response delays. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
 
 NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
@@ -45,10 +49,13 @@ The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lo
 
 - WASD: walk or drive; V: enter/leave the van.
 - R: recipient intercom; click bells. 1–3: timed delivery dialogue.
+- Tab / Shift+Tab: next / previous delivery while the game is focused. In forms and dialogs Tab keeps normal focus navigation.
+- Q near your van: return the held parcel, then collect the selected one with E.
 - E: pick up, place or hand over a parcel. A correct handover earns 0 KPI.
 - Dog: E bite/scratch, Space jump, G mark a van, B bark.
 - F: camera; Space / left mouse: take a delivery photo. In the browser, **Download photo** saves the latest PNG.
-- M: map and ride invitations; Tab: release cursor; hold F1: full controls.
+- M: map and ride invitations; Esc: release cursor; click the game to resume mouse look.
+- F1: browser settings; hold F1 for controls in the native build.
 
 ## Checks
 
@@ -63,6 +70,8 @@ npm test
 GitHub Actions runs these checks on pushes to `main`, pull requests and manual dispatches. The browser job also builds the real WASM game and saves a `browser-build` artifact for seven days. The native job includes the two-peer session integration tests on Linux; local sandbox restrictions can prevent their networking setup on macOS. The cached-map terrain test remains ignored unless its external fixture is prepared. CI does not deploy automatically or require Cloudflare credentials.
 
 The CI artifact contains the Worker and browser assets, but does not fetch live city geometry during tests. Run `python3 scripts/cache-cities.py` before a public release to include the six starter neighbourhoods; uncached places use the runtime map endpoint.
+
+Aggregate visits and game events use TinSink with a dedicated project and an exact production-origin allowlist. See [analytics configuration](docs/analytics.md) for events, privacy boundaries and CORS checks.
 
 For the native distribution gaps and Steam publication steps, see [the Steam release plan](docs/steam.md).
 

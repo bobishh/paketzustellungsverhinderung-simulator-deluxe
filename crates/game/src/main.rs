@@ -99,13 +99,15 @@ fn main() {
             .chain()
             .run_if(in_state(Mode::Map)),
     );
-    // Bevy's bundled subset lacks Cyrillic. Replace the default before any UI is
-    // laid out so menu labels, addresses and prompts all use the complete font.
+    // Bundle Latin, Cyrillic, kana and kanji instead of relying on system fonts:
+    // WebAssembly text rendering cannot borrow the browser's font fallback.
     app.world_mut()
         .resource_mut::<Assets<Font>>()
         .insert(
             bevy::asset::AssetId::default(),
-            Font::from_bytes(include_bytes!("../../../assets/fonts/FiraMono-Medium.ttf").to_vec()),
+            Font::from_bytes(
+                include_bytes!("../../../assets/fonts/NotoSansJP-Variable.ttf").to_vec(),
+            ),
         )
         .expect("the default font asset can be replaced");
     install_ride(&mut app);
@@ -164,6 +166,7 @@ fn install_ride(app: &mut App) {
             (
                 (
                     stream_tiles,
+                    browser_ui::input,
                     shift::tick,
                     jobs::service_update,
                     cursor_control,
@@ -192,7 +195,7 @@ fn install_ride(app: &mut App) {
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
                 capture_frame,
-                browser_ui::update,
+                browser_ui::update.after(jobs::courier),
             )
                 .run_if(in_state(Mode::Ride)),
         );
@@ -317,6 +320,7 @@ fn cleanup_ride(
 
 fn cursor_control(
     keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
     mut ride: ResMut<Ride>,
     jobs: Res<Jobs>,
     mut window: Query<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
@@ -324,8 +328,8 @@ fn cursor_control(
     if keys.just_pressed(KeyCode::Escape) {
         ride.mouse_look = false;
     }
-    if keys.just_pressed(KeyCode::Tab) {
-        ride.mouse_look = !ride.mouse_look;
+    if mouse.just_pressed(MouseButton::Left) && !jobs.interaction_active() {
+        ride.mouse_look = true;
     }
     if let Ok((window, mut cursor)) = window.single_mut() {
         let captured = window.focused && ride.mouse_look && !jobs.interaction_active();
@@ -704,6 +708,11 @@ fn setup(
             ..default()
         },
         Hud,
+        if cfg!(target_arch = "wasm32") {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        },
         DespawnOnExit(Mode::Ride),
     ));
     commands.spawn((
@@ -803,6 +812,11 @@ fn setup(
     commands.spawn((
         bevy::ui_widgets::Button,
         MapButton,
+        if cfg!(target_arch = "wasm32") {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        },
         DespawnOnExit(Mode::Ride),
         Node {
             position_type: PositionType::Absolute,
@@ -834,6 +848,11 @@ fn setup(
     ));
     commands.spawn((
         ActionPrompt,
+        if cfg!(target_arch = "wasm32") {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        },
         DespawnOnExit(Mode::Ride),
         Node {
             display: Display::None,
@@ -973,7 +992,7 @@ fn stream_tiles(
         );
         let origin_tile = TileId { x: 0, y: 0 };
         if tile == origin_tile || ride.loaded.contains_key(&origin_tile) {
-            if jobs.room.is_none() {
+            if !scene.buildings.is_empty() {
                 let addresses = scene
                     .buildings
                     .iter()
@@ -1371,7 +1390,7 @@ fn hud(
                 }
                 display.push_str(&jobs.manifest());
                 if keys.pressed(KeyCode::F1) {
-                    display.push_str("\nWASD move | Shift run | Ctrl crouch\n1-4 parcel | E deliver | F camera | click photo");
+                    display.push_str("\nWASD move | Shift run | Ctrl crouch\nTab / Shift+Tab parcel | E deliver | F camera | click photo");
                 }
             }
             Avatar::Van => {
@@ -1418,7 +1437,7 @@ fn hud(
     if ride.session.is_some() {
         display.push_str(&format!("\nPlayers: {}", 1 + peers.iter().count()));
     }
-    display.push_str("\nHold F1: controls | Tab: cursor | M: map");
+    display.push_str("\nHold F1: controls | Esc: cursor | M: map");
     if keys.pressed(KeyCode::F1) {
         display.push_str("\nMouse look | Wheel zoom | -/+ sensitivity | F12 screenshot");
     }
@@ -1578,13 +1597,11 @@ fn building_collider(building: &paket_geo::Building) -> Option<Collider> {
     if building.open_sided {
         return None;
     }
-    let height = building.height as f32;
     let points: Vec<_> = building
         .footprint
         .iter()
         .map(|p| to_world(*p, 0.0))
         .collect();
-    let (door_edge, _, _) = buildings::doorway(building);
     let mut parts = Vec::new();
     for (index, (a, b)) in points.iter().zip(points.iter().cycle().skip(1)).enumerate() {
         let length = a.distance(*b);
@@ -1602,13 +1619,8 @@ fn building_collider(building: &paket_geo::Building) -> Option<Collider> {
                 ));
             }
         };
-        if !building.accessory && index == door_edge && length > buildings::DOOR_WIDTH + 0.2 {
-            let side = (length - buildings::DOOR_WIDTH) * 0.5;
-            wall(0.0, side, 0.0, height);
-            wall(side + buildings::DOOR_WIDTH, side, 0.0, height);
-            wall(side, buildings::DOOR_WIDTH, buildings::DOOR_HEIGHT, height);
-        } else {
-            wall(0.0, length, 0.0, height);
+        for (start, width, bottom, top) in buildings::wall_sections(building, index) {
+            wall(start, width, bottom, top);
         }
     }
     (!parts.is_empty()).then(|| Collider::compound(parts))
@@ -1724,6 +1736,88 @@ fn push_triangle(
 mod ride_tests {
     use super::*;
 
+    #[test]
+    fn koertestrasse_courtyard_passages_have_no_invisible_walls() {
+        use bevy::ecs::system::RunSystemOnce;
+        use bevy::time::TimeUpdateStrategy;
+        let origin = LatLon {
+            lat: 52.4895,
+            lon: 13.4084,
+        };
+        let scene = paket_geo::parse_overpass(
+            include_bytes!("../../../fixtures/koertestrasse.json"),
+            origin,
+        )
+        .unwrap();
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            TransformPlugin,
+            bevy::diagnostic::DiagnosticsPlugin,
+            PhysicsPlugins::default(),
+        ))
+        .init_asset::<Mesh>()
+        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            20,
+        )));
+        for b in &scene.buildings {
+            if let Some(collider) = building_collider(b) {
+                app.world_mut()
+                    .spawn((RigidBody::Static, Transform::IDENTITY, collider));
+            }
+            if !b.passages.is_empty() {
+                let (edge, _, _) = buildings::doorway(b);
+                let a = b.footprint[edge];
+                let z = b.footprint[(edge + 1) % b.footprint.len()];
+                let mid = (z.east - a.east).hypot(z.north - a.north) * 0.5;
+                assert!(
+                    !b.passages
+                        .iter()
+                        .any(|p| p.edge == edge && mid + 0.64 > p.start && mid - 0.64 < p.end),
+                    "door blocks arch in {}",
+                    b.id
+                );
+            }
+        }
+        app.finish();
+        app.cleanup();
+        for _ in 0..3 {
+            app.update();
+        }
+        // These two real OSM paths are the street gateway and passage in no. 35.
+        for id in ["way/98862005", "way/595148187"] {
+            let street = scene.streets.iter().find(|s| s.id == id).unwrap();
+            let probes: Vec<_> = street
+                .centerline
+                .windows(2)
+                .map(|p| (to_world(p[0], 0.95), to_world(p[1], 0.95)))
+                .collect();
+            let hits = app
+                .world_mut()
+                .run_system_once(move |spatial: SpatialQuery| {
+                    probes
+                        .iter()
+                        .map(|&(a, b)| {
+                            spatial.cast_shape(
+                                &Collider::capsule(0.28, 1.1),
+                                a,
+                                Quat::IDENTITY,
+                                Dir3::new(b - a).unwrap(),
+                                &ShapeCastConfig::from_max_distance(a.distance(b)),
+                                &SpatialQueryFilter::default(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap();
+            assert!(
+                hits.iter().all(Option::is_none),
+                "courier cannot walk through {id}: {hits:?}"
+            );
+        }
+    }
+
     pub(crate) fn headless_ride(role: Role) -> App {
         use bevy::time::TimeUpdateStrategy;
         let mut app = App::new();
@@ -1792,7 +1886,7 @@ mod ride_tests {
     }
 
     #[test]
-    fn mouse_look_needs_no_button_and_tab_releases_it() {
+    fn mouse_look_needs_no_button_and_escape_releases_it() {
         use bevy::input::mouse::AccumulatedMouseMotion;
         let mut app = headless_ride(Role::Courier);
         let player = {
@@ -1809,7 +1903,7 @@ mod ride_tests {
         app.update();
         let turned = app.world().get::<Transform>(player).unwrap().rotation;
         assert!(start.angle_between(turned) > 0.2);
-        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::Escape);
         app.update();
         let released = app.world().get::<Transform>(player).unwrap().rotation;
         assert!(turned.angle_between(released) < 0.01);

@@ -1,6 +1,8 @@
 import './style.css';
 import './lobby';
 import './minimap';
+import './hud';
+import { initGameAnalytics } from './analytics';
 import { initProfile } from './profile';
 import { restoreIdentity, signIn } from './identity';
 import { mesh } from './mesh';
@@ -9,6 +11,7 @@ declare global { var paketArgs: string[]; var paketMesh: typeof mesh; var paketP
 // Consume identity evidence before loading game assets or making network requests.
 const callbackHash = location.pathname === '/identity/return' ? location.hash : null;
 if (callbackHash !== null) history.replaceState(null, '', '/identity/return');
+initGameAnalytics();
 const status = document.querySelector('#loading')!;
 const notice = document.querySelector<HTMLElement>('#notice')!;
 let noticeTimer: ReturnType<typeof setTimeout>;
@@ -30,7 +33,7 @@ document.querySelector('#fullscreen')!.addEventListener('click', () => { void (d
 let running = false;
 document.querySelector<HTMLCanvasElement>('#game')!.addEventListener('pointerdown', event => {
   if (running && globalThis.paketWantsPointer && !document.pointerLockElement) {
-    void (event.currentTarget as HTMLCanvasElement).requestPointerLock()?.catch(() => paketNotify('Click the game to capture the mouse. Tab releases it.'));
+    void (event.currentTarget as HTMLCanvasElement).requestPointerLock()?.catch(() => paketNotify('Click the game to capture the mouse. Esc releases it.'));
   }
 });
 document.querySelector('#play')!.addEventListener('click', async () => {
@@ -54,7 +57,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     running = true;
     document.querySelector<HTMLElement>('#start')!.hidden = true;
     document.querySelector<HTMLCanvasElement>('#game')!.focus();
-    paketNotify('Click the game to look around · Tab releases the cursor');
+    paketNotify('Click the game to look around · Esc releases the cursor');
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
     button.disabled = false;

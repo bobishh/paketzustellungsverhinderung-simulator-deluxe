@@ -17,6 +17,7 @@ use crate::{
 };
 
 const DROP_DISTANCE: f32 = 3.4;
+const DELIVERIES_PER_SHIFT: usize = 12;
 const PHOTO_DISTANCE: f32 = 9.0;
 const HANDOVER_DISTANCE: f32 = 2.7;
 #[path = "jobs/service.rs"]
@@ -28,6 +29,8 @@ pub(crate) struct Jobs {
     service: service::Service,
     parcels: Vec<Parcel>,
     selected: usize,
+    navigation: usize,
+    pub menu_open: bool,
     pub room: Option<Room>,
     open_doors: HashSet<String>,
     scratches: u8,
@@ -112,6 +115,63 @@ pub(crate) struct Door {
 }
 
 impl Jobs {
+    /// Inspect another stop without teleporting or losing the parcel in hand.
+    pub fn select_delivery(&mut self, index: usize) {
+        if index >= self.parcels.len() || self.interaction_active() || self.service.bulk.is_some() {
+            return;
+        }
+        self.navigation = index;
+        let busy = self.parcels.get(self.selected).is_some_and(|p| {
+            matches!(p.state, ParcelState::Carrying | ParcelState::Dropped { .. })
+        });
+        if !busy {
+            self.selected = index;
+        }
+    }
+    pub fn step_delivery(&mut self, delta: i64) {
+        if !self.parcels.is_empty() {
+            self.select_delivery(
+                (self.navigation as i64 + delta).rem_euclid(self.parcels.len() as i64) as usize,
+            );
+        }
+    }
+    fn advance_after_delivery(&mut self, completed: usize) {
+        if !self
+            .parcels
+            .get(completed)
+            .is_some_and(|p| matches!(p.state, ParcelState::Filed(_) | ParcelState::Handed))
+        {
+            return;
+        }
+        if let Some(next) = (1..self.parcels.len())
+            .map(|offset| (completed + offset) % self.parcels.len())
+            .find(|&i| {
+                !matches!(
+                    self.parcels[i].state,
+                    ParcelState::Filed(_) | ParcelState::Handed
+                )
+            })
+        {
+            self.selected = next;
+            self.navigation = next;
+        }
+        self.caught = false;
+        self.pursued = false;
+        self.photo_ready = false;
+    }
+    pub fn hud_data(&self, position: Vec3) -> serde_json::Value {
+        serde_json::json!({
+            "selected":self.navigation,"active":self.selected,
+            "routes":self.parcels.iter().enumerate().map(|(i,p)|serde_json::json!({
+                "index":i,"address":p.label,"name":service::citizen(&p.address).name,
+                "distance":actors::horizontal_distance(position,p.point),
+                "state":match p.state { ParcelState::InVan=>"in-van",ParcelState::Carrying=>"carrying",ParcelState::Dropped{..}=>"photo-due",ParcelState::Filed(_)=>"filed",ParcelState::Handed=>"handed" }
+            })).collect::<Vec<_>>(),
+            "prompt":self.prompt,"status":self.status,"interaction":self.service.modal.is_some(),"menu":self.menu_open,
+            "bulk":self.service.bulk.map(|(_,loaded)|loaded),
+            "score":self.progress()["score"],"delivered":self.progress()["delivered"]
+        })
+    }
     pub fn radar_people(&self, residents: &Query<(&Resident, &Transform)>) -> Vec<[f32; 2]> {
         residents
             .iter()
@@ -123,7 +183,7 @@ impl Jobs {
         serde_json::json!({"delivered":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_)|ParcelState::Handed)).count(),"photos":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_))).count(),"score":self.parcels.iter().map(|p|if let ParcelState::Filed(n)=p.state{n}else{0}).sum::<i32>()+self.service.bonus,"rings":self.service.visited.len(),"markedVans":self.marks.len(),"special":self.service.rare_used&&self.service.bulk.is_none()})
     }
     pub fn interaction_active(&self) -> bool {
-        self.service.modal.is_some()
+        self.service.modal.is_some() || self.menu_open
     }
     pub fn interaction_camera(&self) -> Option<Transform> {
         self.service.modal.as_ref().map(|m| m.camera)
@@ -134,7 +194,7 @@ impl Jobs {
         commands: &mut Commands,
         models: &Models,
     ) {
-        if self.room.is_some() || addresses.is_empty() {
+        if self.parcels.len() >= DELIVERIES_PER_SHIFT || addresses.is_empty() {
             return;
         }
         addresses.sort_by(|a, b| {
@@ -145,29 +205,33 @@ impl Jobs {
                     .then(a.id.cmp(&b.id))
             })
         });
-        let room_address = &addresses[0];
-        let room = Room {
-            address: room_address.id.clone(),
-            center: room_address.threshold.with_y(-0.04) - room_address.outward * 1.66,
-            direction: room_address.outward,
-        };
-        self.room = Some(room);
-        self.parcels = addresses
-            .iter()
-            .take(4)
-            .map(|address| Parcel {
+        if self.room.is_none() {
+            let room_address = &addresses[0];
+            self.room = Some(Room {
+                address: room_address.id.clone(),
+                center: room_address.threshold.with_y(-0.04) - room_address.outward * 1.66,
+                direction: room_address.outward,
+            });
+        }
+        for address in addresses {
+            if self.parcels.len() >= DELIVERIES_PER_SHIFT {
+                break;
+            }
+            if self.parcels.iter().any(|p| p.address == address.id) {
+                continue;
+            }
+            let index = self.parcels.len();
+            self.parcels.push(Parcel {
                 address: address.id.clone(),
                 label: address
                     .address
                     .clone()
                     .unwrap_or_else(|| address.id.clone()),
-                point: self.doorstep(address),
+                point: self.doorstep(&address),
                 state: ParcelState::InVan,
                 dropped_at: None,
                 prop: None,
-            })
-            .collect();
-        for (index, address) in addresses.into_iter().take(7).enumerate() {
+            });
             let home = (address.threshold - address.outward * 1.15).with_y(-0.04);
             let entity = commands
                 .spawn((
@@ -256,9 +320,11 @@ impl Jobs {
     }
 
     pub fn needs_van(&self) -> bool {
-        self.parcels
-            .get(self.selected)
-            .is_some_and(|parcel| matches!(parcel.state, ParcelState::InVan))
+        self.navigation == self.selected
+            && self
+                .parcels
+                .get(self.selected)
+                .is_some_and(|parcel| matches!(parcel.state, ParcelState::InVan))
     }
 
     fn complete(&self) -> bool {
@@ -274,7 +340,7 @@ impl Jobs {
             return Some(target);
         }
         self.parcels
-            .get(self.selected)
+            .get(self.navigation)
             .and_then(|parcel| match parcel.state {
                 ParcelState::Dropped { position, .. } => Some(position),
                 ParcelState::Filed(_) | ParcelState::Handed => None,
@@ -313,7 +379,7 @@ impl Jobs {
                 ParcelState::Filed(_) => "filed",
                 ParcelState::Handed => "handed over / 0 KPI",
             };
-            let cursor = if index == self.selected { ">" } else { " " };
+            let cursor = if index == self.navigation { ">" } else { " " };
             lines.push(format!(
                 "{cursor} {}  {}  ·  {state}",
                 index + 1,
@@ -629,28 +695,23 @@ pub(crate) fn courier(
         jobs.proof_pending = None;
         jobs.status = "Photo timed out. Try again.".into();
     }
-    for (index, key) in [
-        KeyCode::Digit1,
-        KeyCode::Digit2,
-        KeyCode::Digit3,
-        KeyCode::Digit4,
-    ]
-    .into_iter()
-    .enumerate()
+    if keys.just_pressed(KeyCode::Tab)
+        && !keys.any_pressed([
+            KeyCode::SuperLeft,
+            KeyCode::SuperRight,
+            KeyCode::ControlLeft,
+            KeyCode::ControlRight,
+            KeyCode::AltLeft,
+            KeyCode::AltRight,
+        ])
     {
-        if !keys.just_pressed(key) || index >= jobs.parcels.len() {
-            continue;
-        }
-        if jobs.parcels.get(jobs.selected).is_some_and(|parcel| {
-            matches!(
-                parcel.state,
-                ParcelState::Carrying | ParcelState::Dropped { .. }
-            )
-        }) {
-            jobs.status = "File this parcel before selecting another.".into();
-        } else {
-            jobs.selected = index;
-        }
+        jobs.step_delivery(
+            if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+                -1
+            } else {
+                1
+            },
+        );
     }
     if player.form != Avatar::Courier || clock.elapsed_secs() < player.stunned_until {
         return;
@@ -660,6 +721,24 @@ pub(crate) fn courier(
         return;
     };
     let state = parcel.state;
+    if keys.just_pressed(KeyCode::KeyQ) && matches!(state, ParcelState::Carrying) {
+        if player
+            .parked
+            .and_then(|e| vans.get(e).ok())
+            .is_some_and(|van| {
+                actors::horizontal_distance(actor.translation, van.translation) <= 3.7
+            })
+        {
+            jobs.parcels[index].state = ParcelState::InVan;
+            jobs.selected = jobs.navigation;
+            jobs.caught = false;
+            jobs.pursued = false;
+            jobs.status = "Parcel returned. Choose a stop, then E to collect its parcel.".into();
+        } else {
+            jobs.status = "Go back to your van to return this parcel [Q].".into();
+        }
+        return;
+    }
     let active = matches!(state, ParcelState::Carrying | ParcelState::Dropped { .. });
     let receiver = residents
         .iter()
@@ -714,13 +793,13 @@ pub(crate) fn courier(
                 "[F] Camera  |  Frame the parcel, then [Space] take photo"
             }
             ParcelState::InVan => {
-                "Collect a parcel at your van with [E]  |  Choose a delivery with [1-4]"
+                "Collect a parcel at your van with [E]  |  Choose a delivery with [Tab / Shift+Tab]"
             }
             ParcelState::Filed(_) | ParcelState::Handed => {
                 if jobs.complete() {
                     "SHIFT COMPLETE  |  All parcels delivered  |  [M] Choose a new ride"
                 } else {
-                    "Delivery complete  |  [1-4] Choose your next parcel"
+                    "Delivery complete  |  [Tab / Shift+Tab] Choose your next parcel"
                 }
             }
         }
@@ -770,6 +849,7 @@ pub(crate) fn courier(
         if bonus > 0 {
             jobs.status = format!("Name mangled, parcel handed over · +{bonus} KPI");
         }
+        jobs.advance_after_delivery(index);
         return;
     }
     if keys.just_pressed(KeyCode::KeyE) && !player.photo {
@@ -860,7 +940,7 @@ pub(crate) fn courier(
             jobs.parcels[index].state,
             ParcelState::Filed(_) | ParcelState::Handed
         ) {
-            "Delivery complete  |  [F] Put camera away  |  [1-4] Next parcel"
+            "Delivery complete  |  [F] Put camera away  |  [Tab / Shift+Tab] Next parcel"
         } else {
             "[F] Put camera away  |  Leave the parcel at a door first"
         }
@@ -889,7 +969,8 @@ pub(crate) fn courier(
         jobs.prompt = photo_hint.into();
     }
     if !ride.mouse_look {
-        jobs.prompt.push_str("\n[Tab] Enable mouse aiming");
+        jobs.prompt
+            .push_str("\nClick the game to enable mouse aiming");
     }
     if jobs.proof_pending.is_some()
         || !((ride.mouse_look && mouse.just_pressed(MouseButton::Left))
@@ -908,7 +989,10 @@ pub(crate) fn courier(
     commands
         .spawn((Screenshot::primary_window(), DespawnOnExit(Mode::Ride)))
         .observe(
-            move |captured: On<ScreenshotCaptured>, jobs: Option<ResMut<Jobs>>| {
+            move |captured: On<ScreenshotCaptured>,
+                  jobs: Option<ResMut<Jobs>>,
+                  mut players: Query<&mut Player>,
+                  mut commands: Commands| {
                 let Some(mut jobs) = jobs else {
                     return;
                 };
@@ -940,11 +1024,16 @@ pub(crate) fn courier(
                 let saved = crate::platform::save_photo(&captured.image, index);
                 if saved {
                     jobs.parcels[index].state = ParcelState::Filed(score);
+                    if let Ok(mut player) = players.single_mut() {
+                        player.photo = false;
+                        commands.entity(player.visual).insert(Visibility::Inherited);
+                    }
                     jobs.status = if jobs.complete() {
                         format!("Photo filed · {score:+} KPI · shift complete")
                     } else {
                         format!("Photo filed · {score:+} KPI")
                     };
+                    jobs.advance_after_delivery(index);
                 } else {
                     jobs.status = "Photo could not be saved. Try again.".into();
                 }
@@ -1171,6 +1260,112 @@ mod tests {
         *app.world_mut().get_mut::<Transform>(actor).unwrap() = previous;
     }
 
+    #[test]
+    fn automatic_route_skips_completed_stops_and_wraps_without_losing_pending_photos() {
+        let mut app = crate::ride_tests::headless_ride(Role::Courier);
+        let mut jobs = app.world_mut().resource_mut::<Jobs>();
+        assert!(jobs.parcels.len() >= 3);
+        for parcel in &mut jobs.parcels {
+            parcel.state = ParcelState::Handed;
+        }
+        let last = jobs.parcels.len() - 1;
+        jobs.parcels[0].state = ParcelState::InVan;
+        jobs.selected = last;
+        jobs.navigation = last;
+        jobs.parcels[last].state = ParcelState::Dropped {
+            position: Vec3::ZERO,
+            wrong_address: false,
+        };
+        jobs.advance_after_delivery(last);
+        assert_eq!(
+            jobs.selected, last,
+            "a dropped box still requires a saved photo"
+        );
+        jobs.parcels[last].state = ParcelState::Filed(0);
+        jobs.advance_after_delivery(last);
+        assert_eq!(jobs.selected, 0, "wrap to the unfinished first stop");
+        assert_eq!(jobs.navigation, 0);
+        jobs.parcels[0].state = ParcelState::Handed;
+        jobs.advance_after_delivery(0);
+        assert!(jobs.complete());
+        assert_eq!(jobs.selected, 0, "a finished route has no next parcel");
+    }
+
+    #[test]
+    fn route_preview_preserves_the_held_parcel_and_can_swap_at_the_van() {
+        let mut app = crate::ride_tests::headless_ride(Role::Courier);
+        press(&mut app, KeyCode::KeyV);
+        press(&mut app, KeyCode::KeyV);
+        press(&mut app, KeyCode::KeyE);
+        assert_eq!(
+            app.world().resource::<Jobs>().parcels[0].state,
+            ParcelState::Carrying
+        );
+        press(&mut app, KeyCode::Tab);
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.selected, 0);
+        assert_eq!(jobs.navigation, 1);
+        assert_eq!(jobs.current_target(), Some(jobs.parcels[1].point));
+        assert_eq!(jobs.parcels[0].state, ParcelState::Carrying);
+        assert_eq!(jobs.parcels[1].state, ParcelState::InVan);
+        press(&mut app, KeyCode::KeyQ);
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.selected, 1);
+        assert_eq!(jobs.parcels[0].state, ParcelState::InVan);
+        press(&mut app, KeyCode::KeyE);
+        assert_eq!(
+            app.world().resource::<Jobs>().parcels[1].state,
+            ParcelState::Carrying
+        );
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::ShiftLeft);
+        press(&mut app, KeyCode::Tab);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset(KeyCode::ShiftLeft);
+        assert_eq!(app.world().resource::<Jobs>().navigation, 0);
+        assert_eq!(app.world().resource::<Jobs>().selected, 1);
+    }
+
+    #[test]
+    fn streamed_neighbourhoods_fill_twelve_stops_without_duplicates() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = crate::ride_tests::headless_ride(Role::Courier);
+        let scene = paket_geo::parse_overpass(
+            include_bytes!("../../../fixtures/koertestrasse.json"),
+            paket_geo::LatLon {
+                lat: 52.4895,
+                lon: 13.4084,
+            },
+        )
+        .unwrap();
+        let addresses: Vec<_> = scene
+            .buildings
+            .iter()
+            .filter(|b| !b.accessory)
+            .map(crate::building_link)
+            .collect();
+        app.world_mut()
+            .run_system_once(
+                move |mut commands: Commands, mut jobs: ResMut<Jobs>, models: Res<Models>| {
+                    jobs.seed(addresses.clone(), &mut commands, &models);
+                    jobs.seed(addresses.clone(), &mut commands, &models);
+                },
+            )
+            .unwrap();
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.parcels.len(), 12);
+        assert_eq!(
+            jobs.parcels
+                .iter()
+                .map(|p| &p.address)
+                .collect::<HashSet<_>>()
+                .len(),
+            12
+        );
+    }
+
     fn frame_dropped_parcel(app: &mut App, index: usize) {
         let player = player(app);
         let jobs = app.world().resource::<Jobs>();
@@ -1236,15 +1431,15 @@ mod tests {
         assert!(npc.held.is_none());
         assert!(app.world().get_entity(prop).is_err());
         assert!(!app.world().resource::<Jobs>().pursued);
-        press(&mut app, KeyCode::Digit2);
         assert_eq!(app.world().resource::<Jobs>().selected, 1);
+        assert_eq!(app.world().resource::<Jobs>().navigation, 1);
     }
 
     #[test]
     fn handover_of_dropped_parcel_cancels_pending_photo_and_restores_normal_camera() {
         let mut app = headless_ride(Role::Courier);
         let actor = player(&mut app);
-        press(&mut app, KeyCode::Digit2);
+        press(&mut app, KeyCode::Tab);
         press(&mut app, KeyCode::KeyE);
         ring_selected(&mut app);
         let (destination, address) = {
@@ -1324,7 +1519,7 @@ mod tests {
     fn dropped_parcel_must_be_reachable_before_handover() {
         let mut app = headless_ride(Role::Courier);
         let actor = player(&mut app);
-        press(&mut app, KeyCode::Digit2);
+        press(&mut app, KeyCode::Tab);
         press(&mut app, KeyCode::KeyE);
         ring_selected(&mut app);
         let (destination, address) = {
@@ -1363,7 +1558,7 @@ mod tests {
             app.world().get::<Player>(player).unwrap().form,
             Avatar::Courier
         );
-        press(&mut app, KeyCode::Digit2);
+        press(&mut app, KeyCode::Tab);
         press(&mut app, KeyCode::KeyE);
         assert!(matches!(
             app.world().resource::<Jobs>().parcels[1].state,
@@ -1434,6 +1629,10 @@ mod tests {
             app.world().resource::<Jobs>().parcels[1].state,
             ParcelState::Filed(_)
         ));
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.selected, 2 % jobs.parcels.len());
+        assert_eq!(jobs.navigation, jobs.selected);
+        assert!(!app.world().get::<Player>(player).unwrap().photo);
         assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
         fs::remove_dir_all(output).unwrap();
     }

@@ -37,7 +37,7 @@ pub(crate) struct Controller {
 
 #[derive(Resource)]
 pub(crate) struct Controls {
-    sensitivity: f32,
+    pub(crate) sensitivity: f32,
     zoom: f32,
 }
 
@@ -908,7 +908,7 @@ pub(crate) fn interact(
             Visibility::Inherited
         });
     }
-    if ride.mouse_look && !keys.just_pressed(KeyCode::Tab) {
+    if ride.mouse_look && !keys.just_pressed(KeyCode::Escape) {
         let precision = if player.photo { 0.60 } else { 1.0 };
         let yaw = -motion.delta.x * controls.sensitivity * precision;
         if player.form == Avatar::Van {
