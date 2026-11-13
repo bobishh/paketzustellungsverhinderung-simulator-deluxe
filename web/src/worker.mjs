@@ -17,6 +17,25 @@ export default {
   async fetch(request, env, ctx) {
     if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405, headers: { ...headers, allow: 'GET, HEAD' } });
     const url = new URL(request.url);
+    if (url.pathname === '/api/address') {
+      const q = (url.searchParams.get('q') ?? '').trim();
+      if (q.length < 3 || q.length > 180) return new Response('Invalid address', { status: 400, headers });
+      const cacheKey = new Request(new URL('/address-cache?q=' + encodeURIComponent(q.toLowerCase()), url));
+      const cached = await caches.default.match(cacheKey); if (cached) return cached;
+      try {
+        // Submit-only search, fixed upstream, cached results. No keystroke traffic.
+        const upstream = new URL('/api/', env.PHOTON_ORIGIN || 'https://photon.komoot.io');
+        upstream.search = new URLSearchParams({q, limit:'5'}).toString();
+        const result = await fetch(upstream, {headers:{'user-agent':'Paketzustellungsverhinderung Simulator Deluxe / address selection'},signal:AbortSignal.timeout(12000)});
+        if (!result.ok) throw new Error('Search unavailable');
+        const data = await result.json();
+        const places = (data.features ?? []).slice(0,5).filter(f => f.geometry?.type==='Point' && f.geometry.coordinates.every(Number.isFinite)).map(f => {
+          const p=f.properties; return {lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0],name:[p.name,[p.street,p.housenumber].filter(Boolean).join(' '),p.postcode,p.city||p.town||p.district,p.country].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(',')};
+        });
+        const response = Response.json(places,{headers:{...headers,'cache-control':'public,max-age=86400'}});
+        ctx.waitUntil(caches.default.put(cacheKey,response.clone()));return response;
+      } catch {return new Response('Address search unavailable',{status:503,headers});}
+    }
     if (url.pathname === '/api/osm') {
       let map;
       try { map = mapRequest(url); } catch { return new Response('Invalid map request', { status: 400, headers }); }

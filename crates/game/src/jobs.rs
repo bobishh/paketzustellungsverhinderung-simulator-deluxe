@@ -19,9 +19,13 @@ use crate::{
 const DROP_DISTANCE: f32 = 3.4;
 const PHOTO_DISTANCE: f32 = 9.0;
 const HANDOVER_DISTANCE: f32 = 2.7;
+#[path = "jobs/service.rs"]
+mod service;
+pub(crate) use service::{service_ui, service_update};
 
 #[derive(Resource, Default)]
 pub(crate) struct Jobs {
+    service: service::Service,
     parcels: Vec<Parcel>,
     selected: usize,
     pub room: Option<Room>,
@@ -108,6 +112,22 @@ pub(crate) struct Door {
 }
 
 impl Jobs {
+    pub fn radar_people(&self, residents: &Query<(&Resident, &Transform)>) -> Vec<[f32; 2]> {
+        residents
+            .iter()
+            .filter(|(r, _)| r.watching)
+            .map(|(_, t)| [t.translation.x, t.translation.z])
+            .collect()
+    }
+    pub fn progress(&self) -> serde_json::Value {
+        serde_json::json!({"delivered":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_)|ParcelState::Handed)).count(),"photos":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_))).count(),"score":self.parcels.iter().map(|p|if let ParcelState::Filed(n)=p.state{n}else{0}).sum::<i32>()+self.service.bonus,"rings":self.service.visited.len(),"markedVans":self.marks.len(),"special":self.service.rare_used&&self.service.bulk.is_none()})
+    }
+    pub fn interaction_active(&self) -> bool {
+        self.service.modal.is_some()
+    }
+    pub fn interaction_camera(&self) -> Option<Transform> {
+        self.service.modal.as_ref().map(|m| m.camera)
+    }
     pub fn seed(
         &mut self,
         mut addresses: Vec<BuildingLink>,
@@ -250,6 +270,9 @@ impl Jobs {
     }
 
     pub fn current_target(&self) -> Option<Vec3> {
+        if let Some((target, true)) = self.service.bulk {
+            return Some(target);
+        }
         self.parcels
             .get(self.selected)
             .and_then(|parcel| match parcel.state {
@@ -281,7 +304,7 @@ impl Jobs {
                 _ => 0,
             })
             .sum();
-        let mut lines = vec![format!("Route · {score} KPI")];
+        let mut lines = vec![format!("Route · {} KPI", score + self.service.bonus)];
         for (index, parcel) in self.parcels.iter().enumerate() {
             let state = match parcel.state {
                 ParcelState::InVan => "in van",
@@ -294,7 +317,11 @@ impl Jobs {
             lines.push(format!(
                 "{cursor} {}  {}  ·  {state}",
                 index + 1,
-                parcel.label
+                format!(
+                    "{} · {}",
+                    parcel.label,
+                    service::citizen(&parcel.address).name
+                )
             ));
         }
         lines.join("\n")
@@ -375,7 +402,7 @@ pub(crate) fn open_room(
     }
 }
 
-fn visible(spatial: &SpatialQuery, eye: Vec3, point: Vec3, exclude: Entity) -> bool {
+pub(crate) fn visible(spatial: &SpatialQuery, eye: Vec3, point: Vec3, exclude: Entity) -> bool {
     let delta = point - eye;
     let Ok(direction) = Dir3::new(delta) else {
         return true;
@@ -399,6 +426,7 @@ pub(crate) fn residents(
     keys: Res<ButtonInput<KeyCode>>,
     actor: Query<(Entity, &Player, &Transform)>,
     mut jobs: ResMut<Jobs>,
+    shift: Res<crate::shift::Shift>,
     mut npcs: Query<(Entity, &mut Resident, &mut Transform), Without<Player>>,
 ) {
     let Ok((player_entity, player, actor)) = actor.single() else {
@@ -425,6 +453,11 @@ pub(crate) fn residents(
     let mut witnessed = false;
     let mut pursued = false;
     for (entity, mut npc, mut transform) in &mut npcs {
+        let citizen = service::citizen(&npc.address);
+        if !citizen.home_at(shift.minute()) && npc.state == ResidentState::Inside {
+            continue;
+        }
+        if jobs.service.modal.as_ref().is_some_and(|m| matches!(m.kind, service::ModalKind::Dialogue { recipient, .. } if recipient == entity)) { continue; }
         let concerned = active
             && npc.settled != Some(selected)
             && (recipient.as_ref() == Some(&npc.address)
@@ -440,7 +473,7 @@ pub(crate) fn residents(
             let hears = noisy && actors::horizontal_distance(actor.translation, npc.home) < 18.0;
             if (!npc.answered && jobs.open_doors.contains(&npc.address)) || hears {
                 npc.answered = true;
-                npc.state = ResidentState::Answering(now + 1.1);
+                npc.state = ResidentState::Answering(now + citizen.delay);
                 jobs.open_doors.insert(npc.address.clone());
             } else {
                 continue;
@@ -548,6 +581,7 @@ pub(crate) fn courier(
     mut commands: Commands,
     ride: Res<Ride>,
     mut jobs: ResMut<Jobs>,
+    shift: Res<crate::shift::Shift>,
     models: Res<Models>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -567,6 +601,27 @@ pub(crate) fn courier(
     };
     jobs.prompt.clear();
     jobs.photo_ready = false;
+    if !shift.ready || shift.ended() {
+        jobs.prompt = if shift.ended() {
+            "17:00 · SHIFT OVER · Return to the depot. [M] New shift"
+        } else {
+            "Waiting for the shared shift clock…"
+        }
+        .into();
+        return;
+    }
+    if jobs.interaction_active() {
+        return;
+    }
+    if let Some((_, loaded)) = jobs.service.bulk {
+        jobs.prompt = if loaded {
+            "Follow the marker · [E] Dump the whole batch"
+        } else {
+            "Return to your van · [E] Collect the whole batch"
+        }
+        .into();
+        return;
+    }
     if jobs
         .proof_pending
         .is_some_and(|deadline| clock.elapsed_secs() > deadline)
@@ -672,10 +727,12 @@ pub(crate) fn courier(
         .into();
     }
     // Giving up also works from camera mode, and cancels an in-flight photo.
-    if keys.just_pressed(KeyCode::KeyE)
+    if (keys.just_pressed(KeyCode::KeyE) || jobs.service.dialogue_result.is_some())
         && within_reach
         && let Some(receiver) = receiver
     {
+        let bonus = jobs.service.dialogue_result.take().unwrap_or(0);
+        jobs.service.bonus += bonus;
         let prop = jobs.parcels[index].prop.take().unwrap_or_else(|| {
             let root = commands
                 .spawn((Transform::default(), Visibility::default()))
@@ -710,6 +767,9 @@ pub(crate) fn courier(
         }
         .into();
         jobs.prompt = jobs.status.clone();
+        if bonus > 0 {
+            jobs.status = format!("Name mangled, parcel handed over · +{bonus} KPI");
+        }
         return;
     }
     if keys.just_pressed(KeyCode::KeyE) && !player.photo {
@@ -731,6 +791,12 @@ pub(crate) fn courier(
                 }
             }
             ParcelState::Carrying => {
+                if !jobs.service.visited.contains(&parcel.address) {
+                    jobs.status =
+                        "Ring your recipient first. Approach the marked intercom and press R."
+                            .into();
+                    return;
+                }
                 let nearest = buildings
                     .iter()
                     .filter(|building| !building.accessory)
@@ -938,17 +1004,21 @@ pub(crate) fn dog(
     mut jobs: ResMut<Jobs>,
     keys: Res<ButtonInput<KeyCode>>,
     clock: Res<Time<Virtual>>,
-    players: Query<(&Player, &Transform)>,
+    mut players: Query<(&Player, &Transform, &mut LinearVelocity)>,
     remotes: Query<(&RemoteActor, &Transform)>,
     mut npcs: Query<(&mut Resident, &Transform)>,
 ) {
-    let Ok((player, actor)) = players.single() else {
+    let Ok((player, actor, mut velocity)) = players.single_mut() else {
         return;
     };
     if player.form != Avatar::Dog {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyE) {
+    if keys.just_pressed(KeyCode::Space) && clock.elapsed_secs() >= jobs.service.dog_ready {
+        velocity.0.y = 4.0;
+        jobs.service.dog_ready = clock.elapsed_secs() + 1.0;
+    }
+    if keys.just_pressed(KeyCode::KeyE) && clock.elapsed_secs() >= jobs.service.dog_ready {
         if let Some(room) = &jobs.room
             && !jobs.open_doors.contains(&room.address)
             && actors::horizontal_distance(room.threshold(), actor.translation) < 1.5
@@ -971,6 +1041,9 @@ pub(crate) fn dog(
             remote.form == Avatar::Courier
                 && actors::horizontal_distance(target.translation, actor.translation) < 1.55
         }) {
+            velocity.0.y = 4.0;
+            jobs.service.dog_ready = clock.elapsed_secs() + 2.5;
+            jobs.service.bonus += 20;
             jobs.emit(
                 &ride,
                 StreetAction::Bite {
@@ -981,6 +1054,8 @@ pub(crate) fn dog(
         } else if let Some((mut npc, _)) = npcs.iter_mut().find(|(_, target)| {
             actors::horizontal_distance(target.translation, actor.translation) < 1.55
         }) {
+            velocity.0.y = 4.0;
+            jobs.service.dog_ready = clock.elapsed_secs() + 2.5;
             npc.stunned_until = clock.elapsed_secs() + 3.0;
             jobs.status = "Resident stopped.".into();
         }
@@ -998,6 +1073,9 @@ pub(crate) fn dog(
                     .total_cmp(&actors::horizontal_distance(b.1, actor.translation))
             })
         {
+            if !jobs.marks.contains_key(&remote.device) {
+                jobs.service.bonus += 25;
+            }
             jobs.marks.insert(remote.device.clone(), point);
             jobs.emit(
                 &ride,
@@ -1057,6 +1135,42 @@ mod tests {
         resident
     }
 
+    fn ring_selected(app: &mut App) {
+        let actor = player(app);
+        let previous = *app.world().get::<Transform>(actor).unwrap();
+        let point =
+            app.world().resource::<Jobs>().parcels[app.world().resource::<Jobs>().selected].point;
+        app.world_mut()
+            .get_mut::<Transform>(actor)
+            .unwrap()
+            .translation = point.with_y(0.83);
+        press(app, KeyCode::KeyR);
+        assert!(app.world().resource::<Jobs>().interaction_active());
+        let button = {
+            let world = app.world_mut();
+            world
+                .query::<(Entity, &service::Action)>()
+                .iter(world)
+                .find(|(_, a)| matches!(a, service::Action::Bell(0)))
+                .unwrap()
+                .0
+        };
+        app.world_mut().entity_mut(button).insert(bevy::ui::Pressed);
+        app.update();
+        let close = {
+            let world = app.world_mut();
+            world
+                .query::<(Entity, &service::Action)>()
+                .iter(world)
+                .find(|(_, a)| matches!(a, service::Action::Close))
+                .unwrap()
+                .0
+        };
+        app.world_mut().entity_mut(close).insert(bevy::ui::Pressed);
+        app.update();
+        *app.world_mut().get_mut::<Transform>(actor).unwrap() = previous;
+    }
+
     fn frame_dropped_parcel(app: &mut App, index: usize) {
         let player = player(app);
         let jobs = app.world().resource::<Jobs>();
@@ -1099,8 +1213,9 @@ mod tests {
         press(&mut app, KeyCode::KeyE);
         let address = app.world().resource::<Jobs>().parcels[0].address.clone();
         let resident = meet_resident(&mut app, address, 1.8);
-        assert!(app.world().resource::<Jobs>().prompt.contains("Hand over"));
-        press(&mut app, KeyCode::KeyE);
+        app.update();
+        assert!(app.world().resource::<Jobs>().interaction_active());
+        press(&mut app, KeyCode::Digit1);
         assert_eq!(
             app.world().resource::<Jobs>().parcels[0].state,
             ParcelState::Handed
@@ -1131,6 +1246,7 @@ mod tests {
         let actor = player(&mut app);
         press(&mut app, KeyCode::Digit2);
         press(&mut app, KeyCode::KeyE);
+        ring_selected(&mut app);
         let (destination, address) = {
             let jobs = app.world().resource::<Jobs>();
             (jobs.parcels[0].point, jobs.parcels[0].address.clone())
@@ -1152,7 +1268,8 @@ mod tests {
                 .unwrap()
         };
         let resident = meet_resident(&mut app, address, 1.8);
-        press(&mut app, KeyCode::KeyE);
+        app.update();
+        press(&mut app, KeyCode::Digit1);
         assert_eq!(
             app.world().resource::<Jobs>().parcels[1].state,
             ParcelState::Handed
@@ -1179,6 +1296,7 @@ mod tests {
         let mut app = headless_ride(Role::Courier);
         let actor = player(&mut app);
         press(&mut app, KeyCode::KeyE);
+        ring_selected(&mut app);
         let unrelated = app.world().resource::<Jobs>().parcels[1].address.clone();
         let npc = meet_resident(&mut app, unrelated, 1.8);
         assert!(!app.world().get::<Resident>(npc).unwrap().watching);
@@ -1208,6 +1326,7 @@ mod tests {
         let actor = player(&mut app);
         press(&mut app, KeyCode::Digit2);
         press(&mut app, KeyCode::KeyE);
+        ring_selected(&mut app);
         let (destination, address) = {
             let jobs = app.world().resource::<Jobs>();
             (jobs.parcels[0].point, jobs.parcels[0].address.clone())
@@ -1251,6 +1370,7 @@ mod tests {
             ParcelState::Carrying
         ));
 
+        ring_selected(&mut app);
         let destination = app.world().resource::<Jobs>().parcels[0].point;
         let mut entity = app.world_mut().entity_mut(player);
         *entity.get_mut::<Transform>().unwrap() =
@@ -1383,7 +1503,11 @@ mod tests {
             .resource_mut::<Jobs>()
             .open_doors
             .insert(address);
-        for _ in 0..250 {
+        app.world_mut()
+            .resource_mut::<crate::shift::Shift>()
+            .receive(210 * 6000, 1);
+        let delay = service::citizen(&app.world().get::<Resident>(entity).unwrap().address).delay;
+        for _ in 0..((delay + 3.0) / 0.016) as usize {
             app.update();
         }
         let npc = app.world().get::<Resident>(entity).unwrap();

@@ -35,6 +35,12 @@ pub async fn connect_browser(
         .map_err(|e| e.to_string())
 }
 impl SharedStreet {
+    pub fn host_device(&self) -> String {
+        serde_json::from_str::<serde_json::Value>(&self.invitation)
+            .ok()
+            .and_then(|value| value["host"].as_str().map(str::to_owned))
+            .unwrap_or_default()
+    }
     pub fn publish(&self, fact: Fact) -> Result<(), String> {
         if !fact.origin().matches(self.origin) {
             return Err("fact origin does not match session".into());

@@ -77,6 +77,12 @@ pub enum StreetAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Fact {
+    Shift {
+        origin: Origin,
+        device: String,
+        elapsed_ms: u64,
+        difficulty: u8,
+    },
     Actor {
         origin: Origin,
         device: String,
@@ -118,6 +124,7 @@ impl Fact {
     pub fn origin(&self) -> Origin {
         match self {
             Self::Delivery { origin, .. }
+            | Self::Shift { origin, .. }
             | Self::Pose { origin, .. }
             | Self::Actor { origin, .. }
             | Self::StreetAction { origin, .. } => *origin,
@@ -127,6 +134,7 @@ impl Fact {
     pub fn device(&self) -> Option<&str> {
         match self {
             Self::Pose { device, .. }
+            | Self::Shift { device, .. }
             | Self::Actor { device, .. }
             | Self::StreetAction { device, .. } => Some(device),
             Self::Delivery { .. } => None,

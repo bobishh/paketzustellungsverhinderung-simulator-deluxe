@@ -29,13 +29,60 @@ use paket_session::{Discovery, SharedStreet, invite_link, invite_origin};
 use crate::{Mode, SessionResult, actors::Role, connect_session, start_ride};
 
 const TILE: f64 = 256.0;
-const TOOLBAR: f32 = 74.0;
-const SIDEBAR: f32 = 328.0;
+const TOOLBAR: f32 = if cfg!(target_arch = "wasm32") {
+    0.0
+} else {
+    74.0
+};
+const SIDEBAR: f32 = if cfg!(target_arch = "wasm32") {
+    360.0
+} else {
+    328.0
+};
 const RIDE_SLOTS: usize = 4;
-const KREUZBERG: LatLon = LatLon {
+pub(crate) const KREUZBERG: LatLon = LatLon {
     lat: FIXTURE_LAT,
     lon: FIXTURE_LON,
 };
+
+pub(crate) const CITIES: &[(&str, LatLon)] = &[
+    ("Berlin · Kreuzberg", KREUZBERG),
+    (
+        "New York · East Village",
+        LatLon {
+            lat: 40.7265,
+            lon: -73.9815,
+        },
+    ),
+    (
+        "São Paulo · Vila Madalena",
+        LatLon {
+            lat: -23.5505,
+            lon: -46.6892,
+        },
+    ),
+    (
+        "Tokyo · Shimokitazawa",
+        LatLon {
+            lat: 35.6616,
+            lon: 139.6682,
+        },
+    ),
+    (
+        "Cape Town · Gardens",
+        LatLon {
+            lat: -33.9335,
+            lon: 18.4112,
+        },
+    ),
+    (
+        "Sydney · Surry Hills",
+        LatLon {
+            lat: -33.8845,
+            lon: 151.2133,
+        },
+    ),
+];
 
 #[derive(Component)]
 pub struct MapUi;
@@ -254,6 +301,7 @@ fn button_color(primary: bool, hovered: bool) -> Color {
 }
 
 pub fn setup(mut commands: Commands) {
+    crate::platform::ui_event("paket-mode", "\"map\"");
     let muted = Color::srgb(0.64, 0.74, 0.71);
     commands.spawn((Camera2d, MapUi));
     commands
@@ -299,6 +347,11 @@ pub fn setup(mut commands: Commands) {
                     )],
                 ));
                 column.spawn((
+                    if cfg!(target_arch = "wasm32") {
+                        Visibility::Hidden
+                    } else {
+                        Visibility::Inherited
+                    },
                     Node {
                         height: Val::Px(TOOLBAR),
                         flex_shrink: 0.0,
@@ -310,13 +363,18 @@ pub fn setup(mut commands: Commands) {
                     children![
                         button(Action::ZoomOut, "−", false),
                         button(Action::ZoomIn, "+", false),
-                        button(Action::Select(MAUSOHRWEG), "Mausohrweg", false),
+                        button(Action::Select(CITIES[1].1), "New York", false),
                         button(Action::Select(KREUZBERG), "Kreuzberg", false),
                         label("© OpenStreetMap contributors", 12.0, muted),
                     ],
                 ));
             });
             root.spawn((
+                if cfg!(target_arch = "wasm32") {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                },
                 Node {
                     width: Val::Px(SIDEBAR),
                     flex_shrink: 0.0,
@@ -329,7 +387,10 @@ pub fn setup(mut commands: Commands) {
                 BackgroundColor(Color::srgb(0.10, 0.16, 0.16)),
             ))
             .with_children(|panel| {
-                panel.spawn(label("DREHLSS", 34.0, Color::WHITE));
+                panel.spawn(label("Choose your shift", 28.0, Color::WHITE));
+                for (name, point) in CITIES {
+                    panel.spawn(button(Action::Select(*point), name, false));
+                }
                 panel.spawn(label(
                     "Click or drag the map to choose a start.",
                     14.0,
@@ -353,11 +414,11 @@ pub fn setup(mut commands: Commands) {
                         ..default()
                     },
                     children![
-                        button(Action::New, "New mesh", true),
-                        button(Action::Solo, "Ride solo", false)
+                        button(Action::New, "With friends", true),
+                        button(Action::Solo, "Play solo", false)
                     ],
                 ));
-                panel.spawn(label("Mesh invitation", 14.0, muted));
+                panel.spawn(label("Friend’s invite link", 14.0, muted));
                 panel.spawn((
                     TextInput,
                     InviteInput,
@@ -395,7 +456,7 @@ pub fn setup(mut commands: Commands) {
                     },
                     MapStatus,
                 ));
-                panel.spawn(label("Nearby meshes", 18.0, Color::WHITE));
+                panel.spawn(label("Friends nearby", 18.0, Color::WHITE));
                 panel.spawn((label("", 14.0, muted), NearbyLabel));
                 for index in 0..RIDE_SLOTS {
                     panel.spawn((
@@ -482,7 +543,36 @@ pub fn input(
         return;
     };
 
-    for action in &actions {
+    let mut requested: Vec<Action> = actions.iter().copied().collect();
+    let external: Vec<serde_json::Value> =
+        serde_json::from_str(&crate::platform::ui_commands()).unwrap_or_default();
+    for command in external {
+        match command["action"].as_str() {
+            Some("select") => {
+                if let (Some(lat), Some(lon)) = (command["lat"].as_f64(), command["lon"].as_f64()) {
+                    if lat.is_finite() && lon.is_finite() && lat.abs() <= 85. && lon.abs() <= 180. {
+                        requested.push(Action::Select(LatLon { lat, lon }));
+                    }
+                }
+            }
+            Some("role") => requested.push(Action::Role(if command["role"] == "dog" {
+                Role::Dog
+            } else {
+                Role::Courier
+            })),
+            Some("new") => requested.push(Action::New),
+            Some("solo") => requested.push(Action::Solo),
+            Some("start") => requested.push(Action::Start),
+            Some("zoom-in") => requested.push(Action::ZoomIn),
+            Some("zoom-out") => requested.push(Action::ZoomOut),
+            Some("join") => {
+                *invite = EditableText::new(command["link"].as_str().unwrap_or(""));
+                requested.push(Action::Join);
+            }
+            _ => {}
+        }
+    }
+    for action in &requested {
         match *action {
             Action::ZoomIn => map.zoom(1),
             Action::ZoomOut => map.zoom(-1),
@@ -641,6 +731,7 @@ pub fn update_lobby(
     map.page = map.page.min(last_page);
     let first = map.page * RIDE_SLOTS;
     let point = map.point();
+    crate::platform::ui_event("paket-lobby",&serde_json::json!({"lat":point.lat,"lon":point.lon,"label":location_name(point),"status":map.status,"ready":matches!(map.connection,Connection::Ready{..}),"pending":matches!(map.connection,Connection::Pending{..}),"link":match &map.connection {Connection::Ready{link,..}=>link.as_str(),_=>""}}).to_string());
     for (mut text, location, status, nearby, slot) in &mut labels {
         let value = if location {
             location_name(point)
@@ -708,6 +799,9 @@ fn location_name(point: LatLon) -> String {
     let near = |preset: LatLon| {
         (point.lat - preset.lat).abs() < 1e-6 && (point.lon - preset.lon).abs() < 1e-6
     };
+    if let Some((name, _)) = CITIES.iter().find(|(_, p)| near(*p)) {
+        return (*name).into();
+    }
     if near(MAUSOHRWEG) {
         "Mausohrweg · Berlin".into()
     } else if near(KREUZBERG) {
@@ -986,9 +1080,9 @@ mod tests {
 
         press(
             &mut app,
-            |action| matches!(action, Action::Select(point) if *point == MAUSOHRWEG),
+            |action| matches!(action, Action::Select(point) if *point == CITIES[1].1),
         );
-        assert_eq!(app.world().resource::<Map>().point(), MAUSOHRWEG);
+        assert_eq!(app.world().resource::<Map>().point(), CITIES[1].1);
         press(&mut app, |action| matches!(action, Action::Join));
         assert_eq!(
             app.world().resource::<Map>().status,
@@ -997,7 +1091,7 @@ mod tests {
 
         let (tx, rx) = mpsc::channel();
         app.world_mut().resource_mut::<Map>().connection = Connection::Pending {
-            origin: MAUSOHRWEG,
+            origin: CITIES[1].1,
             link: None,
             receiver: Mutex::new(rx),
         };
@@ -1016,7 +1110,7 @@ mod tests {
         press(&mut app, |action| matches!(action, Action::Solo));
         app.update();
         assert_eq!(*app.world().resource::<State<Mode>>().get(), Mode::Ride);
-        assert_eq!(app.world().resource::<crate::Ride>().origin, MAUSOHRWEG);
+        assert_eq!(app.world().resource::<crate::Ride>().origin, CITIES[1].1);
         assert_eq!(app.world().resource::<crate::Ride>().role, Role::Dog);
     }
 }

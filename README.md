@@ -27,12 +27,26 @@ Run `wrangler deploy` from `web/` with the existing Cloudflare account. This cre
 
 Play as a guest or choose **Sign in with Identity**. The existing Identity portal signs authorization for this browser's device. The app verifies the challenge, origin, certificate chain and signed approval before adopting the identity. Private keys stay in browser storage. Returning from sign-in preserves a ride invitation.
 
-Browser multiplayer uses the existing MetaMesh Iroh WASM transport and relay. Start a ride, copy its invite from the map, and open it in another browser. The host must remain open. Browser invitations currently use `paket-web/1`; desktop gossip sessions are not interoperable with this browser protocol yet. The world is still selected by coordinates, not by a content-addressed world bundle.
+Browser multiplayer uses the existing MetaMesh Iroh WASM transport and relay. Choose **Play with friends**, then **Invite a friend** and open the link in another browser. The host must remain open. Browser invitations currently use `paket-web/1`; desktop gossip sessions are not interoperable with this browser protocol yet. The world is still selected by coordinates, not by a content-addressed world bundle.
+
+## Streets, shifts and careers
+
+The starting screen offers Berlin, New York, São Paulo, Tokyo, Cape Town and Sydney, or a street-address search. Address searches run only on form submission, use a cached Photon proxy, and can fall back to Photon directly. `PHOTON_ORIGIN` can replace the proxy upstream. `python3 scripts/cache-cities.py` prepares public OSM starter geometry before a release.
+
+The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Residents have deterministic names, away slots and different response delays. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
+
+NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
+
+The browser minimap uses the loaded street geometry and actual actor positions. Player careers live in the application's IndexedDB store and replicate over the game mesh as signed, application-scoped per-device records. Peers verify Identity certificate chains and signatures before merging monotonic counters. Profiles combine the same person's devices without double-counting replays; new face seeds and guest-to-Identity career attachment persist across reloads. The portrait is procedural. This is peer replication through joined games: independent cross-device discovery through the Identity resource catalogue is not wired yet, and there is no always-online keeper. Clients retain received replicas locally.
+
+The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lon=13.3908&press-shot`. The scene uses the same actor and dog meshes as play.
 
 ## Controls
 
 - WASD: walk or drive; V: enter/leave the van.
+- R: recipient intercom; click bells. 1–3: timed delivery dialogue.
 - E: pick up, place or hand over a parcel. A correct handover earns 0 KPI.
+- Dog: E bite/scratch, Space jump, G mark a van, B bark.
 - F: camera; Space / left mouse: take a delivery photo. In the browser, **Download photo** saves the latest PNG.
 - M: map and ride invitations; Tab: release cursor; hold F1: full controls.
 

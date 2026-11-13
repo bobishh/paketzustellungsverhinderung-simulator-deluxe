@@ -21,6 +21,7 @@ pub(crate) struct Roads {
     dirty: bool,
     pending: Option<Mutex<mpsc::Receiver<Vec<(usize, Mesh)>>>>,
     roots: Vec<Entity>,
+    pub generation: u64,
 }
 
 impl Roads {
@@ -28,10 +29,15 @@ impl Roads {
         if !self.streets.contains_key(&street.id) {
             self.streets.insert(street.id.clone(), street.clone());
             self.dirty = true;
+            self.generation += 1;
         }
     }
     pub fn remove(&mut self, id: &str) {
         self.dirty |= self.streets.remove(id).is_some();
+        self.generation += 1;
+    }
+    pub fn radar(&self) -> String {
+        serde_json::to_string(&self.streets.values().map(|s|serde_json::json!({"points":s.centerline.iter().map(|p|[p.east,-p.north]).collect::<Vec<_>>(),"width":s.width_m})).collect::<Vec<_>>()).unwrap()
     }
 }
 
@@ -80,7 +86,9 @@ pub(crate) fn rebuild(
         #[cfg(not(target_arch = "wasm32"))]
         thread::spawn(work);
         #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move { work(); });
+        wasm_bindgen_futures::spawn_local(async move {
+            work();
+        });
     }
 }
 
@@ -105,7 +113,9 @@ fn union(mut pieces: Vec<MultiPolygon<f64>>) -> MultiPolygon<f64> {
 }
 
 fn layers(streets: &[Street]) -> Vec<(usize, MultiPolygon<f64>)> {
-    let mut layers: [Vec<MultiPolygon<f64>>; 7] = std::array::from_fn(|_| Vec::new());
+    // Road width decides which surface continues through a junction. A tiny
+    // asphalt footpath must not cut a broad paved street into two pieces.
+    let mut layers: [Vec<MultiPolygon<f64>>; 10] = std::array::from_fn(|_| Vec::new());
     for street in streets {
         let kind = match street.surface {
             Surface::Asphalt => 0,
@@ -114,9 +124,15 @@ fn layers(streets: &[Street]) -> Vec<(usize, MultiPolygon<f64>)> {
         };
         for sidewalk in [false, true] {
             let layer = if sidewalk {
-                6
+                9
             } else {
-                kind + if street.width_m < 3.0 { 3 } else { 0 }
+                kind + if street.width_m >= 5.0 {
+                    0
+                } else if street.width_m >= 3.0 {
+                    3
+                } else {
+                    6
+                }
             };
             let mesh = crate::street_mesh(std::slice::from_ref(street), sidewalk, 0.0, 1.0);
             let Some(VertexAttributeValues::Float32x3(points)) =
@@ -146,7 +162,7 @@ fn layers(streets: &[Street]) -> Vec<(usize, MultiPolygon<f64>)> {
         let surface = union(pieces);
         let cut = surface.difference(&occupied);
         occupied = occupied.union(&surface);
-        result.push((if index == 6 { 1 } else { index % 3 }, cut));
+        result.push((if index == 9 { 1 } else { index % 3 }, cut));
     }
     result
 }
@@ -219,6 +235,59 @@ fn build(streets: &[Street]) -> Vec<(usize, Mesh)> {
 mod tests {
     use super::*;
     use geo::Area;
+    #[test]
+    fn a_narrow_asphalt_path_does_not_cut_a_wide_paved_road() {
+        use geo::{Contains, Point};
+        use paket_geo::EastNorth;
+        let road = Street {
+            id: "road".into(),
+            centerline: vec![
+                EastNorth {
+                    east: -10.,
+                    north: 0.,
+                },
+                EastNorth {
+                    east: 10.,
+                    north: 0.,
+                },
+            ],
+            width_m: 8.,
+            sidewalk_m: [1., 1.],
+            name: None,
+            surface: Surface::Paving,
+            spawnable: true,
+        };
+        let path = Street {
+            id: "path".into(),
+            centerline: vec![
+                EastNorth {
+                    east: 0.,
+                    north: -10.,
+                },
+                EastNorth {
+                    east: 0.,
+                    north: 10.,
+                },
+            ],
+            width_m: 1.8,
+            sidewalk_m: [0., 0.],
+            name: None,
+            surface: Surface::Asphalt,
+            spawnable: false,
+        };
+        let layers = layers(&[road, path]);
+        let center = Point::new(0., 0.);
+        assert!(
+            layers
+                .iter()
+                .any(|(kind, p)| *kind == 1 && p.contains(&center))
+        );
+        assert!(
+            !layers
+                .iter()
+                .any(|(kind, p)| *kind == 0 && p.contains(&center))
+        );
+    }
     #[test]
     fn intersecting_surfaces_and_sidewalks_never_share_area() {
         let scene = paket_geo::parse_overpass(

@@ -297,6 +297,27 @@ impl Models {
         }
     }
 
+    pub fn grimace(&self, commands: &mut Commands, parent: Entity) {
+        self.part(
+            commands,
+            parent,
+            &self.sphere,
+            &self.dark,
+            Transform::from_xyz(0., 1.52, -0.117).with_scale(Vec3::new(0.056, 0.04, 0.012)),
+        );
+        for side in [-1., 1.] {
+            self.part(
+                commands,
+                parent,
+                &self.box_mesh,
+                &self.dark,
+                Transform::from_xyz(side * 0.04, 1.637, -0.112)
+                    .with_scale(Vec3::new(0.037, 0.007, 0.01))
+                    .with_rotation(Quat::from_rotation_z(side * 0.28)),
+            );
+        }
+    }
+
     pub fn person(&self, commands: &mut Commands, parent: Entity, courier: bool) {
         let jacket = if courier { &self.coat } else { &self.resident };
         let mut part = |point, size, material, shape: &Handle<Mesh>| {
@@ -868,7 +889,11 @@ pub(crate) fn interact(
     )>,
     mut vans: Query<(&mut Transform, &mut Visibility), (With<ParkedVan>, Without<Player>)>,
     spatial: SpatialQuery,
+    jobs: Res<crate::jobs::Jobs>,
 ) {
+    if jobs.interaction_active() {
+        return;
+    }
     let Ok((entity, mut player, mut controller, mut transform, mut velocity, mut spin)) =
         actor.single_mut()
     else {
@@ -1020,6 +1045,7 @@ pub(crate) fn drive(
     time: Res<Time>,
     clock: Res<Time<Virtual>>,
     mut ride: ResMut<Ride>,
+    jobs: Res<crate::jobs::Jobs>,
     terrain: Option<Res<crate::terrain::Landscape>>,
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut actor: Query<(
@@ -1035,7 +1061,9 @@ pub(crate) fn drive(
         return;
     };
     let dt = time.delta_secs();
-    let active = ride.mouse_look && window.single().map_or(true, |window| window.focused);
+    let active = ride.mouse_look
+        && !jobs.interaction_active()
+        && window.single().map_or(true, |window| window.focused);
     let axis = |positive, negative| {
         if active {
             f32::from(keys.pressed(positive)) - f32::from(keys.pressed(negative))
@@ -1132,6 +1160,13 @@ pub(crate) fn camera_follow(
     };
     let dt = time.delta_secs();
     let forward = actor.forward().as_vec3();
+    if let Some(view) = jobs.interaction_camera() {
+        *camera = view;
+        if let Ok(mut visible) = visuals.get_mut(player.visual) {
+            *visible = Visibility::Hidden;
+        }
+        return;
+    }
     let changed = rig.form != Some(player.form);
     rig.form = Some(player.form);
     let indoors = player.form == Avatar::Dog && jobs.dog_indoors(actor.translation);

@@ -48,7 +48,7 @@ pub(crate) fn material(images: &mut Assets<Image>, kind: Surface, tint: Color) -
                             + (v * 12. + (u * 2.).sin()).sin() * 0.10,
                     )
                 }
-                Surface::Asphalt => ([77., 80., 79.], grain * 10. + broad * 4., grain * 0.20),
+                Surface::Asphalt => ([64., 68., 70.], grain * 5. + broad, grain * 0.08),
                 Surface::Paving => {
                     let row = y / 32;
                     let u = (x + (row % 2) * 32) % 64;
@@ -57,13 +57,13 @@ pub(crate) fn material(images: &mut Assets<Image>, kind: Surface, tint: Color) -
                     let bevel = (edge / 2.0).min(1.0);
                     let stone = noise(((x + (row % 2) * 32) / 64) as u32, row as u32);
                     (
-                        [149., 143., 128.],
-                        grain * 4. + stone * 12. - (1. - bevel) * 32.,
-                        bevel * 0.8,
+                        [130., 130., 124.],
+                        grain * 2. + stone * 7. - (1. - bevel) * 18.,
+                        bevel * 0.25,
                     )
                 }
                 Surface::Gravel => ([122., 115., 99.], grain * 18. + broad * 6., grain * 0.35),
-                Surface::Grass => ([86., 104., 61.], grain * 8. + broad * 7., grain * 0.13),
+                Surface::Grass => ([68., 88., 55.], grain * 6., grain * 0.07),
                 Surface::Plaster => ([244., 243., 240.], grain * 5., grain * 0.12),
                 Surface::Fabric => {
                     let weave = if (x / 2 + y / 2) % 2 == 0 { 1.0 } else { -1.0 };

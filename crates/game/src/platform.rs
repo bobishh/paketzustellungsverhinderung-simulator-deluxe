@@ -42,7 +42,9 @@ mod browser {
         #[wasm_bindgen(catch, js_name = gamePhoto)]
         fn photo(bytes: &[u8], index: usize) -> Result<(), JsValue>;
     }
-    #[wasm_bindgen(inline_js = "export function gameCapture(wanted){globalThis.paketWantsPointer= wanted; if(!wanted && document.pointerLockElement) document.exitPointerLock();}")]
+    #[wasm_bindgen(
+        inline_js = "export function gameCapture(wanted){globalThis.paketWantsPointer= wanted; if(!wanted && document.pointerLockElement) document.exitPointerLock();}"
+    )]
     extern "C" {
         #[wasm_bindgen(js_name = gameCapture)]
         pub fn capture_cursor(wanted: bool);
@@ -88,3 +90,20 @@ mod browser {
 }
 #[cfg(target_arch = "wasm32")]
 pub use browser::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ui_event(_: &str, _: &str) {}
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ui_commands() -> String {
+    "[]".into()
+}
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(
+    inline_js = "export function gameUi(name,json){globalThis.dispatchEvent(new CustomEvent(name,{detail:JSON.parse(json)}));} export function gameCommands(){return JSON.stringify(globalThis.paketCommands?.splice(0,16)||[]);}"
+)]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameUi)]
+    pub fn ui_event(name: &str, json: &str);
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameCommands)]
+    pub fn ui_commands() -> String;
+}

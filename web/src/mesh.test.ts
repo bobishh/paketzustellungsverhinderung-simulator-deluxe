@@ -20,3 +20,10 @@ it('recognizes a browser invite and rejects incompatible native or malformed inv
     expect(() => decodeInvite(JSON.stringify(value))).toThrow();
   }
 });
+it('bounds the shared clock and difficulty', () => {
+  const fact={kind:'shift',origin,device:'host',elapsed_ms:1000,difficulty:1};
+  expect(validFact(fact,origin,'host')).toBe(true);
+  expect(validFact({...fact,elapsed_ms:2880001},origin)).toBe(false);
+  expect(validFact({...fact,difficulty:3},origin)).toBe(false);
+  expect(validFact({...fact,elapsed_ms:-1},origin)).toBe(false);
+});

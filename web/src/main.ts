@@ -1,4 +1,7 @@
 import './style.css';
+import './lobby';
+import './minimap';
+import { initProfile } from './profile';
 import { restoreIdentity, signIn } from './identity';
 import { mesh } from './mesh';
 
@@ -19,7 +22,7 @@ globalThis.paketPhoto = (bytes, index) => {
   link.href = photoUrl; link.download = `delivery-${index + 1}-${Date.now()}.png`; link.hidden = false;
   paketNotify('Photo ready. Download it using the button above.');
 };
-const ready = restoreIdentity(callbackHash).then(path => { if (path && path.startsWith('/') && !path.startsWith('//')) history.replaceState(null, '', path); })
+const ready = restoreIdentity(callbackHash).then(async path => { if (path && path.startsWith('/') && !path.startsWith('//')) history.replaceState(null, '', path); await initProfile(); })
   .catch(error => { paketNotify(`Identity: ${error.message}`); throw error; });
 void ready.catch(() => undefined);
 document.querySelector('#signin')!.addEventListener('click', () => { void signIn().catch(error => paketNotify(error.message)); });
@@ -43,6 +46,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     const lat = Number(query.get('lat')), lon = Number(query.get('lon'));
     globalThis.paketArgs = join ? ['--join', `${location.origin}/#join=${join}`] :
       query.has('lat') && query.has('lon') && Number.isFinite(lat) && Math.abs(lat) <= 85 && Number.isFinite(lon) && Math.abs(lon) <= 180 ? ['--lat', String(lat), '--lon', String(lon)] : [];
+    if (query.has('press-shot')) { globalThis.paketArgs.push('--press-shot'); document.body.classList.add('press-shot'); }
     status.textContent = 'Loading the neighbourhood simulator…';
     const url = '/game/paket_game.js';
     const { default: init } = await import(/* @vite-ignore */ url);

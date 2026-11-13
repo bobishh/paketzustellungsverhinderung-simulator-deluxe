@@ -77,6 +77,11 @@ pub fn join(invitation: &str) -> Result<SharedStreet, String> {
 }
 
 impl SharedStreet {
+    pub fn host_device(&self) -> String {
+        decode_invite(&self.invitation)
+            .map(|invite| invite.room.unwrap_or_else(|| invite.addr.id.to_string()))
+            .unwrap_or_default()
+    }
     pub fn publish(&self, fact: Fact) -> Result<(), String> {
         if !fact.origin().matches(self.origin) {
             return Err("fact origin does not match the session".into());
@@ -180,6 +185,7 @@ async fn run(
     let _ = ready_tx.send(Ok((device.clone(), invitation)));
 
     let mut latest_pose: Option<Fact> = None;
+    let mut shift: Option<Fact> = None;
     let mut delivery: Option<Fact> = None;
     let mut actions = VecDeque::new();
     let mut delivery_sent = Instant::now() - Duration::from_secs(1);
@@ -195,6 +201,7 @@ async fn run(
         loop {
             match outbound_rx.try_recv() {
                 Ok(fact) if fact.origin().matches(origin) => match fact {
+                    Fact::Shift { .. } => shift = Some(fact),
                     Fact::Pose { .. } | Fact::Actor { .. } => latest_pose = Some(fact),
                     Fact::StreetAction { .. } => {
                         if actions.len() == 64 {
@@ -213,6 +220,9 @@ async fn run(
             }
         }
         if delivery_sent.elapsed() >= Duration::from_millis(400) {
+            if let Some(fact) = &shift {
+                broadcast_fact(&sender, fact).await;
+            }
             if let Some(fact) = &delivery {
                 broadcast_fact(&sender, fact).await;
             }

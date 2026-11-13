@@ -13,6 +13,24 @@ pub(crate) struct Dog {
     length: f32,
     distance: f32,
     direction: f32,
+    mood: Mood,
+}
+
+#[derive(Default)]
+enum Mood {
+    #[default]
+    Patrol,
+    Warning(f32),
+    Leap {
+        start: Vec3,
+        end: Vec3,
+        began: f32,
+        hit: bool,
+    },
+    Recover(f32),
+}
+pub(crate) fn leap_height(progress: f32) -> f32 {
+    (progress.clamp(0., 1.) * std::f32::consts::PI).sin() * 0.65
 }
 
 pub(crate) struct DogKit {
@@ -99,6 +117,7 @@ impl DogKit {
                     length: patrol_length,
                     distance,
                     direction: 1.0,
+                    mood: Mood::Patrol,
                 },
                 Transform::from_translation(start + forward * distance)
                     .with_rotation(facing(forward)),
@@ -158,7 +177,7 @@ impl DogKit {
                     ),
                     (
                         &self.cream,
-                        Vec3::new(0., 0.486, -0.400),
+                        Vec3::new(0., 0.463, -0.400),
                         Vec3::new(0.065, 0.045, 0.068),
                     ),
                     (
@@ -249,23 +268,85 @@ fn facing(direction: Vec3) -> Quat {
 
 pub(crate) fn walk(
     time: Res<Time>,
-    player: Query<&Transform, (With<Player>, Without<Dog>)>,
+    mut player: Query<(Entity, &mut Player, &Transform), Without<Dog>>,
     mut dogs: Query<(&mut Dog, &mut Transform)>,
+    mut jobs: ResMut<crate::jobs::Jobs>,
+    spatial: avian3d::prelude::SpatialQuery,
 ) {
-    let rider = player.single().ok().map(|bike| bike.translation);
+    let Ok((actor, mut player, rider)) = player.single_mut() else {
+        return;
+    };
     let dt = time.delta_secs();
+    let now = time.elapsed_secs();
     for (mut dog, mut transform) in &mut dogs {
-        let mut speed = 0.85;
-        if let Some(rider) = rider {
-            let away = (transform.translation - rider).with_y(0.0);
-            if away.length_squared() < 3.5_f32.powi(2) {
-                let escape = away.dot(dog.forward);
-                if escape.abs() > 0.35 {
-                    dog.direction = escape.signum();
-                }
-                speed = 1.8;
+        let delta = (rider.translation - transform.translation).with_y(0.);
+        let visible = player.form == paket_session::Avatar::Courier
+            && !jobs.interaction_active()
+            && delta.length() < 5.0
+            && crate::jobs::visible(
+                &spatial,
+                rider.translation + Vec3::Y * 0.5,
+                transform.translation + Vec3::Y * 0.4,
+                actor,
+            );
+        match &mut dog.mood {
+            Mood::Patrol if visible => {
+                dog.mood = Mood::Warning(now + 2.8);
+                jobs.status = "Grrrr… Dog watching you. Step back before it jumps.".into();
+                continue;
             }
+            Mood::Warning(deadline) => {
+                if !visible {
+                    dog.mood = Mood::Recover(now + 2.);
+                    continue;
+                }
+                transform.rotation = facing(delta);
+                if now >= *deadline {
+                    dog.mood = Mood::Leap {
+                        start: transform.translation,
+                        end: rider.translation.with_y(transform.translation.y)
+                            - delta.normalize_or_zero() * 0.45,
+                        began: now,
+                        hit: false,
+                    };
+                }
+                continue;
+            }
+            Mood::Leap {
+                start,
+                end,
+                began,
+                hit,
+            } => {
+                let t = ((now - *began) / 0.72).clamp(0., 1.);
+                transform.translation = start.lerp(*end, t) + Vec3::Y * leap_height(t);
+                transform.rotation = facing(*end - *start)
+                    * Quat::from_rotation_x(-0.38 * (t * std::f32::consts::PI).sin());
+                if !*hit && t >= 0.55 && visible && delta.length() < 1.25 {
+                    *hit = true;
+                    player.stunned_until = now + 1.2;
+                    jobs.status = "OUCH · Dog bite! Move away while it recovers.".into();
+                }
+                if t >= 1. {
+                    dog.mood = Mood::Recover(now + 8.);
+                }
+                continue;
+            }
+            Mood::Recover(until) => {
+                if now >= *until {
+                    dog.mood = Mood::Patrol;
+                }
+                let home = dog.start + dog.forward * dog.distance;
+                let delta = home - transform.translation;
+                transform.translation += delta.clamp_length_max(dt * 1.5);
+                if delta.length() > 0.1 {
+                    transform.rotation = facing(delta);
+                }
+                continue;
+            }
+            _ => {}
         }
+        let speed = 0.85;
         let next = (dog.distance + dog.direction * speed * dt).clamp(0.0, dog.length);
         dog.distance = next;
         transform.translation = dog.start + dog.forward * dog.distance;
@@ -276,6 +357,72 @@ pub(crate) fn walk(
         if (next == 0.0 || next == dog.length) && speed < 1.0 {
             dog.direction = if next == 0.0 { 1.0 } else { -1.0 };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn npc_warns_before_a_jump_and_recovers_after_biting() {
+        let mut app = crate::ride_tests::headless_ride(crate::actors::Role::Courier);
+        let (entity, position, right) = {
+            let w = app.world_mut();
+            let (e, t) = w
+                .query_filtered::<(Entity, &Transform), With<Player>>()
+                .single(w)
+                .unwrap();
+            (e, t.translation, t.right().as_vec3())
+        };
+        let old = {
+            let w = app.world_mut();
+            w.query_filtered::<Entity, With<Dog>>()
+                .iter(w)
+                .collect::<Vec<_>>()
+        };
+        for e in old {
+            app.world_mut().despawn(e);
+        }
+        let point = (position + right * 2.5).with_y(0.045);
+        let dog = app
+            .world_mut()
+            .spawn((
+                Dog {
+                    start: point,
+                    forward: Vec3::X,
+                    length: 10.,
+                    distance: 0.,
+                    direction: 1.,
+                    mood: Mood::Patrol,
+                },
+                Transform::from_translation(point),
+            ))
+            .id();
+        for _ in 0..140 {
+            app.update();
+        }
+        assert!(matches!(
+            app.world().get::<Dog>(dog).unwrap().mood,
+            Mood::Warning(_)
+        ));
+        assert_eq!(app.world().get::<Player>(entity).unwrap().stunned_until, 0.);
+        for _ in 0..100 {
+            app.update();
+        }
+        assert!(matches!(
+            app.world().get::<Dog>(dog).unwrap().mood,
+            Mood::Recover(_)
+        ));
+        assert!(
+            app.world().get::<Player>(entity).unwrap().stunned_until
+                > app.world().resource::<Time>().elapsed_secs()
+        );
+    }
+    #[test]
+    fn leap_lands_on_the_ground() {
+        assert!(leap_height(0.).abs() < 1e-6);
+        assert!((leap_height(0.5) - 0.65).abs() < 1e-6);
+        assert!(leap_height(1.).abs() < 1e-6);
     }
 }
 

@@ -1,11 +1,14 @@
 mod actors;
+mod browser_ui;
 mod buildings;
 mod dogs;
 mod jobs;
 mod map;
 mod platform;
+mod press_scene;
 mod roads;
 mod shapes;
+mod shift;
 mod surfaces;
 mod terrain;
 #[cfg(debug_assertions)]
@@ -106,6 +109,9 @@ fn main() {
         )
         .expect("the default font asset can be replaced");
     install_ride(&mut app);
+    if platform::arguments().iter().any(|a| a == "--press-shot") {
+        press_scene::install(&mut app);
+    }
     #[cfg(debug_assertions)]
     if let Ok(directory) = env::var("PAKET_VISUAL_CHECK") {
         visual_check::install(&mut app, directory.into());
@@ -135,7 +141,7 @@ fn main() {
         app.world_mut().flush();
     } else {
         app.insert_resource(
-            map::Map::new(cache.with_file_name("map"), args.offline, MAUSOHRWEG)
+            map::Map::new(cache.with_file_name("map"), args.offline, map::KREUZBERG)
                 .with_role(args.role),
         );
     }
@@ -144,6 +150,7 @@ fn main() {
 
 fn install_ride(app: &mut App) {
     app.init_resource::<actors::Controls>()
+        .init_resource::<shift::Shift>()
         .add_systems(OnEnter(Mode::Ride), (setup, terrain::start))
         .add_systems(OnExit(Mode::Ride), cleanup_ride)
         .add_systems(
@@ -157,6 +164,8 @@ fn install_ride(app: &mut App) {
             (
                 (
                     stream_tiles,
+                    shift::tick,
+                    jobs::service_update,
                     cursor_control,
                     actors::interact,
                     actors::camera_follow,
@@ -181,7 +190,9 @@ fn install_ride(app: &mut App) {
                 terrain::finish,
                 roads::rebuild,
                 nearby_buildings,
+                jobs::service_ui.after(jobs::courier),
                 capture_frame,
+                browser_ui::update,
             )
                 .run_if(in_state(Mode::Ride)),
         );
@@ -262,7 +273,9 @@ fn start_ride(
     let guest = session
         .as_ref()
         .map_or(invite.is_some(), |session| !session.is_host);
+    platform::ui_event("paket-mode", "\"ride\"");
     commands.init_resource::<Jobs>();
+    commands.insert_resource(shift::Shift::new(guest));
     commands.insert_resource(Ride {
         origin,
         role,
@@ -305,6 +318,7 @@ fn cleanup_ride(
 fn cursor_control(
     keys: Res<ButtonInput<KeyCode>>,
     mut ride: ResMut<Ride>,
+    jobs: Res<Jobs>,
     mut window: Query<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
 ) {
     if keys.just_pressed(KeyCode::Escape) {
@@ -314,7 +328,7 @@ fn cursor_control(
         ride.mouse_look = !ride.mouse_look;
     }
     if let Ok((window, mut cursor)) = window.single_mut() {
-        let captured = window.focused && ride.mouse_look;
+        let captured = window.focused && ride.mouse_look && !jobs.interaction_active();
         #[cfg(target_arch = "wasm32")]
         platform::capture_cursor(captured);
         #[cfg(target_arch = "wasm32")]
@@ -1037,6 +1051,7 @@ fn sync_peers(
     clock: Res<Time<Virtual>>,
     mut ride: ResMut<Ride>,
     mut jobs: ResMut<Jobs>,
+    mut shift: ResMut<shift::Shift>,
     models: Res<Models>,
     street: Res<StreetMaterials>,
     mut players: Query<(&mut Player, &Transform, &LinearVelocity), Without<RemoteActor>>,
@@ -1069,6 +1084,17 @@ fn sync_peers(
     let mut snapshots = HashMap::<String, RemoteActor>::new();
     for fact in session.poll() {
         let (device, sequence, pose) = match fact {
+            Fact::Shift {
+                device,
+                elapsed_ms,
+                difficulty,
+                ..
+            } => {
+                if !session.is_host && device == session.host_device() {
+                    shift.receive(elapsed_ms, difficulty);
+                }
+                continue;
+            }
             Fact::Actor {
                 device,
                 sequence,
@@ -1316,6 +1342,7 @@ fn action_prompt(
 fn hud(
     ride: Res<Ride>,
     jobs: Res<Jobs>,
+    shift: Res<shift::Shift>,
     keys: Res<ButtonInput<KeyCode>>,
     mut text: Query<&mut Text, With<Hud>>,
     actor: Query<(&Player, &Transform, &LinearVelocity)>,
@@ -1325,7 +1352,7 @@ fn hud(
     let Ok(mut text) = text.single_mut() else {
         return;
     };
-    let mut display = String::new();
+    let mut display = format!("{}\n", shift.label());
     if let Ok((player, position, velocity)) = actor.single() {
         match player.form {
             Avatar::Courier => {
@@ -1661,30 +1688,6 @@ fn street_mesh(
                     a_right,
                     b_right,
                 );
-            }
-        }
-        if !sidewalk && points.len() >= 2 {
-            for (end, neighbor) in [(0, 1), (points.len() - 1, points.len() - 2)] {
-                let center = points[end];
-                let out = (center - points[neighbor]).normalize_or_zero();
-                if out == Vec3::ZERO {
-                    continue;
-                }
-                let across = out.cross(Vec3::Y);
-                let edge = |step| {
-                    let angle = (step as f32 / 10.0 - 0.5) * std::f32::consts::PI;
-                    center + (out * angle.cos() + across * angle.sin()) * half_width
-                };
-                for step in 0..10 {
-                    push_triangle(
-                        &mut positions,
-                        &mut normals,
-                        &mut indices,
-                        center,
-                        edge(step + 1),
-                        edge(step),
-                    );
-                }
             }
         }
     }
