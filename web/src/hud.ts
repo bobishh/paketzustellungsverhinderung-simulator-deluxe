@@ -1,6 +1,7 @@
 import './hud.css';
-type Stop = { index:number; address:string; name:string; distance:number; state:'in-van'|'carrying'|'photo-due'|'filed'|'handed' };
-type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null };
+import {deliveryGuidance, type DeliveryStop} from './guidance';
+type Stop = DeliveryStop;
+type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number };
 const root=document.querySelector<HTMLElement>('#ride-hud')!;
 const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!;
 const settings=document.querySelector<HTMLButtonElement>('#settings')!;
@@ -8,7 +9,7 @@ const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
 const send=(command:{action:string;[key:string]:unknown})=>globalThis.paketCommands.push(command);
 const el=(id:string)=>document.getElementById(id)!;
 const put=(id:string,value:string)=>{const node=el(id);if(node.textContent!==value)node.textContent=value;};
-const states:Record<Stop['state'],string>={'in-van':'In the van',carrying:'In your hands','photo-due':'Photo needed',filed:'Delivered',handed:'Handed over'};
+const states:Record<Stop['state'],string>={'in-van':'In the van',carrying:'In your hands','in-flight':'In flight','photo-due':'Photo needed',filed:'Delivered',handed:'Handed over'};
 const buttons=new Map<number,HTMLButtonElement>();
 let ride=false, state:Hud|undefined, lastStatus='', expanded=false;
 let sensitivity=0.0024;
@@ -20,7 +21,7 @@ function showStops(open:boolean){expanded=open;el('route-list').hidden=!open;el(
 el('route-toggle').onclick=()=>showStops(!expanded);
 el('hud-map').onclick=()=>send({action:'map'});
 function openSettings(){
-  if(!ride||state?.interaction||dialog.open)return;
+  if(!ride||state?.interaction||document.querySelector('dialog[open]'))return;
   send({action:'menu',open:true});void document.exitPointerLock();dialog.showModal();
 }
 function closeSettings(){
@@ -47,7 +48,7 @@ window.addEventListener('keydown',e=>{
     return;
   }
   if(e.key==='F1'){e.preventDefault();e.stopImmediatePropagation();if(dialog.open)closeSettings();else openSettings();}
-  else if(dialog.open)e.stopImmediatePropagation();
+  else if(document.querySelector('dialog[open]'))e.stopImmediatePropagation();
 },true);
 canvas.addEventListener('pointerdown',()=>{
   if(ride&&!state?.interaction&&!document.querySelector('dialog[open]')){
@@ -76,9 +77,9 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
     put('stop-address',selected.address);put('stop-recipient',selected.name);put('stop-distance',meters(selected.distance));
     put('stop-state',states[selected.state]);
   }
-  const holding=active&&['carrying','photo-due'].includes(active.state)&&s.active!==s.selected;
+  const holding=active&&['carrying','in-flight','photo-due'].includes(active.state)&&s.active!==s.selected;
   el('held-parcel').hidden=!holding;
-  if(holding)put('held-parcel',`${active.state==='carrying'?'Still in your hands':'Awaiting photo'}: ${active.address}`);
+  if(holding)put('held-parcel',`${active.state==='carrying'?'Still in your hands':active.state==='in-flight'?'In flight':'Awaiting photo'}: ${active.address}`);
   for(const stop of s.routes){
     let button=buttons.get(stop.index);
     if(!button){
@@ -92,16 +93,11 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
     button.querySelector('em')!.textContent=states[stop.state];button.querySelector('.route-distance')!.textContent=meters(stop.distance);
     button.disabled=s.interaction;
   }
-  let action='E · Collect a parcel at your van';
-  if(s.ended)action='Shift finished · Choose a new district from the map';
-  else if(s.form==='van')action='V · Leave the van';
-  else if(s.form==='dog')action='E · Bite / scratch     Space · Jump     G · Mark a van';
-  else if(typeof s.bulk==='boolean')action=s.bulk?'E · Abandon the batch at the marked spot':'E · Collect the whole batch at your van';
-  else if(s.photo)action=s.photoReady?'Space · Take delivery photo':'Aim at the parcel · F to put camera away';
-  else if(active?.state==='carrying')action='R · Ring the intercom     E · Leave parcel     Q · Return to van';
-  else if(active?.state==='photo-due')action='F · Photograph the parcel     E · Pick it up';
-  else if(active&&['filed','handed'].includes(active.state))action='Delivery complete · Choose the next stop';
-  put('hud-action',action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
+  const guidance=deliveryGuidance(s);
+  put('delivery-step',guidance.step);put('delivery-detail',guidance.detail);
+  put('hud-action',guidance.action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
+  el('shock-status').hidden=!(s.stunSeconds>0);
+  if(s.stunSeconds>0)put('shock-status',`BITTEN · IN SHOCK · ${s.stunSeconds.toFixed(1)}s`);
   const difficulty=el('difficulty') as HTMLSelectElement;
   if(document.activeElement!==difficulty)difficulty.value=String(s.difficulty);
   difficulty.disabled=!s.canChangeDifficulty;

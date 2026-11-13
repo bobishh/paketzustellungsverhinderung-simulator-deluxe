@@ -10,6 +10,7 @@ use crate::{
 use bevy::prelude::*;
 pub(crate) fn update(
     time: Res<Time>,
+    clock: Res<Time<Virtual>>,
     roads: Res<Roads>,
     jobs: Res<Jobs>,
     shift: Res<Shift>,
@@ -55,6 +56,12 @@ pub(crate) fn update(
     });
     hud["photo"] = serde_json::json!(p.photo);
     hud["photoReady"] = serde_json::json!(jobs.photo_ready);
+    hud["stunSeconds"] = serde_json::json!((p.stunned_until - clock.elapsed_secs()).max(0.0));
+    hud["vanDistance"] = serde_json::json!(
+        p.parked
+            .and_then(|e| vans.get(e).ok())
+            .map(|v| crate::actors::horizontal_distance(v.translation, t.translation))
+    );
     hud["speed"] = serde_json::json!((velocity.0.xz().length() * 3.6).round());
     hud["loading"] = serde_json::json!(ride.waiting_for_tile);
     hud["dogPrompt"] = serde_json::json!(jobs.dog_status(t.translation));

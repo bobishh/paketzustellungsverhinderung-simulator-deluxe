@@ -59,9 +59,16 @@ struct Parcel {
 enum ParcelState {
     InVan,
     Carrying,
+    Flying { position: Vec3 },
     Dropped { position: Vec3, wrong_address: bool },
     Filed(i32),
     Handed,
+}
+
+#[derive(Component)]
+pub(crate) struct FlyingParcel {
+    index: usize,
+    still_for: f32,
 }
 
 #[derive(Clone)]
@@ -122,7 +129,10 @@ impl Jobs {
         }
         self.navigation = index;
         let busy = self.parcels.get(self.selected).is_some_and(|p| {
-            matches!(p.state, ParcelState::Carrying | ParcelState::Dropped { .. })
+            matches!(
+                p.state,
+                ParcelState::Carrying | ParcelState::Flying { .. } | ParcelState::Dropped { .. }
+            )
         });
         if !busy {
             self.selected = index;
@@ -165,7 +175,9 @@ impl Jobs {
             "routes":self.parcels.iter().enumerate().map(|(i,p)|serde_json::json!({
                 "index":i,"address":p.label,"name":service::citizen(&p.address).name,
                 "distance":actors::horizontal_distance(position,p.point),
-                "state":match p.state { ParcelState::InVan=>"in-van",ParcelState::Carrying=>"carrying",ParcelState::Dropped{..}=>"photo-due",ParcelState::Filed(_)=>"filed",ParcelState::Handed=>"handed" }
+                "parcelDistance":match p.state { ParcelState::Flying{position:p}|ParcelState::Dropped{position:p,..}=>Some(position.distance(p)),_=>None },
+                "rung":self.service.visited.contains(&p.address),
+                "state":match p.state { ParcelState::InVan=>"in-van",ParcelState::Carrying=>"carrying",ParcelState::Flying{..}=>"in-flight",ParcelState::Dropped{..}=>"photo-due",ParcelState::Filed(_)=>"filed",ParcelState::Handed=>"handed" }
             })).collect::<Vec<_>>(),
             "prompt":self.prompt,"status":self.status,"interaction":self.service.modal.is_some(),"menu":self.menu_open,
             "bulk":self.service.bulk.map(|(_,loaded)|loaded),
@@ -342,7 +354,9 @@ impl Jobs {
         self.parcels
             .get(self.navigation)
             .and_then(|parcel| match parcel.state {
-                ParcelState::Dropped { position, .. } => Some(position),
+                ParcelState::Flying { position } | ParcelState::Dropped { position, .. } => {
+                    Some(position)
+                }
                 ParcelState::Filed(_) | ParcelState::Handed => None,
                 _ => Some(parcel.point),
             })
@@ -375,6 +389,7 @@ impl Jobs {
             let state = match parcel.state {
                 ParcelState::InVan => "in van",
                 ParcelState::Carrying => "carrying",
+                ParcelState::Flying { .. } => "in flight",
                 ParcelState::Dropped { .. } => "photo due",
                 ParcelState::Filed(_) => "filed",
                 ParcelState::Handed => "handed over / 0 KPI",
@@ -721,6 +736,61 @@ pub(crate) fn courier(
         return;
     };
     let state = parcel.state;
+    if matches!(state, ParcelState::Flying { .. }) {
+        jobs.prompt = "Parcel in flight · Wait for it to land, then [F] take a photo.".into();
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyT) && matches!(state, ParcelState::Carrying) && !player.photo {
+        if !jobs.service.visited.contains(&parcel.address) {
+            jobs.status =
+                "Ring the recipient first: R at the marked intercom, then click their bell.".into();
+            return;
+        }
+        let forward = actor.forward().as_vec3();
+        let hand = actor.translation + Vec3::Y * 0.48;
+        let shape = Collider::cuboid(0.48, 0.30, 0.37);
+        if spatial
+            .cast_shape(
+                &shape,
+                hand,
+                actor.rotation,
+                Dir3::new(forward).unwrap(),
+                &ShapeCastConfig::from_max_distance(0.85),
+                &SpatialQueryFilter::from_excluded_entities([actor_entity]),
+            )
+            .is_some()
+        {
+            jobs.status = "No room to throw. Step away from the wall or van.".into();
+            return;
+        }
+        let start = hand + forward * 0.7;
+        let root = commands
+            .spawn((
+                Transform::from_translation(start).with_rotation(actor.rotation),
+                Visibility::default(),
+                DespawnOnExit(Mode::Ride),
+                RigidBody::Dynamic,
+                shape,
+                SweptCcd::default(),
+                LinearVelocity(forward * 9.0 + Vec3::Y * 3.8),
+                AngularVelocity(actor.right().as_vec3() * 6.0),
+                LinearDamping(0.35),
+                AngularDamping(2.0),
+                Friction::new(0.8),
+                Restitution::new(0.18),
+                FlyingParcel {
+                    index,
+                    still_for: 0.0,
+                },
+            ))
+            .id();
+        models.parcel(&mut commands, root);
+        jobs.parcels[index].prop = Some(root);
+        jobs.parcels[index].dropped_at = None;
+        jobs.parcels[index].state = ParcelState::Flying { position: start };
+        jobs.status = "Parcel launched. Wait for it to land, then F and Space for proof.".into();
+        return;
+    }
     if keys.just_pressed(KeyCode::KeyQ) && matches!(state, ParcelState::Carrying) {
         if player
             .parked
@@ -786,8 +856,9 @@ pub(crate) fn courier(
     } else {
         jobs.prompt = match state {
             ParcelState::Carrying => {
-                "[E] Leave parcel at a door  |  Wrong address + photo = 100 KPI"
+                "[E] Leave parcel at a door  |  [T] Throw  |  Wrong address + photo = 100 KPI"
             }
+            ParcelState::Flying { .. } => "Wait for the parcel to land",
             ParcelState::Dropped { .. } if within_reach => "[F] Camera  |  [E] Pick parcel back up",
             ParcelState::Dropped { .. } => {
                 "[F] Camera  |  Frame the parcel, then [Space] take photo"
@@ -865,7 +936,7 @@ pub(crate) fn courier(
                 {
                     jobs.parcels[index].state = ParcelState::Carrying;
                     jobs.caught = false;
-                    jobs.status = "Find a doorstep. E drops the parcel.".into();
+                    jobs.status = "Parcel collected. Follow the marker, press R and click the recipient’s bell.".into();
                 } else {
                     jobs.status = "Get a parcel from your van.".into();
                 }
@@ -1039,6 +1110,75 @@ pub(crate) fn courier(
                 }
             },
         );
+}
+
+pub(crate) fn settle_thrown(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut jobs: ResMut<Jobs>,
+    buildings: Query<&BuildingLink>,
+    mut flying: Query<(
+        Entity,
+        &mut FlyingParcel,
+        &Transform,
+        &LinearVelocity,
+        &AngularVelocity,
+    )>,
+) {
+    for (entity, mut flight, transform, linear, angular) in &mut flying {
+        let Some(parcel) = jobs.parcels.get(flight.index) else {
+            continue;
+        };
+        if parcel.prop != Some(entity) || !matches!(parcel.state, ParcelState::Flying { .. }) {
+            continue;
+        }
+        let position = transform.translation;
+        if !position.is_finite() || position.y < -10.0 {
+            jobs.parcels[flight.index].state = ParcelState::InVan;
+            jobs.parcels[flight.index].prop = None;
+            commands.entity(entity).despawn();
+            jobs.status = "Parcel recovered to your van. Collect it with E.".into();
+            continue;
+        }
+        jobs.parcels[flight.index].state = ParcelState::Flying { position };
+        if linear.0.length_squared() < 0.09 && angular.0.length_squared() < 0.09 {
+            flight.still_for += time.delta_secs();
+        } else {
+            flight.still_for = 0.0;
+        }
+        if flight.still_for < 0.3 {
+            continue;
+        }
+        let nearby = buildings
+            .iter()
+            .filter(|b| !b.accessory)
+            .filter(|b| position.distance(jobs.doorstep(b).with_y(0.17)) <= DROP_DISTANCE)
+            .min_by(|a, b| {
+                position
+                    .distance_squared(a.entrance)
+                    .total_cmp(&position.distance_squared(b.entrance))
+            })
+            .map(|b| b.id.clone());
+        let parcel = &mut jobs.parcels[flight.index];
+        let wrong_address = nearby.as_ref() != Some(&parcel.address);
+        parcel.dropped_at = nearby.clone();
+        parcel.state = ParcelState::Dropped {
+            position,
+            wrong_address,
+        };
+        // A resting proof prop must not occlude its own photo ray or move after filing.
+        commands.entity(entity).remove::<(
+            FlyingParcel,
+            RigidBody,
+            Collider,
+            LinearVelocity,
+            AngularVelocity,
+        )>();
+        if let Some(address) = nearby {
+            jobs.open_doors.insert(address);
+        }
+        jobs.status = "Parcel landed. F opens the camera; frame the box and press Space.".into();
+    }
 }
 
 fn photo_score(wrong_address: bool, caught: bool) -> i32 {
@@ -1258,6 +1398,114 @@ mod tests {
         app.world_mut().entity_mut(close).insert(bevy::ui::Pressed);
         app.update();
         *app.world_mut().get_mut::<Transform>(actor).unwrap() = previous;
+    }
+
+    #[test]
+    fn thrown_parcel_requires_a_bell_hits_walls_lands_and_can_be_recovered() {
+        let mut app = headless_ride(Role::Courier);
+        let actor = player(&mut app);
+        press(&mut app, KeyCode::KeyE);
+        press(&mut app, KeyCode::KeyT);
+        assert_eq!(
+            app.world().resource::<Jobs>().parcels[0].state,
+            ParcelState::Carrying
+        );
+        assert!(app.world().resource::<Jobs>().status.contains("Ring"));
+        ring_selected(&mut app);
+        // Isolate a real physical wall and floor from the neighbourhood's incidental layout.
+        let blockers: Vec<_> = app.world_mut().query_filtered::<Entity, (With<Collider>, Without<Player>, Without<crate::WorldFloor>)>()
+            .iter(app.world()).collect();
+        for entity in blockers {
+            app.world_mut().entity_mut(entity).remove::<Collider>();
+        }
+        let residents: Vec<_> = app
+            .world_mut()
+            .query_filtered::<Entity, With<Resident>>()
+            .iter(app.world())
+            .collect();
+        for entity in residents {
+            app.world_mut().entity_mut(entity).remove::<Resident>();
+        }
+        let start = *app.world().get::<Transform>(actor).unwrap();
+        let forward = start.forward().as_vec3();
+        app.world_mut().spawn((
+            RigidBody::Static,
+            Collider::cuboid(12.0, 6.0, 0.2),
+            Transform::from_translation((start.translation + forward * 4.0).with_y(3.0))
+                .with_rotation(start.rotation),
+        ));
+        app.update();
+        press(&mut app, KeyCode::KeyT);
+        assert!(matches!(
+            app.world().resource::<Jobs>().parcels[0].state,
+            ParcelState::Flying { .. }
+        ));
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(app.world().resource::<Jobs>().selected, 0);
+        assert_eq!(app.world().resource::<Jobs>().navigation, 1);
+        for _ in 0..400 {
+            app.update();
+            if matches!(
+                app.world().resource::<Jobs>().parcels[0].state,
+                ParcelState::Dropped { .. }
+            ) {
+                break;
+            }
+        }
+        let jobs = app.world().resource::<Jobs>();
+        let ParcelState::Dropped { position, .. } = jobs.parcels[0].state else {
+            panic!("throw did not settle: {:?}", jobs.parcels[0].state);
+        };
+        assert!(
+            (position - start.translation).dot(forward) < 3.9,
+            "box passed through the wall"
+        );
+        let prop = jobs.parcels[0].prop.unwrap();
+        assert!(
+            app.world().get::<Collider>(prop).is_none(),
+            "resting prop must not block its own photo"
+        );
+        app.world_mut()
+            .get_mut::<Transform>(actor)
+            .unwrap()
+            .translation = (position - forward * 0.8).with_y(0.87);
+        app.update();
+        press(&mut app, KeyCode::KeyE);
+        assert_eq!(
+            app.world().resource::<Jobs>().parcels[0].state,
+            ParcelState::Carrying
+        );
+        assert!(app.world().get_entity(prop).is_err());
+    }
+
+    #[test]
+    fn bite_causes_one_startle_jump_and_blocks_camera_until_recovery() {
+        let mut app = headless_ride(Role::Courier);
+        let actor = player(&mut app);
+        for _ in 0..10 {
+            app.update();
+        }
+        let before = app.world().get::<Transform>(actor).unwrap().translation.y;
+        let now = app.world().resource::<Time<Virtual>>().elapsed_secs();
+        app.world_mut()
+            .get_mut::<Player>(actor)
+            .unwrap()
+            .stunned_until = now + 1.2;
+        press(&mut app, KeyCode::KeyF);
+        assert!(!app.world().get::<Player>(actor).unwrap().photo);
+        assert!(app.world().get::<LinearVelocity>(actor).unwrap().0.y > 2.0);
+        let mut highest = before;
+        for _ in 0..110 {
+            app.update();
+            highest = highest.max(app.world().get::<Transform>(actor).unwrap().translation.y);
+        }
+        assert!(highest > before + 0.3, "bite must visibly lift the courier");
+        assert!(
+            app.world().get::<Transform>(actor).unwrap().translation.y < before + 0.15,
+            "shock must not repeatedly relaunch the courier"
+        );
+        press(&mut app, KeyCode::KeyF);
+        assert!(app.world().get::<Player>(actor).unwrap().photo);
     }
 
     #[test]

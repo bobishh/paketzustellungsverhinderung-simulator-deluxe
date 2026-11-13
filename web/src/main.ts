@@ -2,6 +2,8 @@ import './style.css';
 import './lobby';
 import './minimap';
 import './hud';
+import './help';
+import './bite-audio';
 import { initGameAnalytics } from './analytics';
 import { initProfile } from './profile';
 import { restoreIdentity, signIn } from './identity';

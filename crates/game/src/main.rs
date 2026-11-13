@@ -184,6 +184,7 @@ fn install_ride(app: &mut App) {
                 )
                     .chain(),
                 follow_floor,
+                jobs::settle_thrown.before(jobs::residents),
                 invite_control,
                 return_to_map,
                 dogs::walk,

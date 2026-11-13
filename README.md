@@ -39,17 +39,24 @@ The browser HUD shows the shift clock, KPI, current delivery, an expandable rout
 
 The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Residents have deterministic names, away slots and different response delays. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
 
+A bite causes a brief shock: one jump, flailing arms, a small camera jolt and blocked movement/parcel actions for 1.2 seconds (NPC dog) or 1.5 seconds (player dog). The browser adds a procedural yelp, with a sound toggle in settings. No parcel or KPI is lost.
+
 NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
 
 The browser minimap uses the loaded street geometry and actual actor positions. Player careers live in the application's IndexedDB store and replicate over the game mesh as signed, application-scoped per-device records. Peers verify Identity certificate chains and signatures before merging monotonic counters. Profiles combine the same person's devices without double-counting replays; new face seeds and guest-to-Identity career attachment persist across reloads. The portrait is procedural. This is peer replication through joined games: independent cross-device discovery through the Identity resource catalogue is not wired yet, and there is no always-online keeper. Clients retain received replicas locally.
 
 The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lon=13.3908&press-shot`. The scene uses the same actor and dog meshes as play.
 
+## How to play
+
+Use **How to play** in the browser header for the delivery walkthrough, scoring and dogs. The HUD identifies the current delivery step. A text version is in [the field manual](docs/manual.md).
+
 ## Controls
 
 - WASD: walk or drive; V: enter/leave the van.
 - R: recipient intercom; click bells. 1–3: timed delivery dialogue.
 - Tab / Shift+Tab: next / previous delivery while the game is focused. In forms and dialogs Tab keeps normal focus navigation.
+- T: throw the held parcel after ringing the recipient. Wait for it to land, then photograph it or pick it back up.
 - Q near your van: return the held parcel, then collect the selected one with E.
 - E: pick up, place or hand over a parcel. A correct handover earns 0 KPI.
 - Dog: E bite/scratch, Space jump, G mark a van, B bark.

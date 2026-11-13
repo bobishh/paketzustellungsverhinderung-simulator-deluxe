@@ -748,7 +748,10 @@ pub(crate) fn animate_vehicles(
 
 pub(crate) fn animate_people(
     time: Res<Time>,
+    clock: Res<Time<Virtual>>,
+    players: Query<&Player>,
     mut walkers: Query<(
+        Entity,
         &mut WalkCycle,
         &GlobalTransform,
         &Children,
@@ -756,7 +759,10 @@ pub(crate) fn animate_people(
     )>,
     mut hips: Query<(&Hip, &mut Transform)>,
 ) {
-    for (mut walk, transform, children, holding) in &mut walkers {
+    for (entity, mut walk, transform, children, holding) in &mut walkers {
+        let shocked = players
+            .iter()
+            .any(|p| p.visual == entity && p.stunned_until > clock.elapsed_secs());
         let here = transform.translation();
         let distance = walk
             .previous
@@ -769,7 +775,13 @@ pub(crate) fn animate_people(
         let blend = blend(14.0, time.delta_secs());
         for entity in children.iter() {
             if let Ok((hip, mut leg)) = hips.get_mut(entity) {
-                let swing = if holding && hip.0.abs() < 0.9 {
+                let swing = if shocked {
+                    if hip.0.abs() < 0.9 {
+                        1.7 + (clock.elapsed_secs() * 35.0).sin() * 0.22
+                    } else {
+                        (clock.elapsed_secs() * 28.0).sin() * hip.0 * 0.35
+                    }
+                } else if holding && hip.0.abs() < 0.9 {
                     1.05
                 } else if moving {
                     walk.phase.sin() * hip.0 * 0.42
@@ -899,6 +911,9 @@ pub(crate) fn interact(
     else {
         return;
     };
+    if time.elapsed_secs() < player.stunned_until {
+        return;
+    }
     if player.form == Avatar::Courier && keys.just_pressed(KeyCode::KeyF) {
         player.photo = !player.photo;
         player.pitch = -0.12;
@@ -1055,6 +1070,7 @@ pub(crate) fn drive(
         &mut LinearVelocity,
         &mut AngularVelocity,
     )>,
+    mut reacted_to_bite: Local<f32>,
 ) {
     let Ok((player, mut controller, transform, mut linear, mut angular)) = actor.single_mut()
     else {
@@ -1119,6 +1135,11 @@ pub(crate) fn drive(
         )
     };
     if clock.elapsed_secs() < player.stunned_until {
+        if player.stunned_until > *reacted_to_bite {
+            *reacted_to_bite = player.stunned_until;
+            linear.0.y = linear.0.y.max(3.8);
+            crate::platform::ui_event("paket-bite", "{}");
+        }
         horizontal = Vec3::ZERO;
         angular.0.y = 0.0;
     }
@@ -1140,6 +1161,7 @@ pub(crate) fn drive(
 
 pub(crate) fn camera_follow(
     time: Res<Time>,
+    clock: Res<Time<Virtual>>,
     controls: Res<Controls>,
     keys: Res<ButtonInput<KeyCode>>,
     actor: Query<(Entity, &Player, &Controller, &Transform, &LinearVelocity)>,
@@ -1159,6 +1181,9 @@ pub(crate) fn camera_follow(
         return;
     };
     let dt = time.delta_secs();
+    let shock = (player.stunned_until - clock.elapsed_secs()).clamp(0.0, 1.0);
+    let jolt = Quat::from_rotation_z((clock.elapsed_secs() * 35.0).sin() * shock * 0.035)
+        * Quat::from_rotation_x((clock.elapsed_secs() * 28.0).sin() * shock * 0.02);
     let forward = actor.forward().as_vec3();
     if let Some(view) = jobs.interaction_camera() {
         *camera = view;
@@ -1186,7 +1211,7 @@ pub(crate) fn camera_follow(
         }
         let eye = actor.translation + Vec3::Y * if indoors { 0.22 } else { 0.69 };
         *camera = Transform::from_translation(eye + forward * if indoors { 0.18 } else { 0.12 })
-            .with_rotation(actor.rotation * Quat::from_rotation_x(player.pitch));
+            .with_rotation(actor.rotation * Quat::from_rotation_x(player.pitch) * jolt);
         return;
     }
     let crouching = player.form == Avatar::Courier
@@ -1234,6 +1259,7 @@ pub(crate) fn camera_follow(
     }
     camera.translation = position;
     camera.look_to(look * Vec3::NEG_Z, Vec3::Y);
+    camera.rotation *= jolt;
 }
 
 pub(crate) fn pose(
