@@ -227,11 +227,11 @@ impl Geometry {
     }
 }
 
-fn strip(span: &Span, from: f32, to: f32) -> Mesh {
+fn strip(span: &Span, from: f32, to: f32, minimum_height: f32) -> Mesh {
     let mut mesh = Geometry::default();
     for i in 0..span.points.len() - 1 {
-        let a = span.points[i];
-        let b = span.points[i + 1];
+        let a = span.points[i].with_y(span.points[i].y.max(minimum_height));
+        let b = span.points[i + 1].with_y(span.points[i + 1].y.max(minimum_height));
         let u = span.sides[i];
         let v = span.sides[i + 1];
         mesh.quad(
@@ -325,7 +325,7 @@ pub(crate) fn rebuild(
         .id();
     bridges.root = Some(root);
     for span in &bridges.spans {
-        let deck = strip(span, -span.left, span.right);
+        let deck = strip(span, -span.left, span.right, GROUND);
         let collider = Collider::trimesh_from_mesh(&deck).expect("nondegenerate bridge deck");
         commands.spawn((
             BridgeDeck,
@@ -348,8 +348,10 @@ pub(crate) fn rebuild(
             (span.road_half, span.right, &street_materials.paving),
         ] {
             if to - from > 0.01 {
+                // Flat roads render at +0.026 above the physical ground.
+                // Match that at the bank so grass cannot show through the ramp.
                 commands.spawn((
-                    Mesh3d(meshes.add(crate::shapes::lit(strip(span, from, to)))),
+                    Mesh3d(meshes.add(crate::shapes::lit(strip(span, from, to, 0.026)))),
                     MeshMaterial3d(material.clone()),
                     Transform::IDENTITY,
                     ChildOf(root),
