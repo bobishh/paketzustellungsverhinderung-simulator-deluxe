@@ -164,6 +164,9 @@ impl Shift {
         );
     }
     fn remaining(&self, host: bool) -> u64 {
+        if !self.ended() {
+            return VOTE_MS;
+        }
         if host {
             (DURATION_MS + VOTE_MS).saturating_sub(self.raw_elapsed())
         } else {
@@ -333,8 +336,10 @@ mod tests {
     fn shared_clock_waits_for_a_vote_and_rejects_old_days() {
         let mut s = Shift::new(true);
         assert!(!s.ready);
+        assert_eq!(s.remaining(true), VOTE_MS);
         s.receive(180000, 2);
         assert_eq!(s.minute(), 570);
+        assert_eq!(s.remaining(true), VOTE_MS);
         s.receive(DURATION_MS, 1);
         assert!(s.ended());
         s.receive_snapshot(2, 0, 1, None, vec![], 0);
