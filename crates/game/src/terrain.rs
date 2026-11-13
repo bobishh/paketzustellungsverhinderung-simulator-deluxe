@@ -28,6 +28,10 @@ pub(crate) struct Landscape {
 }
 
 impl Landscape {
+    #[cfg(test)]
+    pub(crate) fn test_water(water: Vec<Area>) -> Self {
+        Self { water, ..default() }
+    }
     pub fn water_at(&self, point: EastNorth) -> bool {
         self.water.iter().any(|area| area.contains(point))
     }

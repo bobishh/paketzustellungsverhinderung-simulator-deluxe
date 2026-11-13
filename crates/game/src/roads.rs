@@ -119,7 +119,7 @@ fn layers(streets: &[Street]) -> Vec<(usize, MultiPolygon<f64>)> {
     // Road width decides which surface continues through a junction. A tiny
     // asphalt footpath must not cut a broad paved street into two pieces.
     let mut layers: [Vec<MultiPolygon<f64>>; 10] = std::array::from_fn(|_| Vec::new());
-    for street in streets {
+    for street in streets.iter().filter(|s| s.bridge.is_none()) {
         let kind = match street.surface {
             Surface::Asphalt => 0,
             Surface::Paving => 1,
@@ -259,6 +259,7 @@ mod tests {
             name: None,
             surface: Surface::Paving,
             spawnable: true,
+            bridge: None,
         };
         let path = Street {
             id: "path".into(),
@@ -277,6 +278,7 @@ mod tests {
             name: None,
             surface: Surface::Asphalt,
             spawnable: false,
+            bridge: None,
         };
         let layers = layers(&[road, path]);
         let center = Point::new(0., 0.);

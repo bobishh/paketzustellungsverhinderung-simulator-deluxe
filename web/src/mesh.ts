@@ -37,7 +37,7 @@ export function validFact(fact: Fact, origin: Origin, device?: string): boolean 
   if (fact.kind === 'actor') {
     const p = fact.pose as any;
     return !!finite(p, ['east', 'north', 'up', 'heading', 'velocity_east', 'velocity_north']) &&
-      ['courier', 'dog', 'van'].includes(p.avatar) && (p.parked_van == null || !!finite(p.parked_van, ['east', 'north', 'heading']));
+      ['courier', 'dog', 'van'].includes(p.avatar) && (p.parked_van == null || (!!finite(p.parked_van, ['east', 'north', 'heading']) && (p.parked_van.up === undefined || !!finite(p.parked_van, ['up']))));
   }
   const e = fact.event as any;
   return e?.action === 'door' ? label(e.building_id) : e?.action === 'bite' ? label(e.target) :

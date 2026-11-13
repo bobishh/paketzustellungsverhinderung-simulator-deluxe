@@ -89,6 +89,8 @@ pub struct Street {
     pub name: Option<String>,
     pub surface: Surface,
     pub spawnable: bool,
+    /// OSM bridge layer; relative stacking order, not an absolute elevation.
+    pub bridge: Option<i8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,6 +278,17 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
                     name: element.tags.get("name").cloned(),
                     surface,
                     spawnable,
+                    bridge: element
+                        .tags
+                        .get("bridge")
+                        .filter(|v| !matches!(v.as_str(), "no" | "false" | "0"))
+                        .map(|_| {
+                            element
+                                .tags
+                                .get("layer")
+                                .and_then(|v| v.parse::<i8>().ok())
+                                .unwrap_or(1)
+                        }),
                 });
             }
         }

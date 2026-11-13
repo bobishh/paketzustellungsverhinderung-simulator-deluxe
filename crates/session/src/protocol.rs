@@ -43,7 +43,13 @@ pub enum Avatar {
 pub struct VanPose {
     pub east: f32,
     pub north: f32,
+    #[serde(default = "legacy_ground_height")]
+    pub up: f32,
     pub heading: f32,
+}
+
+fn legacy_ground_height() -> f32 {
+    -0.04
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,5 +172,19 @@ impl Fact {
             | Self::StreetAction { device, .. } => Some(device),
             Self::Delivery { .. } => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parked_van_elevation_round_trips_and_old_peers_stay_on_the_ground() {
+        let pose: VanPose = serde_json::from_str(r#"{"east":1,"north":2,"heading":0}"#).unwrap();
+        assert_eq!(pose.up, -0.04);
+        let elevated = VanPose { up: 2.345, ..pose };
+        let decoded: VanPose =
+            serde_json::from_str(&serde_json::to_string(&elevated).unwrap()).unwrap();
+        assert_eq!(decoded, elevated);
     }
 }

@@ -13,6 +13,25 @@ fn origin() -> LatLon {
 }
 
 #[test]
+fn real_berlin_footbridges_keep_their_bridge_layer() {
+    let scene = parse_overpass(
+        include_bytes!("../../../fixtures/berlin-bridges.json"),
+        origin(),
+    )
+    .unwrap();
+    assert_eq!(scene.streets.len(), 2);
+    assert!(
+        scene
+            .streets
+            .iter()
+            .all(|s| s.bridge == Some(1) && !s.spawnable)
+    );
+    let normal =
+        parse_overpass(include_bytes!("../../../fixtures/kreuzberg.json"), origin()).unwrap();
+    assert!(normal.streets.iter().all(|s| s.bridge.is_none()));
+}
+
+#[test]
 fn known_point_projects_within_a_decimeter() {
     let point = project(
         LatLon {

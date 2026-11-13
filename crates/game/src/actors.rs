@@ -1062,6 +1062,7 @@ pub(crate) fn drive(
     mut ride: ResMut<Ride>,
     jobs: Res<crate::jobs::Jobs>,
     terrain: Option<Res<crate::terrain::Landscape>>,
+    bridges: Option<Res<crate::bridges::Bridges>>,
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut actor: Query<(
         &Player,
@@ -1150,13 +1151,29 @@ pub(crate) fn drive(
     ride.waiting_for_tile = current != next && !ride.loaded.contains_key(&next);
     if ride.waiting_for_tile
         || terrain.is_some_and(|terrain| {
-            terrain.water_at(east_north(transform.translation + horizontal * dt))
-                && !terrain.water_at(east_north(transform.translation))
+            water_blocks_move(
+                &terrain,
+                bridges.as_deref(),
+                transform.translation,
+                transform.translation + horizontal * dt,
+            )
         })
     {
         horizontal = Vec3::ZERO;
     }
     linear.0 = horizontal.with_y(linear.0.y);
+}
+
+fn water_blocks_move(
+    terrain: &crate::terrain::Landscape,
+    bridges: Option<&crate::bridges::Bridges>,
+    from: Vec3,
+    to: Vec3,
+) -> bool {
+    let deck = |p| bridges.and_then(|b| b.height_at(p)).is_some();
+    terrain.water_at(east_north(to))
+        && !deck(to)
+        && (!terrain.water_at(east_north(from)) || deck(from))
 }
 
 pub(crate) fn camera_follow(
@@ -1283,6 +1300,7 @@ pub(crate) fn pose(
             .map(|t| VanPose {
                 east: t.translation.x,
                 north: -t.translation.z,
+                up: t.translation.y,
                 heading: yaw(t),
             }),
     }

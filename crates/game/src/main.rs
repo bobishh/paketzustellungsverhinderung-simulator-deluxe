@@ -1,4 +1,5 @@
 mod actors;
+mod bridges;
 mod browser_ui;
 mod buildings;
 mod dogs;
@@ -195,6 +196,7 @@ fn install_ride(app: &mut App) {
                 actors::animate_vehicles,
                 terrain::finish,
                 roads::rebuild,
+                bridges::rebuild.after(roads::rebuild),
                 traffic::spawn,
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
@@ -344,6 +346,7 @@ fn cleanup_ride(
     commands.remove_resource::<Jobs>();
     commands.remove_resource::<StreetMaterials>();
     commands.remove_resource::<roads::Roads>();
+    commands.remove_resource::<bridges::Bridges>();
     commands.remove_resource::<traffic::TrafficWorld>();
 }
 
@@ -579,7 +582,7 @@ impl RemoteActor {
             return Some(transform.translation);
         }
         self.parked
-            .map(|van| Vec3::new(van.east, -0.04, -van.north))
+            .map(|van| Vec3::new(van.east, van.up, -van.north))
     }
 }
 
@@ -649,6 +652,7 @@ fn setup(
     mut scattering: ResMut<Assets<ScatteringMedium>>,
 ) {
     commands.insert_resource(roads::Roads::default());
+    commands.insert_resource(bridges::Bridges::default());
     commands.insert_resource(traffic::TrafficWorld::new(&mut meshes, &mut materials));
     commands.insert_resource(Models::new(&mut meshes, &mut materials, &mut images));
     let earth = scattering.add(ScatteringMedium::earth(256, 256));
@@ -1243,9 +1247,12 @@ fn sync_peers(
         {
             continue;
         }
-        let parked = pose
-            .parked_van
-            .filter(|van| van.east.is_finite() && van.north.is_finite() && van.heading.is_finite());
+        let parked = pose.parked_van.filter(|van| {
+            van.east.is_finite()
+                && van.north.is_finite()
+                && van.up.is_finite()
+                && van.heading.is_finite()
+        });
         snapshots.insert(
             device.clone(),
             RemoteActor {
@@ -1326,7 +1333,7 @@ fn remote_visuals(
             .van_visual
             .get_or_insert_with(|| models.avatar(commands, entity, Avatar::Van, dogs, 0.0));
         let inverse = transform.rotation.inverse();
-        let ground = Vec3::new(van.east, -0.04, -van.north);
+        let ground = Vec3::new(van.east, van.up, -van.north);
         commands.entity(visual).insert(
             Transform::from_translation(inverse * (ground - transform.translation))
                 .with_rotation(inverse * Quat::from_rotation_y(van.heading)),

@@ -35,3 +35,14 @@ it('validates day-scoped street actions while accepting legacy first-day peers',
   expect(validFact({...fact,day:0},origin)).toBe(false);
   expect(validFact({...fact,day:1.5},origin)).toBe(false);
 });
+
+it('accepts elevated and legacy parked vans but rejects invalid elevations', () => {
+  const fact = { kind: 'actor', origin, device: 'alice', sequence: 2,
+    pose: { avatar: 'courier', east: 1, north: 2, up: 0, heading: 0, velocity_east: 0, velocity_north: 0,
+      parked_van: { east: 1, north: 2, heading: 0 } } };
+  expect(validFact(fact, origin)).toBe(true);
+  const atHeight = (up: number) => ({ ...fact, pose: { ...fact.pose, parked_van: { ...fact.pose.parked_van, up } } });
+  expect(validFact(atHeight(2.345), origin)).toBe(true);
+  expect(validFact(atHeight(NaN), origin)).toBe(false);
+  expect(validFact(atHeight(Infinity), origin)).toBe(false);
+});

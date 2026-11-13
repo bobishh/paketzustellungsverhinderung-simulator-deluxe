@@ -161,7 +161,11 @@ pub(crate) fn spawn(
                 continue;
             }
             let offset = if pedestrian {
-                street.width_m * 0.5 + 0.8
+                if street.bridge.is_some() {
+                    (street.width_m * 0.5 + street.sidewalk_m[1] - 0.45).max(0.)
+                } else {
+                    street.width_m * 0.5 + 0.8
+                }
             } else {
                 street.width_m * 0.22
             };
@@ -227,6 +231,8 @@ pub(crate) fn drive(
     spatial: SpatialQuery,
     player: Query<&Player>,
     vans: Query<Entity, With<ParkedVan>>,
+    bridges: Option<Res<crate::bridges::Bridges>>,
+    decks: Query<Entity, With<crate::bridges::BridgeDeck>>,
     mut traffic: Query<(Entity, &mut Traffic, &mut Transform, &mut LinearVelocity)>,
 ) {
     let van = player
@@ -237,6 +243,10 @@ pub(crate) fn drive(
         .filter(|e| vans.contains(*e));
     for (entity, mut actor, mut transform, mut velocity) in &mut traffic {
         velocity.0 = Vec3::ZERO;
+        if let Some(bridges) = &bridges {
+            let ground = bridges.height_at(transform.translation).unwrap_or(0.);
+            transform.translation.y = ground + if actor.pedestrian { 0.9 } else { 0.8 };
+        }
         if shift.ended() {
             continue;
         }
@@ -245,7 +255,11 @@ pub(crate) fn drive(
             actor.awarded = false;
             actor.stopped = 0.;
         }
-        if transform.translation.distance(actor.path[actor.next]) < 1.2 {
+        if (transform.translation - actor.path[actor.next])
+            .with_y(0.)
+            .length()
+            < 1.2
+        {
             let next = actor.next as isize + actor.direction;
             if next < 0 || next >= actor.path.len() as isize {
                 actor.direction = -actor.direction;
@@ -265,6 +279,8 @@ pub(crate) fn drive(
             Collider::cuboid(1.85, 1., 4.)
         };
         let target = Transform::IDENTITY.looking_to(direction, Vec3::Y).rotation;
+        let filter =
+            SpatialQueryFilter::from_excluded_entities(std::iter::once(entity).chain(decks.iter()));
         let hit = spatial.cast_shape(
             &shape,
             transform.translation,
@@ -274,7 +290,7 @@ pub(crate) fn drive(
                 max_distance: if actor.pedestrian { 0.7 } else { 3.2 },
                 ..default()
             },
-            &SpatialQueryFilter::from_excluded_entities([entity]),
+            &filter,
         );
         if let Some(hit) = hit {
             actor.stopped += time.delta_secs();
@@ -301,7 +317,7 @@ pub(crate) fn drive(
                             max_distance: 0.8,
                             ..default()
                         },
-                        &SpatialQueryFilter::from_excluded_entities([entity]),
+                        &filter,
                     )
                     .is_none()
                 {
