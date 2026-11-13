@@ -122,7 +122,7 @@ pub(crate) fn service_update(
         return;
     };
     let now = time.elapsed_secs();
-    if jobs.menu_open {
+    if jobs.menu_open || now < player.stunned_until {
         return;
     }
     if shift.ended() || !shift.ready {
