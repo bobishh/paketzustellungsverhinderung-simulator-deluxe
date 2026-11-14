@@ -1,3 +1,4 @@
+import { publishMesh } from './mesh-directory';
 import { IrohMeshNode, waitForRelayUrl } from '@meta-uber/mesh-transport';
 import { profile, certificates } from './identity';
 import { profileBatch, acceptProfile } from './profile';
@@ -6,7 +7,7 @@ import { signEnvelope, verifyEnvelope, verifyDeviceCertificateChain } from '@met
 type Origin = { lat: number; lon: number };
 type Fact = { kind: string; origin: Origin; device?: string; sequence?: number; [key: string]: unknown };
 type Invite = { protocol: 'paket-web/1'; origin: Origin; host: string; relay: string; room: string };
-type State = { node: IrohMeshNode; invite: Invite; host: boolean; closed: boolean; inbox: Fact[]; latest: Map<string, Fact>; pending: Fact[]; timer?: ReturnType<typeof setTimeout> };
+type State = { node: IrohMeshNode; invite: Invite; host: boolean; closed: boolean; inbox: Fact[]; latest: Map<string, Fact>; pending: Fact[]; unlist?: () => void; timer?: ReturnType<typeof setTimeout> };
 const sessions = new Map<string, State>();
 export function decodeInvite(value: string): Invite {
   const encoded = value.includes('#join=') ? value.split('#join=')[1] : null;
@@ -15,6 +16,11 @@ export function decodeInvite(value: string): Invite {
       !Number.isFinite(invite.origin?.lat) || Math.abs(invite.origin.lat) > 85 || !Number.isFinite(invite.origin?.lon) || Math.abs(invite.origin.lon) > 180 ||
       typeof invite.relay !== 'string' || new URL(invite.relay).protocol !== 'https:') throw new Error('Invalid browser ride invitation');
   return invite;
+}
+export function inviteLink(invite: Invite, base: string): string {
+  const canonical = JSON.stringify({protocol:invite.protocol,origin:{lat:invite.origin.lat,lon:invite.origin.lon},host:invite.host,relay:invite.relay,room:invite.room});
+  const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(canonical))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  return `${base}/#join=${encoded}`;
 }
 export function validFact(fact: Fact, origin: Origin, device?: string): boolean {
   if (!fact || !fact.origin || Math.abs(fact.origin.lat - origin.lat) > 1e-9 || Math.abs(fact.origin.lon - origin.lon) > 1e-9 ||
@@ -69,8 +75,10 @@ export const mesh = {
     let relay: string;
     try { relay = await waitForRelayUrl(raw); } catch (error) { await node.close(); throw error; }
     const host = !invitation;
+    const ownerToken = [...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    const room = [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ownerToken)))].map(x=>x.toString(16).padStart(2,'0')).join('');
     const invite: Invite = bootstrap ?? { protocol: 'paket-web/1', origin, host: node.endpointId, relay,
-      room: [...crypto.getRandomValues(new Uint8Array(32))].map(x => x.toString(16).padStart(2, '0')).join('') };
+      room };
     const s: State = { node, invite, host, closed: false, inbox: [], latest: new Map(), pending: [] };
     const proof = await signEnvelope(profile.privateKeys.devicePrivateKey, { kind: 'paket-player', endpoint: node.endpointId,
       room: invite.room, expiresAt: Date.now() + 6 * 3600_000 }, profile.device.deviceId, 'PAKET/1');
@@ -95,6 +103,11 @@ export const mesh = {
         return { profiles: profileBatch(profileCursor++), protocol: 'paket-web/1', facts: [...s.latest.values()].filter(fact => fact.device !== endpoint).slice(-128) };
       });
     } else {
+      // Do not enter a shift until the host has accepted the invitation.
+      try {
+        const hello: any = await node.request(invite.host, {protocol:'paket-web/1',room:invite.room,auth,facts:[],profiles:[]}, 8000);
+        if (hello?.protocol !== 'paket-web/1') throw new Error('Invalid host reply');
+      } catch (error) { await node.close(); throw error; }
       const tick = async () => {
         if (s.closed) return;
         const batch = s.pending.splice(0, 32);
@@ -113,8 +126,11 @@ export const mesh = {
       };
       s.timer = setTimeout(tick, 0);
     }
+    if (host && globalThis.paketPublicMesh) s.unlist = publishMesh(invite, ownerToken);
     sessions.set(node.endpointId, s);
     const json = JSON.stringify(invite);
+    const link = inviteLink(invite, location.origin);
+    globalThis.dispatchEvent(new CustomEvent('paket-session', {detail: {link, host}}));
     return JSON.stringify({ origin: invite.origin, device: node.endpointId, invitation: json, is_host: host });
   },
   publish(id: string, fact: Fact) {
@@ -126,5 +142,5 @@ export const mesh = {
     }
   },
   poll(id: string) { return sessions.get(id)?.inbox.splice(0) ?? []; },
-  close(id: string) { const s = sessions.get(id); if (!s) return; s.closed = true; clearTimeout(s.timer); sessions.delete(id); void s.node.close(); },
+  close(id: string) { const s = sessions.get(id); if (!s) return; s.closed = true; s.unlist?.(); clearTimeout(s.timer); sessions.delete(id); if (!sessions.size) globalThis.dispatchEvent(new CustomEvent('paket-session', {detail: null})); void s.node.close(); },
 };

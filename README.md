@@ -21,19 +21,19 @@ The deployment configuration targets:
 
 `paketzustellungsverhinderung-simulator-deluxe.meta-uber-engineer.dev`
 
-Run `wrangler deploy` from `web/` with the existing Cloudflare account. This creates the separate Worker and its custom domain; it does not replace the blog Worker.
+Run `npx wrangler deploy` from `web/` with the existing Cloudflare account. This creates the separate Worker and its custom domain; it does not replace the blog Worker.
 
 ## Identity and multiplayer
 
 Play as a guest or choose **Sign in with Identity**. The existing Identity portal signs authorization for this browser's device. The app verifies the challenge, origin, certificate chain and signed approval before adopting the identity. Private keys stay in browser storage. Returning from sign-in preserves a ride invitation.
 
-Browser multiplayer uses the existing MetaMesh Iroh WASM transport and relay. Choose **Play with friends**, then **Invite a friend** and open the link in another browser. The host must remain open. Browser invitations currently use `paket-web/1`; desktop gossip sessions are not interoperable with this browser protocol yet. The world is still selected by coordinates, not by a content-addressed world bundle.
+Browser multiplayer uses the existing MetaMesh Iroh WASM transport and relay. The starting screen lists public meshes with a **Refresh** button. Choose one to join, or choose **Play with friends** to host. Enable **List my mesh publicly** before hosting to let anyone join; leave it unchecked for invitation-only play. Use **Share mesh** in the header to view and copy the invitation, including after joining directly from a link. The host must remain open. Public invitations renew every 30 seconds and expire after 90 seconds without renewal; the Worker stores only these invitations in four bounded Durable Object directory partitions. The mesh continues carrying game state directly between peers. Browser invitations currently use `paket-web/1`; desktop gossip sessions are not interoperable with this browser protocol yet. The world is still selected by coordinates, not by a content-addressed world bundle.
 
 ## Streets, shifts and careers
 
 The starting screen offers Berlin, New York, São Paulo, Tokyo, Cape Town and Sydney, or a street-address search. Address searches run only on form submission, use a cached Photon proxy, and can fall back to Photon directly. `PHOTON_ORIGIN` can replace the proxy upstream. `python3 scripts/cache-cities.py` prepares public OSM starter geometry before a release.
 
-A shift fills a route of up to 12 unique delivery stops as neighbouring map tiles load. Delivery navigation is separate from the parcel in hand: inspecting another address never swaps or teleports a box. Successful handovers and saved delivery photos automatically select the next unfinished parcel. Courtyard passages tagged in OpenStreetMap cut matching openings in building facades and collision geometry.
+A shift fills a route of up to 12 unique delivery stops as neighbouring map tiles load. Delivery navigation is separate from the parcel in hand: inspecting another address never swaps or teleports a box. Successful handovers and saved delivery photos automatically select the next unfinished parcel. Public OSM playgrounds include fitted swings, slides and benches; mapped benches and street trees also appear as tiles load. Private playgrounds are excluded. Starter map caches include these features, and older native caches refresh when network access is available. Courtyard passages tagged in OpenStreetMap cut matching openings in building facades and collision geometry.
 
 The browser HUD shows the shift clock, KPI, current delivery, an expandable route and context controls. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
 
@@ -49,7 +49,7 @@ The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lo
 
 ## How to play
 
-Use **How to play** in the browser header for the delivery walkthrough, scoring and dogs. The HUD identifies the current delivery step. A text version is in [the field manual](docs/manual.md).
+The header has no home navigation. During a shift, Identity sign-in is hidden and photo download uses a button. Use **How to play** in the browser header for the delivery walkthrough, scoring and dogs. The HUD identifies the current delivery step. A text version is in [the field manual](docs/manual.md).
 
 ## Controls
 

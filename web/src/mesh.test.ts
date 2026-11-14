@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { decodeInvite, validFact } from './mesh';
+import { decodeInvite, validFact, inviteLink } from './mesh';
 const origin = { lat: 52.4, lon: 13.7 };
 it('rejects unrelated world coordinates, spoofed actor devices and oversized facts', () => {
   const fact = { kind: 'actor', origin, device: 'alice', sequence: 2,
@@ -45,4 +45,13 @@ it('accepts elevated and legacy parked vans but rejects invalid elevations', () 
   expect(validFact(atHeight(2.345), origin)).toBe(true);
   expect(validFact(atHeight(NaN), origin)).toBe(false);
   expect(validFact(atHeight(Infinity), origin)).toBe(false);
+});
+
+it('shares the same URL after joining from a directory JSON invitation', () => {
+  const invite = {protocol:'paket-web/1',origin,host:'a'.repeat(64),relay:'https://relay.example/',room:'b'.repeat(64)} as const;
+  const listed = {room:invite.room,host:invite.host,protocol:invite.protocol,relay:invite.relay,origin:{lon:origin.lon,lat:origin.lat}};
+  const link = inviteLink(invite,'https://game.test');
+  expect(link.startsWith('https://game.test/#join=')).toBe(true);
+  expect(inviteLink(decodeInvite(JSON.stringify(listed)),'https://game.test')).toBe(link);
+  expect(decodeInvite(link)).toEqual(invite);
 });

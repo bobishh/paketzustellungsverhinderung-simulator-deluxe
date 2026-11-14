@@ -5,10 +5,10 @@ cities=[('Berlin',52.4895,13.3908),('New York',40.7265,-73.9815),('Sao Paulo',-2
 root=pathlib.Path(__file__).resolve().parent.parent/'cache/osm';root.mkdir(parents=True,exist_ok=True)
 for name,lat,lon in cities:
     prefix=f'{lat:.5f}_{lon:.5f}'
-    if all((root/f'{prefix}_{x}_{y}.json').exists() for x in range(-3,4) for y in range(-3,4)): print(name,'cached',flush=True);continue
+    if all((root/f'{prefix}_{x}_{y}.json').exists() and json.loads((root/f'{prefix}_{x}_{y}.json').read_text()).get('paket_features') == 2 for x in range(-3,4) for y in range(-3,4)): print(name,'cached',flush=True);continue
     dy=180/6378137*180/math.pi;dx=dy/math.cos(math.radians(lat))
     box=f'{lat-3*dy},{lon-3*dx},{lat+4*dy},{lon+4*dx}'
-    query=f'[out:json][timeout:35];(way["building"]({box});way["highway"]({box}););out geom;'
+    query=f'[out:json][timeout:35];(way["building"]({box});way["highway"]({box});nwr["leisure"="playground"]({box});node["amenity"="bench"]({box});node["natural"="tree"]({box}););out geom;'
     result=None
     for host in ['overpass.openstreetmap.fr','overpass.kumi.systems']:
         try:
@@ -22,10 +22,10 @@ for name,lat,lon in cities:
         for y in range(-3,4):
             elements=[]
             for e in result['elements']:
-                g=e.get('geometry',[])
+                g=e.get('geometry',[]) or ([e] if 'lat' in e and 'lon' in e else [])
                 if not g:continue
                 if max(p['lat'] for p in g)<lat+y*dy or min(p['lat'] for p in g)>lat+(y+1)*dy or max(p['lon'] for p in g)<lon+x*dx or min(p['lon'] for p in g)>lon+(x+1)*dx:continue
                 elements.append(e)
-            (root/f'{prefix}_{x}_{y}.json').write_text(json.dumps({'version':0.6,'elements':elements},separators=(',',':')))
+            (root/f'{prefix}_{x}_{y}.json').write_text(json.dumps({'version':0.6,'paket_features':2,'elements':elements},separators=(',',':')))
     print(name,len(result['elements']),'ways cached',flush=True)
     time.sleep(1)

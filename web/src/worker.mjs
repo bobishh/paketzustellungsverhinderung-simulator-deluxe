@@ -10,11 +10,53 @@ export function mapRequest(url) {
   const ne = landscape ? project(1650, 1650) : project((x + 1) * 180, (y + 1) * 180);
   const bbox = [...sw, ...ne].map(n => n.toFixed(6)).join(',');
   const query = landscape ? `[out:json][timeout:16];(wr["natural"~"^(water|wood)$"](${bbox});wr["landuse"="forest"](${bbox});wr["waterway"="riverbank"](${bbox}););out geom;` :
-    `[out:json][timeout:25];(way["building"](${bbox});way["highway"](${bbox}););out geom;`;
+    `[out:json][timeout:25];(way["building"](${bbox});way["highway"](${bbox});nwr["leisure"="playground"](${bbox});node["amenity"="bench"](${bbox});node["natural"="tree"](${bbox}););out geom;`;
   return { query, file: `${lat.toFixed(5)}_${lon.toFixed(5)}_${landscape ? 'landscape' : `${x}_${y}`}.json` };
+}
+async function directory(request, env) {
+  const reply = (body, status = 200) => Response.json(body, {status, headers:{...headers,'cache-control':'no-store'}});
+  if (request.method === 'GET') {
+    const partitions = await Promise.all([0,1,2,3].map(i => env.MESH_DIRECTORY.getByName(`public-${i}`).list()));
+    return reply(partitions.flat());
+  }
+  if (!['PUT','DELETE'].includes(request.method)) return reply({error:'Method not allowed'},405);
+  if (request.headers.get('origin') !== new URL(request.url).origin) return reply({error:'Invalid origin'},403);
+  const token = request.headers.get('authorization')?.replace(/^Bearer /,'');
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return reply({error:'Invalid owner'},403);
+  // Bound the stream even when Content-Length is absent or dishonest.
+  const reader = request.body?.getReader();
+  if (!reader) return reply({error:'Missing invitation'},400);
+  const chunks = []; let size = 0;
+  try {
+    while (true) {
+      const {done,value} = await reader.read(); if (done) break;
+      size += value.length;
+      if (size > 4096) { await reader.cancel(); return reply({error:'Invitation too large'},413); }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk,offset); offset += chunk.length; }
+    const input = JSON.parse(new TextDecoder().decode(bytes));
+    const room = [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    if (input.room !== room) return reply({error:'Invalid owner'},403);
+    const target = env.MESH_DIRECTORY.getByName(`public-${parseInt(room[0],16)%4}`);
+    if (request.method === 'DELETE') { await target.remove(room); return reply({ok:true}); }
+    if (input.protocol !== 'paket-web/1' || !/^[a-f0-9]{64}$/.test(input.host) ||
+      !Number.isFinite(input.origin?.lat) || Math.abs(input.origin.lat)>85 || !Number.isFinite(input.origin?.lon) || Math.abs(input.origin.lon)>180 ||
+      typeof input.relay !== 'string' || input.relay.length>512 || new URL(input.relay).protocol !== 'https:') return reply({error:'Invalid invitation'},400);
+    const invite = {protocol:'paket-web/1',room,host:input.host,relay:input.relay,origin:{lat:input.origin.lat,lon:input.origin.lon}};
+    return await target.publish(invite) ? reply({ok:true}) : reply({error:'Directory is full'},503);
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof TypeError) return reply({error:'Invalid invitation'},400);
+    throw error;
+  }
 }
 export default {
   async fetch(request, env, ctx) {
+    if (new URL(request.url).pathname === '/api/meshes') {
+      try { return await directory(request, env); }
+      catch { return Response.json({error:'Mesh list unavailable'}, {status:503,headers:{...headers,'cache-control':'no-store'}}); }
+    }
     if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405, headers: { ...headers, allow: 'GET, HEAD' } });
     const url = new URL(request.url);
     if (url.pathname === '/api/address') {
@@ -42,7 +84,7 @@ export default {
       const assetUrl = new URL(`/osm/${map.file}`, url);
       const bundled = await env.ASSETS.fetch(new Request(assetUrl));
       if (bundled.ok) return new Response(request.method === 'HEAD' ? null : bundled.body, { headers: { ...headers, 'content-type': 'application/json', 'cache-control': 'public,max-age=86400' } });
-      const cacheKey = new Request(new URL(`/map-cache/${map.file}`, url));
+      const cacheKey = new Request(new URL(`/map-cache/v2/${map.file}`, url));
       const cached = await caches.default.match(cacheKey);
       if (cached) return request.method === 'HEAD' ? new Response(null, cached) : cached;
       for (const endpoint of ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
@@ -63,7 +105,7 @@ export default {
     if (route.pathname.endsWith('.wasm') && response.status === 404) {
       const compressed = new URL(route); compressed.pathname += '.gz';
       const asset = await env.ASSETS.fetch(new Request(compressed, request));
-      if (asset.ok) {
+      if (asset.ok || asset.status === 304) {
         const encoded = new Headers(asset.headers);
         encoded.set('content-type', 'application/wasm'); encoded.set('content-encoding', 'gzip');
         response = new Response(asset.body, { status: asset.status, headers: encoded });
@@ -71,7 +113,7 @@ export default {
     }
     const merged = new Headers(response.headers);
     for (const [key, value] of Object.entries(headers)) merged.set(key, value);
-    if (route.pathname.endsWith('.html')) merged.set('cache-control', 'no-store');
+    if (response.status === 404 || route.pathname.endsWith('.html')) merged.set('cache-control', 'no-store');
     // The .wasm.gz asset is already compressed; do not gzip its bytes a second time.
     return new Response(response.body, { status: response.status, headers: merged, encodeBody: merged.has('content-encoding') ? 'manual' : 'automatic' });
   },

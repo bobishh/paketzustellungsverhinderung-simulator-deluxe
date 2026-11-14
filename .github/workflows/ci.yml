@@ -106,6 +106,8 @@ jobs:
           path: |
             paket/web/dist/
             paket/web/src/worker.mjs
+            paket/web/src/entry.mjs
+            paket/web/src/directory.mjs
             paket/web/wrangler.jsonc
           if-no-files-found: error
           retention-days: 7

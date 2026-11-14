@@ -1,8 +1,10 @@
+import { availableMeshes } from './mesh-directory';
 import { requestNeighbourhood } from './geolocation';
 
 type Command = { action: string; [key: string]: unknown };
-declare global { var paketCommands: Command[]; }
+declare global { var paketCommands: Command[]; var paketPublicMesh: boolean; }
 globalThis.paketCommands = [];
+globalThis.paketPublicMesh = false;
 const send = (command: Command) => { paketCommands.push(command); };
 const cities = [
   ['Berlin', 'Kreuzberg', 52.4895, 13.3908],
@@ -70,12 +72,35 @@ document.querySelectorAll<HTMLButtonElement>('[data-role]').forEach(button => bu
 });
 document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach(b => b.onclick = () => send({ action: b.dataset.command! }));
 document.querySelector('#solo')!.addEventListener('click', () => { cancelLocation(); send({ action: 'solo' }); });
-document.querySelector('#friends')!.addEventListener('click', () => { cancelLocation(); autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
+document.querySelector('#friends')!.addEventListener('click', () => { cancelLocation(); globalThis.paketPublicMesh = document.querySelector<HTMLInputElement>('#public-mesh')!.checked; autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
 document.querySelector('#join-form')!.addEventListener('submit', e => {
   e.preventDefault(); cancelLocation(); autoStart = true; sawPending = false;
   send({ action: 'join', link: document.querySelector<HTMLInputElement>('#invite')!.value.trim() });
 });
-document.querySelector('#share')!.addEventListener('click', () => { void navigator.clipboard.writeText(inviteLink).then(() => paketNotify('Invite copied. Send it to a friend.')).catch(() => { paketNotify('Select and copy the invite link.'); window.prompt('Invite link', inviteLink); }); });
+const share = document.querySelector<HTMLButtonElement>('#share')!;
+const shareDialog = document.querySelector<HTMLDialogElement>('#share-dialog')!;
+const shareLink = document.querySelector<HTMLInputElement>('#share-link')!;
+const shareStatus = document.querySelector<HTMLElement>('#share-status')!;
+function setInvitation(link: string) {
+  inviteLink = link; share.disabled = !link; shareLink.value = link;
+  if (!link && shareDialog.open) shareDialog.close();
+}
+share.addEventListener('click', () => {
+  if (!inviteLink) return;
+  document.exitPointerLock();
+  send({action: 'menu', open: true});
+  shareStatus.textContent = '';
+  shareDialog.showModal(); shareLink.select();
+});
+document.querySelector('#share-close')!.addEventListener('click', () => shareDialog.close());
+shareDialog.addEventListener('close', () => send({action: 'menu', open: false}));
+document.querySelector('#copy-invite')!.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(inviteLink); shareStatus.textContent = 'Copied. Send the invitation to your friend.'; }
+  catch { shareLink.focus(); shareLink.select(); shareStatus.textContent = 'Select the link and copy it with Ctrl+C or ⌘C.'; }
+});
+window.addEventListener('paket-session', ((event: CustomEvent<{link: string} | null>) => {
+  setInvitation(event.detail?.link ?? '');
+}) as EventListener);
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
   lobby.hidden = event.detail !== 'map';
   if (lobby.hidden) cancelLocation();
@@ -94,8 +119,7 @@ window.addEventListener('paket-lobby', ((event: CustomEvent<any>) => {
   });
   if (s.status) status.textContent = s.status;
   if (s.pending) sawPending = true;
-  document.querySelectorAll<HTMLButtonElement>('#solo,#friends,#join-form button').forEach(b => b.disabled = s.pending);
-  if (s.link) { inviteLink = s.link; document.querySelector<HTMLElement>('#share')!.hidden = false; }
+  document.querySelectorAll<HTMLButtonElement>('#solo,#friends,#join-form button,#mesh-list button').forEach(b => b.disabled = s.pending);
   if (autoStart && sawPending && s.ready) { autoStart = false; send({ action: 'start' }); }
   if (autoStart && sawPending && !s.pending && !s.ready) autoStart = false;
 }) as EventListener);
@@ -126,3 +150,32 @@ document.querySelector('#address-form')!.addEventListener('submit', async e => {
 });
 
 export {};
+
+const meshList = document.querySelector<HTMLElement>('#mesh-list')!;
+const meshStatus = document.querySelector<HTMLElement>('#mesh-list-status')!;
+const refreshMeshes = document.querySelector<HTMLButtonElement>('#refresh-meshes')!;
+async function refresh() {
+  if (refreshMeshes.disabled) return;
+  refreshMeshes.disabled = true; meshStatus.textContent = 'Looking for public meshes…';
+  try {
+    const meshes = await availableMeshes(); meshList.replaceChildren();
+    meshStatus.textContent = meshes.length ? `${meshes.length} public meshes. Choose one to join.` : 'No public meshes yet. Create one or paste a friend’s invitation.';
+    for (const invite of meshes) {
+      const button = document.createElement('button');
+      const city = cities.find(c => Math.abs(c[2]-invite.origin.lat)<0.03 && Math.abs(c[3]-invite.origin.lon)<0.03);
+      button.textContent = `${city ? city[0] : `${invite.origin.lat.toFixed(3)}, ${invite.origin.lon.toFixed(3)}`} · ${invite.room.slice(0,6)} · Join`;
+      button.disabled = lobbyPending;
+      button.onclick = () => {
+        if (lobbyPending) return;
+        cancelLocation(); autoStart = true; sawPending = false;
+        send({action:'join',link:JSON.stringify(invite)});
+      };
+      meshList.append(button);
+    }
+  } catch (error) { meshList.replaceChildren(); meshStatus.textContent = error instanceof Error ? error.message : 'Mesh list unavailable.'; }
+  finally { refreshMeshes.disabled = false; }
+}
+refreshMeshes.onclick = () => { void refresh(); };
+window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
+  if (event.detail === 'map') { void refresh(); }
+}) as EventListener);

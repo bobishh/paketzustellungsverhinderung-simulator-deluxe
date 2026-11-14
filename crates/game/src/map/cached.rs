@@ -28,6 +28,7 @@ impl CachedMap {
             let mut scene = Scene {
                 buildings: vec![],
                 streets: vec![],
+                places: vec![],
                 skipped: 0,
             };
             for path in &files {

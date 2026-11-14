@@ -232,3 +232,20 @@ fn platforms_and_steps_do_not_become_bicycle_roads() {
     ]}"#;
     assert!(parse_overpass(json, origin()).unwrap().streets.is_empty());
 }
+
+#[test]
+fn neighbourhood_includes_real_playgrounds_benches_and_trees() {
+    let origin = paket_geo::LatLon { lat: 0., lon: 0. };
+    let scene = paket_geo::parse_overpass(br#"{"elements":[
+      {"type":"way","id":1,"tags":{"leisure":"playground"},"geometry":[{"lat":0,"lon":0},{"lat":0,"lon":0.0002},{"lat":0.0002,"lon":0.0002},{"lat":0.0002,"lon":0},{"lat":0,"lon":0}]},
+      {"type":"node","id":2,"lat":0.0001,"lon":0.0001,"tags":{"amenity":"bench"}},
+      {"type":"node","id":3,"lat":0.0001,"lon":0.0003,"tags":{"natural":"tree"}},
+      {"type":"node","id":4,"lat":0,"lon":0,"tags":{"leisure":"playground","access":"private"}}
+    ]}"#, origin).unwrap();
+    assert_eq!(scene.places.len(), 3);
+    assert_eq!(scene.places[0].id, "way/1");
+    assert_eq!(scene.places[0].kind, paket_geo::places::Kind::Playground);
+    assert_eq!(scene.places[0].outline.len(), 4);
+    assert_eq!(scene.places[1].kind, paket_geo::places::Kind::Bench);
+    assert_eq!(scene.places[2].kind, paket_geo::places::Kind::Tree);
+}

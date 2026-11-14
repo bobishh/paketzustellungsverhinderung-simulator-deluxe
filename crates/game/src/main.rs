@@ -5,6 +5,7 @@ mod buildings;
 mod dogs;
 mod jobs;
 mod map;
+mod places;
 mod platform;
 mod press_scene;
 mod roads;
@@ -679,6 +680,7 @@ fn setup(
             Color::WHITE,
         )),
         dogs: dogs::DogKit::new(&mut meshes, &mut materials, &mut images),
+        places: places::Kit::new(&mut meshes, &mut materials),
     });
     commands.spawn((
         DespawnOnExit(Mode::Ride),
@@ -914,6 +916,7 @@ fn setup(
 
 #[derive(Resource)]
 struct StreetMaterials {
+    places: places::Kit,
     buildings: Handle<StandardMaterial>,
     asphalt: Handle<StandardMaterial>,
     paving: Handle<StandardMaterial>,
@@ -1586,6 +1589,15 @@ fn spawn_tile(
             .id();
         street_materials.dogs.spawn(commands, street, road);
         spawned.insert(street.id.clone(), (road, 1));
+    }
+    for place in &scene.places {
+        features.push(place.id.clone());
+        if let Some((_, references)) = spawned.get_mut(&place.id) {
+            *references += 1;
+            continue;
+        }
+        let entity = street_materials.places.spawn(commands, meshes, place);
+        spawned.insert(place.id.clone(), (entity, 1));
     }
     for building in &scene.buildings {
         features.push(building.id.clone());

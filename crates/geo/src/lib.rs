@@ -4,6 +4,7 @@
 //! bicycle crosses them.
 
 pub mod landscape;
+pub mod places;
 
 use std::collections::HashMap;
 use std::fs;
@@ -97,6 +98,7 @@ pub struct Street {
 pub struct Scene {
     pub buildings: Vec<Building>,
     pub streets: Vec<Street>,
+    pub places: Vec<places::Place>,
     pub skipped: usize,
 }
 
@@ -113,6 +115,8 @@ struct Element {
     #[serde(default)]
     tags: HashMap<String, String>,
     geometry: Option<Vec<LatLonJson>>,
+    lat: Option<f64>,
+    lon: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,9 +180,13 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
     let doc: Overpass = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
     let mut buildings = Vec::new();
     let mut streets = Vec::new();
+    let mut places = Vec::new();
     let mut passage_ways = Vec::new();
     let mut skipped = 0;
     for element in doc.elements {
+        if let Some(place) = places::parse(&element, origin) {
+            places.push(place);
+        }
         if element.kind != "way" {
             continue;
         }
@@ -298,6 +306,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
     Ok(Scene {
         buildings,
         streets,
+        places,
         skipped,
     })
 }
@@ -365,7 +374,18 @@ pub fn load_tile(
     let path = cache_file(cache_dir, origin, tile);
     if path.exists() {
         let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-        return parse_overpass(&bytes, origin);
+        let current = serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .is_some_and(|v| v["paket_features"] == 2);
+        if current || !allow_network {
+            return parse_overpass(&bytes, origin);
+        }
+        // Upgrade old geometry in place; retain it if the provider is unavailable.
+        let Ok(fresh) = fetch_tile(origin, tile) else {
+            return parse_overpass(&bytes, origin);
+        };
+        fs::write(&path, &fresh).map_err(|error| error.to_string())?;
+        return parse_overpass(&fresh, origin);
     }
     if !allow_network {
         return Err(format!("no cached tile {} {}", tile.x, tile.y));
@@ -395,7 +415,7 @@ pub fn fetch_tile(origin: LatLon, tile: TileId) -> Result<Vec<u8>, String> {
         },
     );
     let query = format!(
-        "[out:json][timeout:25];(way[\"building\"]({south:.6},{west:.6},{north:.6},{east:.6});way[\"highway\"]({south:.6},{west:.6},{north:.6},{east:.6}););out geom;",
+        "[out:json][timeout:25];(way[\"building\"]({south:.6},{west:.6},{north:.6},{east:.6});way[\"highway\"]({south:.6},{west:.6},{north:.6},{east:.6});nwr[\"leisure\"=\"playground\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"amenity\"=\"bench\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"natural\"=\"tree\"]({south:.6},{west:.6},{north:.6},{east:.6}););out geom;",
         south = south_west.lat,
         west = south_west.lon,
         north = north_east.lat,
@@ -418,8 +438,13 @@ pub fn fetch_tile(origin: LatLon, tile: TileId) -> Result<Vec<u8>, String> {
             Ok(response) => {
                 return response
                     .into_string()
-                    .map(|body| body.into_bytes())
-                    .map_err(|error| error.to_string());
+                    .map_err(|error| error.to_string())
+                    .and_then(|body| {
+                        let mut data: serde_json::Value =
+                            serde_json::from_str(&body).map_err(|e| e.to_string())?;
+                        data["paket_features"] = serde_json::json!(2);
+                        serde_json::to_vec(&data).map_err(|e| e.to_string())
+                    });
             }
             Err(error) => last_error = format!("{endpoint}: {error}"),
         }

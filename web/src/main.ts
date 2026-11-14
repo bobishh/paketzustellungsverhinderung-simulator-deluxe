@@ -21,11 +21,20 @@ let noticeTimer: ReturnType<typeof setTimeout>;
 globalThis.paketNotify = text => { notice.textContent = text; notice.hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { notice.hidden = true; }, 7000); };
 globalThis.paketMesh = mesh;
 let photoUrl: string | undefined;
+let photoName = '';
+document.querySelector('#photo')!.addEventListener('click', () => {
+  if (!photoUrl) return;
+  const download = document.createElement('a');
+  download.href = photoUrl; download.download = photoName; download.click();
+});
+window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
+  document.querySelector<HTMLElement>('#signin')!.hidden = event.detail === 'ride';
+}) as EventListener);
 globalThis.paketPhoto = (bytes, index) => {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = URL.createObjectURL(new Blob([bytes.slice().buffer], { type: 'image/png' }));
-  const link = document.querySelector<HTMLAnchorElement>('#photo')!;
-  link.href = photoUrl; link.download = `delivery-${index + 1}-${Date.now()}.png`; link.hidden = false;
+  photoName = `delivery-${index + 1}-${Date.now()}.png`;
+  document.querySelector<HTMLElement>('#photo')!.hidden = false;
   paketNotify('Photo ready. Download it using the button above.');
 };
 const ready = restoreIdentity(callbackHash).then(async path => { if (path && path.startsWith('/') && !path.startsWith('//')) history.replaceState(null, '', path); await initProfile(); })

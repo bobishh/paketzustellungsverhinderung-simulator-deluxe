@@ -8,3 +8,7 @@
 *,*::before,*::after{border-radius:0!important}
 
 .stamp{position:absolute;right:clamp(24px,5vw,90px);bottom:100px;display:grid;gap:3px;padding:14px 22px;border:5px double #ae431d;color:#ae431d;background:#eee6d9e8;transform:rotate(-8deg);font-family:Fira,monospace;text-align:center;pointer-events:none}.stamp span{font-size:15px;letter-spacing:.16em}.stamp strong{font-size:27px;line-height:1.2;letter-spacing:-.04em}@media(max-width:600px){.stamp{right:20px;bottom:88px;padding:10px 15px}.stamp span{font-size:11px}.stamp strong{font-size:21px}}
+
+#share{min-width:108px}#share:disabled{opacity:.45;cursor:default}#share-dialog p{font-size:13px;line-height:1.5}#share-link{margin-bottom:16px}#share-status{min-height:40px}
+
+.mesh-browser{border-bottom:1px solid #415143;padding-bottom:16px;margin-bottom:22px}.mesh-browser>div:first-child{display:flex;align-items:center;justify-content:space-between}.mesh-browser h3{margin:0;font-size:18px}.mesh-browser p{font-size:12px;line-height:1.5;min-height:54px;color:#b5c2b0}#mesh-list{height:112px;overflow:auto}#mesh-list button{display:block;width:100%;text-align:left;font-size:12px;margin:5px 0}.public-mesh-option{display:flex;gap:8px;align-items:center;margin-top:20px}.public-mesh-option input{width:auto}.mesh-privacy{font-size:11px;line-height:1.5;color:#b5c2b0}
