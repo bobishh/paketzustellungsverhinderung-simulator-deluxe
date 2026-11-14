@@ -156,7 +156,7 @@ const meshStatus = document.querySelector<HTMLElement>('#mesh-list-status')!;
 const refreshMeshes = document.querySelector<HTMLButtonElement>('#refresh-meshes')!;
 async function refresh() {
   if (refreshMeshes.disabled) return;
-  refreshMeshes.disabled = true; meshStatus.textContent = 'Looking for public meshes…';
+  refreshMeshes.disabled = true; document.querySelector<HTMLElement>('#mesh-list-spinner')!.hidden=false; meshList.setAttribute('aria-busy','true'); meshStatus.textContent = 'Looking for public meshes…';
   try {
     const meshes = await availableMeshes(); meshList.replaceChildren();
     meshStatus.textContent = meshes.length ? `${meshes.length} public meshes. Choose one to join.` : 'No public meshes yet. Create one or paste a friend’s invitation.';
@@ -173,7 +173,7 @@ async function refresh() {
       meshList.append(button);
     }
   } catch (error) { meshList.replaceChildren(); meshStatus.textContent = error instanceof Error ? error.message : 'Mesh list unavailable.'; }
-  finally { refreshMeshes.disabled = false; }
+  finally { refreshMeshes.disabled = false; document.querySelector<HTMLElement>('#mesh-list-spinner')!.hidden=true; meshList.setAttribute('aria-busy','false'); }
 }
 refreshMeshes.onclick = () => { void refresh(); };
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {

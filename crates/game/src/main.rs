@@ -8,6 +8,7 @@ mod map;
 mod places;
 mod platform;
 mod press_scene;
+mod remote_motion;
 mod roads;
 mod shapes;
 mod shift;
@@ -202,7 +203,7 @@ fn install_ride(app: &mut App) {
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
                 capture_frame,
-                browser_ui::update.after(jobs::courier),
+                browser_ui::update.after(sync_peers),
             )
                 .run_if(in_state(Mode::Ride)),
         );
@@ -572,6 +573,7 @@ struct RemoteActor {
     rotation: Quat,
     sequence: u64,
     received: f32,
+    motion: remote_motion::Motion,
     parked: Option<VanPose>,
     visual: Option<Entity>,
     van_visual: Option<Entity>,
@@ -936,6 +938,9 @@ fn stream_tiles(
     player: Query<&Transform, With<Player>>,
 ) {
     let dt = time.delta_secs();
+    if let Some(session) = &ride.session {
+        jobs.configure_shared(&session.device, session.is_host);
+    }
     for wait in ride.retry.values_mut() {
         *wait -= dt;
     }
@@ -1040,7 +1045,7 @@ fn stream_tiles(
                     .filter(|building| !building.accessory)
                     .map(building_link)
                     .collect();
-                jobs.seed(addresses, &mut commands, &models);
+                jobs.seed(addresses, &mut commands, &models, !ride.guest);
             }
             if player.is_none() {
                 let start = match ride.role {
@@ -1117,6 +1122,7 @@ fn sync_peers(
     mut players: Query<(&mut Player, &Transform, &LinearVelocity), Without<RemoteActor>>,
     vans: Query<&Transform, (With<ParkedVan>, Without<RemoteActor>)>,
     mut remotes: Query<(Entity, &mut RemoteActor, &mut Transform), Without<Player>>,
+    buildings: Query<&BuildingLink>,
 ) {
     if ride.session.is_none() {
         return;
@@ -1140,6 +1146,7 @@ fn sync_peers(
     let Some(session) = &ride.session else {
         return;
     };
+    jobs.configure_shared(&session.device, session.is_host);
     let now = clock.elapsed_secs();
     let mut snapshots = HashMap::<String, RemoteActor>::new();
     for fact in session.poll() {
@@ -1233,6 +1240,49 @@ fn sync_peers(
                 );
                 continue;
             }
+            Fact::Route {
+                device,
+                day,
+                revision,
+                stops,
+                ..
+            } => {
+                if !session.is_host
+                    && device == session.host_device()
+                    && day == shift.day()
+                    && jobs.receive_route(day, revision, stops, &mut commands)
+                {
+                    jobs.seed(
+                        buildings.iter().cloned().collect(),
+                        &mut commands,
+                        &models,
+                        false,
+                    );
+                }
+                continue;
+            }
+            Fact::Delivered {
+                device,
+                day,
+                building_id,
+                photo,
+                score,
+                ..
+            } => {
+                if session.is_host && day == shift.day() {
+                    jobs.confirm_delivery(
+                        day,
+                        &building_id,
+                        paket_session::DeliveryReceipt {
+                            device,
+                            photo,
+                            score,
+                        },
+                        &mut commands,
+                    );
+                }
+                continue;
+            }
             Fact::Delivery { .. } => continue,
         };
         let position = Vec3::new(pose.east, pose.up, -pose.north);
@@ -1266,21 +1316,45 @@ fn sync_peers(
                 rotation: Quat::from_rotation_y(pose.heading),
                 sequence,
                 received: now,
+                motion: remote_motion::Motion::new(
+                    now,
+                    position,
+                    Quat::from_rotation_y(pose.heading),
+                    velocity,
+                ),
                 parked,
                 visual: None,
                 van_visual: None,
             },
         );
     }
-    let smoothing = 1.0 - (-14.0 * time.delta_secs()).exp();
+    if shift.ready && jobs.day() == shift.day() {
+        jobs.publish_shared(session, time.delta_secs(), &mut commands);
+    }
+    let smoothing = 1.0 - (-30.0 * time.delta_secs()).exp();
     for (entity, mut remote, mut transform) in &mut remotes {
         if let Some(mut snapshot) = snapshots.remove(&remote.device)
             && (snapshot.sequence == 0 || snapshot.sequence > remote.sequence)
         {
             if remote.form == snapshot.form {
                 snapshot.visual = remote.visual;
+                let mut motion = std::mem::replace(
+                    &mut remote.motion,
+                    remote_motion::Motion::new(
+                        now,
+                        snapshot.position,
+                        snapshot.rotation,
+                        snapshot.velocity,
+                    ),
+                );
+                motion.push(now, snapshot.position, snapshot.rotation, snapshot.velocity);
+                snapshot.motion = motion;
             } else if let Some(visual) = remote.visual {
                 commands.entity(visual).despawn();
+            }
+            if remote.position.distance(snapshot.position) > 30.0 || remote.form != snapshot.form {
+                transform.translation = snapshot.position;
+                transform.rotation = snapshot.rotation;
             }
             snapshot.van_visual = remote.van_visual;
             *remote = snapshot;
@@ -1290,10 +1364,9 @@ fn sync_peers(
             commands.entity(entity).despawn();
             continue;
         }
-        transform.translation = transform
-            .translation
-            .lerp(remote.position + remote.velocity * age.min(0.15), smoothing);
-        transform.rotation = transform.rotation.slerp(remote.rotation, smoothing);
+        let presented = remote.motion.sample(now);
+        transform.translation = transform.translation.lerp(presented.translation, smoothing);
+        transform.rotation = transform.rotation.slerp(presented.rotation, smoothing);
         remote_visuals(
             &mut commands,
             &models,

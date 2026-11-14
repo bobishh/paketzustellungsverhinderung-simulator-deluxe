@@ -1,5 +1,6 @@
 import './style.css';
 import './lobby';
+import {showStartup} from './loading';
 import './minimap';
 import './hud';
 import './shift-vote';
@@ -52,6 +53,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
   if (running) return;
   const button = document.querySelector<HTMLButtonElement>('#play')!;
   button.disabled = true;
+  document.querySelector<HTMLElement>('#start-spinner')!.hidden=false;
   try {
     const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
     if (!gpu || !await gpu.requestAdapter()) throw new Error('WebGPU is unavailable. Open this game in a current Chrome, Edge or Safari with graphics acceleration enabled.');
@@ -66,6 +68,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     const url = '/game/paket_game.js';
     const { default: init } = await import(/* @vite-ignore */ url);
     await init();
+    showStartup();
     running = true;
     document.querySelector<HTMLElement>('#start')!.hidden = true;
     document.querySelector<HTMLCanvasElement>('#game')!.focus();
@@ -73,5 +76,5 @@ document.querySelector('#play')!.addEventListener('click', async () => {
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
     button.disabled = false;
-  }
+  } finally { document.querySelector<HTMLElement>('#start-spinner')!.hidden=true; }
 });

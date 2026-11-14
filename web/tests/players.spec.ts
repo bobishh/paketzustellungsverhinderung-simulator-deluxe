@@ -1,0 +1,61 @@
+import {test,expect} from '@playwright/test';
+test('Given delayed map and mesh requests, loading stays visible; peers and target get distinct ring markers',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:{requestAdapter:async()=>({})}}));
+  await page.route('**/game/paket_game.js',r=>r.fulfill({contentType:'text/javascript',body:`export default async()=>dispatchEvent(new CustomEvent('paket-mode',{detail:'map'}))`}));
+  let release!:()=>void;const pending=new Promise<void>(r=>release=r);
+  let requests=0;
+  await page.route('**/api/meshes',async r=>{if(requests++===0){await pending;await r.fulfill({status:503,body:'Unavailable'});}else await r.fulfill({contentType:'application/json',body:'[]'});});
+  await page.goto('/');await page.locator('#play').click();
+  await expect(page.locator('#mesh-list-spinner')).toBeVisible();
+  await expect(page.locator('#world-loading')).toBeVisible();
+  const before=await page.locator('#refresh-meshes').boundingBox();release();
+  await expect(page.locator('#mesh-list-spinner')).toBeHidden();
+  await expect(page.locator('#mesh-list-status')).toContainText('unavailable');
+  expect(await page.locator('#refresh-meshes').boundingBox()).toEqual(before);
+  await page.locator('#refresh-meshes').click();
+  await expect(page.locator('#mesh-list-status')).toContainText('No public meshes yet');
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('paket-map-loading',{detail:{pending:false,ready:false,failed:true}})));
+  await expect(page.locator('#retry-map')).toBeVisible();
+  await page.locator('#retry-map').click();
+  await expect(page.locator('#world-loading .spinner')).toBeVisible();
+  expect(await page.evaluate(()=>(globalThis as any).paketCommands.some((c:any)=>c.action==='retry-map'))).toBe(true);
+  await page.evaluate(()=>{
+    dispatchEvent(new CustomEvent('paket-map-loading',{detail:{pending:false,ready:true,failed:false}}));
+    dispatchEvent(new CustomEvent('paket-mode',{detail:'ride'}));
+    dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction:false,minute:540,day:1,form:'courier'}}));
+    dispatchEvent(new CustomEvent('paket-members',{detail:[{id:'a'.repeat(64),name:'Alice',slot:0},{id:'b'.repeat(64),name:'Bob',slot:1}]}));
+    dispatchEvent(new CustomEvent('paket-radar',{detail:{position:[0,0],heading:0,target:[0,-200],dogs:[],people:[],peers:[{id:'a'.repeat(64),position:[500,0],form:'courier',age:0},{id:'b'.repeat(64),position:[-500,0],form:'dog',age:0}]}}));
+  });
+  await expect(page.locator('#world-loading')).toBeHidden();
+  await expect(page.locator('#peer-list li')).toHaveCount(2);
+  await expect(page.locator('#peer-list')).toContainText('Alice');
+  const markers=page.locator('[data-peer-marker]');await expect(markers).toHaveCount(2);
+  const colors=await markers.evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-color')));expect(new Set(colors).size).toBe(2);
+  const rows=await page.locator('#peer-list li').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('data-color')));expect(rows).toEqual(colors);
+  await expect(page.locator('#target-marker')).toHaveAttribute('data-kind','delivery');
+  await expect(page.locator('#target-marker')).toHaveAttribute('transform','translate(240 32)');
+  await page.screenshot({path:test.info().outputPath('players.png')});
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('paket-radar',{detail:{position:[0,0],heading:0,target:null,dogs:[],people:[],peers:[]}})));
+  await expect(markers).toHaveCount(0);await expect(page.locator('#peer-list li')).toHaveCount(2);
+  await expect(page.locator('#peer-list')).toContainText('Waiting for position');
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('paket-members',{detail:[]})));
+  await expect(page.locator('#peer-list li')).toHaveCount(0);
+  await expect(page.locator('#target-marker')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('Given loaded WASM and a renderer still starting, the loading indicator remains until map readiness',async({page})=>{
+  await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:{requestAdapter:async()=>({})}}));
+  await page.route('**/game/paket_game.js',r=>r.fulfill({contentType:'text/javascript',body:'export default async()=>{}'}));
+  await page.route('**/api/meshes',r=>r.fulfill({contentType:'application/json',body:'[]'}));
+  await page.goto('/');await page.locator('#play').click();
+  await expect(page.locator('#start')).toBeHidden();
+  await expect(page.locator('#world-loading')).toBeVisible();
+  await expect(page.locator('#world-loading-text')).toHaveText('Starting renderer…');
+  await page.evaluate(()=>{
+    dispatchEvent(new CustomEvent('paket-mode',{detail:'map'}));
+    dispatchEvent(new CustomEvent('paket-map-loading',{detail:{ready:true,pending:false,failed:false}}));
+  });
+  await expect(page.locator('#world-loading')).toBeHidden();
+});

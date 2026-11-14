@@ -81,6 +81,21 @@ pub enum StreetAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeliveryReceipt {
+    pub device: String,
+    pub photo: bool,
+    pub score: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RouteStop {
+    pub building_id: String,
+    pub label: String,
+    pub position: [f32; 3],
+    pub completion: Option<DeliveryReceipt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Fact {
     Shift {
@@ -122,6 +137,21 @@ pub enum Fact {
         sequence: u64,
         event: StreetAction,
     },
+    Route {
+        origin: Origin,
+        device: String,
+        day: u64,
+        revision: u64,
+        stops: Vec<RouteStop>,
+    },
+    Delivered {
+        origin: Origin,
+        device: String,
+        day: u64,
+        building_id: String,
+        photo: bool,
+        score: i32,
+    },
     Delivery {
         origin: Origin,
         building_id: String,
@@ -154,7 +184,9 @@ fn first_day() -> u64 {
 impl Fact {
     pub fn origin(&self) -> Origin {
         match self {
-            Self::Delivery { origin, .. }
+            Self::Route { origin, .. }
+            | Self::Delivered { origin, .. }
+            | Self::Delivery { origin, .. }
             | Self::Shift { origin, .. }
             | Self::Ballot { origin, .. }
             | Self::Pose { origin, .. }
@@ -165,7 +197,9 @@ impl Fact {
 
     pub fn device(&self) -> Option<&str> {
         match self {
-            Self::Pose { device, .. }
+            Self::Route { device, .. }
+            | Self::Delivered { device, .. }
+            | Self::Pose { device, .. }
             | Self::Shift { device, .. }
             | Self::Ballot { device, .. }
             | Self::Actor { device, .. }

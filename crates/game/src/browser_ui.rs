@@ -19,7 +19,7 @@ pub(crate) fn update(
     vans: Query<&Transform, With<ParkedVan>>,
     dogs: Query<&Transform, With<Dog>>,
     people: Query<(&Resident, &Transform)>,
-    peers: Query<&Transform, With<RemoteActor>>,
+    peers: Query<(&RemoteActor, &Transform)>,
     mut timer: Local<f32>,
     mut version: Local<Option<(u64, u64)>>,
 ) {
@@ -39,7 +39,7 @@ pub(crate) fn update(
         crate::platform::ui_event("paket-map-roads", &roads.radar());
     }
     let xy = |p: Vec3| [p.x, p.z];
-    let data = serde_json::json!({"position":xy(t.translation),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|t|xy(t.translation)).collect::<Vec<_>>()});
+    let data = serde_json::json!({"position":xy(t.translation),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|(p,t)|serde_json::json!({"id":p.device,"position":xy(t.translation),"form":p.form,"age":(clock.elapsed_secs()-p.received).max(0.)})).collect::<Vec<_>>()});
     crate::platform::ui_event("paket-radar", &data.to_string());
     let mut hud = jobs.hud_data(t.translation);
     hud["minute"] = serde_json::json!(shift.minute());

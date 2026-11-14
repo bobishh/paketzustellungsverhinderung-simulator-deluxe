@@ -34,6 +34,8 @@ As a dog: **E** bites a nearby courier (20 KPI) or scratches a shut door; **Spac
 
 **M** (or the HUD’s Map button) opens a map of your current streets, van and numbered delivery stops. Zoom or fit the route, click a numbered stop to inspect it, then press M or Esc to return. This keeps the current shift and parcel. **Settings → Change neighbourhood** is the separate action for leaving the shift and choosing a new place.
 
+Players in one mesh share the same addresses and completed deliveries, including when joining late. The host confirms the first completion for each address that day. Delivery KPI and career credit go to that courier. The numbered colours in the player list match their direction markers around the minimap; the larger orange diamond points to your selected delivery.
+
 Solo and multiplayer use the same end-of-day rules: 17:00, or all active couriers completing their routes. The score table then opens a 20-second vote: the current neighbourhood and two randomly proposed cities. Each player gets one vote and may change it until the decision. A unique majority wins; ties or no votes keep the current area. The host commits the result to the mesh. Day 2, Day 3 and subsequent days keep the connection and career totals, refill parcels, reset residents and close doors.
 
 Neighbourhood cars stop for obstacles, and pedestrians walk along street edges and try to go around obstructions. Block a car with your parked van for at least four seconds while a parcel is being delivered to earn **25 KPI**. Blocking a pedestrian earns **5 KPI**. Each NPC awards this bonus at most once per day. Parking without an active parcel earns nothing.

@@ -7,7 +7,7 @@ mod discovery;
 
 pub use discovery::{AvailableRide, Discovery};
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
@@ -188,6 +188,8 @@ async fn run(
     let mut shift: Option<Fact> = None;
     let mut ballot: Option<Fact> = None;
     let mut delivery: Option<Fact> = None;
+    let mut route: Option<Fact> = None;
+    let mut completed = HashMap::new();
     let mut actions = VecDeque::new();
     let mut delivery_sent = Instant::now() - Duration::from_secs(1);
     loop {
@@ -212,6 +214,19 @@ async fn run(
                         actions.push_back((Instant::now(), fact));
                     }
                     Fact::Delivery { .. } => delivery = Some(fact),
+                    Fact::Route { .. } => route = Some(fact),
+                    Fact::Delivered {
+                        day,
+                        ref building_id,
+                        ..
+                    } => {
+                        completed.retain(|(d, _), _| *d >= day);
+                        if completed.len() < 12
+                            || completed.contains_key(&(day, building_id.clone()))
+                        {
+                            completed.insert((day, building_id.clone()), fact);
+                        }
+                    }
                 },
                 Ok(_) => {}
                 Err(TryRecvError::Empty) => break,
@@ -226,6 +241,12 @@ async fn run(
                 broadcast_fact(&sender, fact).await;
             }
             if let Some(fact) = &ballot {
+                broadcast_fact(&sender, fact).await;
+            }
+            if let Some(fact) = &route {
+                broadcast_fact(&sender, fact).await;
+            }
+            for fact in completed.values() {
                 broadcast_fact(&sender, fact).await;
             }
             if let Some(fact) = &delivery {

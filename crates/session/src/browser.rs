@@ -78,7 +78,13 @@ pub fn invite_origin(input: &str) -> Result<Origin, String> {
         None => input.as_bytes().to_vec(),
     };
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if value["protocol"] != "paket-web/1" {
+    if value["protocol"] == "paket-web/1" {
+        return Err(
+            "This invitation uses an older game version. Reload the host and create a new mesh."
+                .into(),
+        );
+    }
+    if value["protocol"] != "paket-web/2" {
         return Err("Use a browser ride invitation".into());
     }
     let origin: Origin =

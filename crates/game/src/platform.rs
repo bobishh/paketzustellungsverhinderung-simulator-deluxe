@@ -30,7 +30,7 @@ mod browser {
     use super::*;
     use wasm_bindgen::prelude::*;
     #[wasm_bindgen(
-        inline_js = "export function gameArgs(){return JSON.stringify(globalThis.paketArgs || []);} export async function gameFetch(url){const r=await fetch(url); if(!r.ok) throw new Error('Map request failed: '+r.status); const bytes=new Uint8Array(await r.arrayBuffer()); if(bytes.length>16000000)throw new Error('Map response too large'); return bytes;} export function gameCopy(text){navigator.clipboard.writeText(text).catch(()=>globalThis.paketNotify?.('Copy failed. Select the invite link to copy it.'));} export function gamePhoto(bytes,index){globalThis.paketPhoto(bytes,index);}"
+        inline_js = "export function gameArgs(){return JSON.stringify(globalThis.paketArgs || []);} export async function gameFetch(url){const r=await fetch(url,{signal:AbortSignal.timeout(url.startsWith('/api/osm?')?60000:15000)}); if(!r.ok) throw new Error('Map request failed: '+r.status); const bytes=new Uint8Array(await r.arrayBuffer()); if(bytes.length>16000000)throw new Error('Map response too large'); return bytes;} export function gameCopy(text){navigator.clipboard.writeText(text).catch(()=>globalThis.paketNotify?.('Copy failed. Select the invite link to copy it.'));} export function gamePhoto(bytes,index){globalThis.paketPhoto(bytes,index);}"
     )]
     extern "C" {
         #[wasm_bindgen(js_name = gameArgs)]

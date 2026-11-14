@@ -99,6 +99,13 @@ jobs:
           cargo install wasm-bindgen-cli --version "$version" --locked
       - name: Build the browser game and Worker assets
         run: ./scripts/build-web.sh
+      - name: Test browser loading and player navigation
+        working-directory: paket/web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
+        env:
+          PAKET_TEST_OUTPUT: ${{ runner.temp }}/paket-playwright
       - name: Save the tested browser build
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

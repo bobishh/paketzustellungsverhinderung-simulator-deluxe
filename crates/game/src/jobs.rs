@@ -22,13 +22,16 @@ const PHOTO_DISTANCE: f32 = 9.0;
 const HANDOVER_DISTANCE: f32 = 2.7;
 #[path = "jobs/service.rs"]
 mod service;
+mod shared;
 pub(crate) use service::{service_ui, service_update};
 
 #[derive(Resource, Default)]
 pub(crate) struct Jobs {
     day: u64,
+    sharing: Option<shared::Sharing>,
     service: service::Service,
     parcels: Vec<Parcel>,
+    resident_addresses: HashSet<String>,
     selected: usize,
     navigation: usize,
     pub menu_open: bool,
@@ -52,6 +55,7 @@ struct Parcel {
     label: String,
     point: Vec3,
     state: ParcelState,
+    completion: Option<paket_session::DeliveryReceipt>,
     dropped_at: Option<String>,
     prop: Option<Entity>,
 }
@@ -209,7 +213,7 @@ impl Jobs {
             })).collect::<Vec<_>>(),
             "prompt":self.prompt,"status":self.status,"interaction":self.service.modal.is_some(),"menu":self.menu_open,
             "bulk":self.service.bulk.map(|(_,loaded)|loaded),
-            "score":self.progress()["score"],"delivered":self.progress()["delivered"]
+            "score":self.progress()["score"],"delivered":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_)|ParcelState::Handed)).count()
         })
     }
     pub fn radar_people(&self, residents: &Query<(&Resident, &Transform)>) -> Vec<[f32; 2]> {
@@ -220,7 +224,7 @@ impl Jobs {
             .collect()
     }
     pub fn progress(&self) -> serde_json::Value {
-        serde_json::json!({"delivered":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_)|ParcelState::Handed)).count(),"photos":self.parcels.iter().filter(|p|matches!(p.state,ParcelState::Filed(_))).count(),"score":self.parcels.iter().map(|p|if let ParcelState::Filed(n)=p.state{n}else{0}).sum::<i32>()+self.service.bonus,"rings":self.service.visited.len(),"markedVans":self.marks.len(),"special":self.service.rare_used&&self.service.bulk.is_none()})
+        serde_json::json!({"delivered":self.parcels.iter().filter(|p|self.credited(p)).filter(|p|matches!(p.state,ParcelState::Filed(_)|ParcelState::Handed)).count(),"photos":self.parcels.iter().filter(|p|self.credited(p)).filter(|p|matches!(p.state,ParcelState::Filed(_))).count(),"score":self.parcels.iter().filter(|p|self.credited(p)).map(|p|if let ParcelState::Filed(n)=p.state{n}else{0}).sum::<i32>()+self.service.bonus,"rings":self.service.visited.len(),"markedVans":self.marks.len(),"special":self.service.rare_used&&self.service.bulk.is_none()})
     }
     pub fn interaction_active(&self) -> bool {
         self.service.modal.is_some() || self.menu_open
@@ -233,8 +237,9 @@ impl Jobs {
         mut addresses: Vec<BuildingLink>,
         commands: &mut Commands,
         models: &Models,
+        authoritative: bool,
     ) {
-        if self.parcels.len() >= DELIVERIES_PER_SHIFT || addresses.is_empty() {
+        if addresses.is_empty() {
             return;
         }
         addresses.sort_by(|a, b| {
@@ -254,24 +259,35 @@ impl Jobs {
             });
         }
         for address in addresses {
-            if self.parcels.len() >= DELIVERIES_PER_SHIFT {
-                break;
+            if !self.parcels.iter().any(|p| p.address == address.id) {
+                if !authoritative || self.parcels.len() >= DELIVERIES_PER_SHIFT {
+                    continue;
+                }
+                self.parcels.push(Parcel {
+                    address: address.id.clone(),
+                    label: address
+                        .address
+                        .clone()
+                        .unwrap_or_else(|| "Unnumbered building".into())
+                        .chars()
+                        .take(256)
+                        .collect(),
+                    point: self.doorstep(&address),
+                    state: ParcelState::InVan,
+                    completion: None,
+                    dropped_at: None,
+                    prop: None,
+                });
+                self.route_changed();
             }
-            if self.parcels.iter().any(|p| p.address == address.id) {
+            if !self.resident_addresses.insert(address.id.clone()) {
                 continue;
             }
-            let index = self.parcels.len();
-            self.parcels.push(Parcel {
-                address: address.id.clone(),
-                label: address
-                    .address
-                    .clone()
-                    .unwrap_or_else(|| "Unnumbered building".into()),
-                point: self.doorstep(&address),
-                state: ParcelState::InVan,
-                dropped_at: None,
-                prop: None,
-            });
+            let index = self
+                .parcels
+                .iter()
+                .position(|p| p.address == address.id)
+                .unwrap();
             let home = (address.threshold - address.outward * 1.15).with_y(-0.04);
             let entity = commands
                 .spawn((
@@ -408,6 +424,7 @@ impl Jobs {
         let score: i32 = self
             .parcels
             .iter()
+            .filter(|parcel| self.credited(parcel))
             .map(|parcel| match parcel.state {
                 ParcelState::Filed(value) => value,
                 _ => 0,
@@ -544,6 +561,7 @@ pub(crate) fn new_day(
     for mut dog in &mut dogs {
         dog.reset_day();
     }
+    jobs.reset_shared_day();
     let revision = jobs.service.revision + 1;
     jobs.service = service::Service::default();
     jobs.service.revision = revision;
@@ -1759,8 +1777,8 @@ mod tests {
         app.world_mut()
             .run_system_once(
                 move |mut commands: Commands, mut jobs: ResMut<Jobs>, models: Res<Models>| {
-                    jobs.seed(addresses.clone(), &mut commands, &models);
-                    jobs.seed(addresses.clone(), &mut commands, &models);
+                    jobs.seed(addresses.clone(), &mut commands, &models, true);
+                    jobs.seed(addresses.clone(), &mut commands, &models, true);
                 },
             )
             .unwrap();

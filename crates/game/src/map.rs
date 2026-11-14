@@ -548,6 +548,7 @@ pub fn input(
         serde_json::from_str(&crate::platform::ui_commands()).unwrap_or_default();
     for command in external {
         match command["action"].as_str() {
+            Some("retry-map") => map.failed.clear(),
             Some("select") => {
                 if let (Some(lat), Some(lon)) = (command["lat"].as_f64(), command["lon"].as_f64()) {
                     if lat.is_finite() && lon.is_finite() && lat.abs() <= 85. && lon.abs() <= 180. {
@@ -812,6 +813,7 @@ pub(crate) fn location_name(point: LatLon) -> String {
 }
 
 pub fn tiles(
+    mut loading: Local<Option<(Entity, bool, bool, bool)>>,
     mut commands: Commands,
     mut map: ResMut<Map>,
     mut images: ResMut<Assets<Image>>,
@@ -964,6 +966,20 @@ pub fn tiles(
                 let _ = tx.send((key, image));
             });
         }
+    }
+
+    let ready = visible_keys.iter().any(|key| map.images.contains_key(key));
+    let pending = visible_keys
+        .iter()
+        .any(|key| !map.images.contains_key(key) && !map.failed.contains_key(key));
+    let failed = visible_keys.iter().any(|key| map.failed.contains_key(key));
+    let state = (viewport, ready, pending, failed);
+    if *loading != Some(state) {
+        *loading = Some(state);
+        crate::platform::ui_event(
+            "paket-map-loading",
+            &serde_json::json!({"ready":ready,"pending":pending,"failed":failed}).to_string(),
+        );
     }
 }
 

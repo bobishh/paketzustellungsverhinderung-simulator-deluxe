@@ -41,10 +41,10 @@ async function directory(request, env) {
     if (input.room !== room) return reply({error:'Invalid owner'},403);
     const target = env.MESH_DIRECTORY.getByName(`public-${parseInt(room[0],16)%4}`);
     if (request.method === 'DELETE') { await target.remove(room); return reply({ok:true}); }
-    if (input.protocol !== 'paket-web/1' || !/^[a-f0-9]{64}$/.test(input.host) ||
+    if (input.protocol !== 'paket-web/2' || !/^[a-f0-9]{64}$/.test(input.host) ||
       !Number.isFinite(input.origin?.lat) || Math.abs(input.origin.lat)>85 || !Number.isFinite(input.origin?.lon) || Math.abs(input.origin.lon)>180 ||
       typeof input.relay !== 'string' || input.relay.length>512 || new URL(input.relay).protocol !== 'https:') return reply({error:'Invalid invitation'},400);
-    const invite = {protocol:'paket-web/1',room,host:input.host,relay:input.relay,origin:{lat:input.origin.lat,lon:input.origin.lon}};
+    const invite = {protocol:'paket-web/2',room,host:input.host,relay:input.relay,origin:{lat:input.origin.lat,lon:input.origin.lon}};
     return await target.publish(invite) ? reply({ok:true}) : reply({error:'Directory is full'},503);
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof TypeError) return reply({error:'Invalid invitation'},400);

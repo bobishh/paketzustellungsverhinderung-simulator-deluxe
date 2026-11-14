@@ -14,9 +14,9 @@ it('rejects unrelated world coordinates, spoofed actor devices and oversized fac
   expect(validFact({ ...fact, sequence: -1 }, origin)).toBe(false);
 });
 it('recognizes a browser invite and rejects incompatible native or malformed invites', () => {
-  const invite = { protocol: 'paket-web/1', origin, host: 'a'.repeat(64), room: 'b'.repeat(64), relay: 'https://relay.example/' };
+  const invite = { protocol: 'paket-web/2', origin, host: 'a'.repeat(64), room: 'b'.repeat(64), relay: 'https://relay.example/' };
   expect(decodeInvite(JSON.stringify(invite))).toEqual(invite);
-  for (const value of [{ ...invite, protocol: 'paket/1' }, { ...invite, relay: 'http://localhost/' }, { ...invite, room: 'guessable' }]) {
+  for (const value of [{ ...invite, protocol: 'paket-web/1' }, { ...invite, protocol: 'paket/1' }, { ...invite, relay: 'http://localhost/' }, { ...invite, room: 'guessable' }]) {
     expect(() => decodeInvite(JSON.stringify(value))).toThrow();
   }
 });
@@ -48,10 +48,23 @@ it('accepts elevated and legacy parked vans but rejects invalid elevations', () 
 });
 
 it('shares the same URL after joining from a directory JSON invitation', () => {
-  const invite = {protocol:'paket-web/1',origin,host:'a'.repeat(64),relay:'https://relay.example/',room:'b'.repeat(64)} as const;
+  const invite = {protocol:'paket-web/2',origin,host:'a'.repeat(64),relay:'https://relay.example/',room:'b'.repeat(64)} as const;
   const listed = {room:invite.room,host:invite.host,protocol:invite.protocol,relay:invite.relay,origin:{lon:origin.lon,lat:origin.lat}};
   const link = inviteLink(invite,'https://game.test');
   expect(link.startsWith('https://game.test/#join=')).toBe(true);
   expect(inviteLink(decodeInvite(JSON.stringify(listed)),'https://game.test')).toBe(link);
   expect(decodeInvite(link)).toEqual(invite);
+});
+
+it('validates a bounded shared route and authenticated delivery claims',()=>{
+  const actor='a'.repeat(64);
+  const route={kind:'route',origin,device:actor,day:1,revision:2,stops:[{building_id:'way/1',label:'Shared address',position:[1,0,2],completion:{device:actor,photo:true,score:100}}]};
+  expect(validFact(route,origin,actor)).toBe(true);
+  expect(validFact({...route,stops:[...route.stops,...route.stops]},origin,actor)).toBe(false);
+  expect(validFact({...route,stops:[{...route.stops[0],position:[NaN,0,0]}]},origin,actor)).toBe(false);
+  expect(validFact({...route,stops:Array(13).fill(route.stops[0])},origin,actor)).toBe(false);
+  const claim={kind:'delivered',origin,device:actor,day:1,building_id:'way/1',photo:true,score:100};
+  expect(validFact(claim,origin,actor)).toBe(true);
+  expect(validFact(claim,origin,'b'.repeat(64))).toBe(false);
+  expect(validFact({...claim,photo:false,score:100},origin,actor)).toBe(false);
 });

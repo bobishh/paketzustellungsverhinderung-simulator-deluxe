@@ -43,7 +43,7 @@ describe('WASM cache revalidation', () => {
 });
 
 describe('public mesh directory', () => {
-  const invite = { protocol:'paket-web/1', origin:{lat:52.4895,lon:13.3908}, host:'a'.repeat(64), room:'b'.repeat(64), relay:'https://relay.example' };
+  const invite = { protocol:'paket-web/2', origin:{lat:52.4895,lon:13.3908}, host:'a'.repeat(64), room:'b'.repeat(64), relay:'https://relay.example' };
   it('lists live meshes from bounded directory partitions', async () => {
     const env = { MESH_DIRECTORY:{getByName:()=>({list:async()=>[invite]})} };
     const response = await worker.fetch(new Request('https://game.test/api/meshes'),env,{});
@@ -64,7 +64,7 @@ describe('public mesh directory', () => {
 it('publishes only an owner-authorized, bounded public invitation', async () => {
   const token = 'd'.repeat(64);
   const room = [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token)))].map(x=>x.toString(16).padStart(2,'0')).join('');
-  const invite = {protocol:'paket-web/1',room,host:'a'.repeat(64),origin:{lat:52.4895,lon:13.3908},relay:'https://relay.example'};
+  const invite = {protocol:'paket-web/2',room,host:'a'.repeat(64),origin:{lat:52.4895,lon:13.3908},relay:'https://relay.example'};
   const published: unknown[] = [];
   const env = {MESH_DIRECTORY:{getByName:()=>({publish:async (i: unknown)=>{published.push(i);return true;}})}};
   const request = (body: string, origin = 'https://game.test') => new Request('https://game.test/api/meshes',{method:'PUT',headers:{origin,authorization:`Bearer ${token}`},body});
