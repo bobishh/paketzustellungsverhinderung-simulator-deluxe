@@ -7,15 +7,15 @@ import { signEnvelope, verifyEnvelope, verifyDeviceCertificateChain } from '@met
 
 type Origin = { lat: number; lon: number };
 type Fact = { kind: string; origin: Origin; device?: string; sequence?: number; [key: string]: unknown };
-type Invite = { protocol: 'paket-web/2'; origin: Origin; host: string; relay: string; room: string };
+type Invite = { protocol: 'paket-web/3'; origin: Origin; host: string; relay: string; room: string };
 type Presence = Member & {seen:number;until:number};
 type State = { poses:Map<string,PoseReceipt>; members:Map<string,Presence>; memberVersion?:string; node: IrohMeshNode; invite: Invite; host: boolean; closed: boolean; inbox: Fact[]; latest: Map<string, Fact>; pending: Fact[]; unlist?: () => void; timer?: ReturnType<typeof setTimeout> };
 const sessions = new Map<string, State>();
 export function decodeInvite(value: string): Invite {
   const encoded = value.includes('#join=') ? value.split('#join=')[1] : null;
   const invite = JSON.parse(encoded ? new TextDecoder().decode(Uint8Array.from(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))) : value);
-  if(invite.protocol==='paket-web/1')throw new Error('This invitation uses an older game version. Reload the host and create a new mesh.');
-  if (invite.protocol !== 'paket-web/2' || !/^[a-f0-9]{64}$/.test(invite.host) || !/^[a-f0-9]{64}$/.test(invite.room) ||
+  if((invite.protocol as string)==='paket-web/1'||(invite.protocol as string)==='paket-web/2')throw new Error('This invitation uses an older game version. Reload the host and create a new mesh.');
+  if (invite.protocol !== 'paket-web/3' || !/^[a-f0-9]{64}$/.test(invite.host) || !/^[a-f0-9]{64}$/.test(invite.room) ||
       !Number.isFinite(invite.origin?.lat) || Math.abs(invite.origin.lat) > 85 || !Number.isFinite(invite.origin?.lon) || Math.abs(invite.origin.lon) > 180 ||
       typeof invite.relay !== 'string' || new URL(invite.relay).protocol !== 'https:') throw new Error('Invalid browser ride invitation');
   return invite;
@@ -39,7 +39,7 @@ export function validFact(fact: Fact, origin: Origin, device?: string): boolean 
   if (fact.kind === 'streetAction' && fact.day !== undefined && (!Number.isSafeInteger(fact.day) || Number(fact.day) < 1 || Number(fact.day) > 36_501)) return false;
   const label = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 256;
   if (fact.kind === 'delivery') return label(fact.building_id);
-  const receipt=(r:any)=>r&&typeof r.device==='string'&&/^[a-f0-9]{64}$/.test(r.device)&&typeof r.photo==='boolean'&&[0,25,100].includes(r.score)&&(r.photo||r.score===0);
+  const receipt=(r:any)=>r&&typeof r.device==='string'&&/^[a-f0-9]{64}$/.test(r.device)&&typeof r.photo==='boolean'&&(r.photo?[0,25,100].includes(r.score):Number.isInteger(r.score)&&r.score>=0&&r.score<=400);
   if(fact.kind==='delivered')return label(fact.building_id)&&receipt(fact);
   if(fact.kind==='route'){
     if(!Number.isSafeInteger(fact.revision)||Number(fact.revision)<0||!Array.isArray(fact.stops)||fact.stops.length>12)return false;
@@ -111,7 +111,7 @@ export const mesh = {
     const host = !invitation;
     const ownerToken = [...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join('');
     const room = [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ownerToken)))].map(x=>x.toString(16).padStart(2,'0')).join('');
-    const invite: Invite = bootstrap ?? { protocol: 'paket-web/2', origin, host: node.endpointId, relay,
+    const invite: Invite = bootstrap ?? { protocol: 'paket-web/3', origin, host: node.endpointId, relay,
       room };
     const s: State = { poses:new Map(),members:new Map(), node, invite, host, closed: false, inbox: [], latest: new Map(), pending: [] };
     const name=String(profile.identity.displayName||'Courier').trim().slice(0,48)||'Courier';
@@ -122,7 +122,7 @@ export const mesh = {
     let profileCursor = 0;
     if (host) {
       await node.listen(async (input: any) => {
-        if (input?.protocol !== 'paket-web/2' || input.room !== invite.room || !Array.isArray(input.facts) || input.facts.length > 32) throw new Error('Invalid ride message');
+        if (input?.protocol !== 'paket-web/3' || input.room !== invite.room || !Array.isArray(input.facts) || input.facts.length > 32) throw new Error('Invalid ride message');
         const endpoint = input.auth?.proof?.payload?.endpoint;
         if (typeof endpoint !== 'string' || !/^[a-f0-9]{64}$/.test(endpoint)) throw new Error('Invalid peer');
         prune(s);
@@ -142,13 +142,13 @@ export const mesh = {
         emitMembers(s);
         for (const fact of input.facts) { if ((fact.kind === 'shift'||fact.kind==='route') || !validFact(fact, invite.origin, endpoint)) throw new Error('Invalid game fact'); incoming(s, fact); }
         if (Array.isArray(input.profiles) && input.profiles.length <= 2) for (const record of input.profiles) { try { await acceptProfile(record); } catch { /* Reject unsigned or foreign application data. */ } }
-        return { members:roster(s), profiles: profileBatch(profileCursor++), protocol: 'paket-web/2', facts: [...s.latest.values()].filter(fact => fact.device !== endpoint).slice(-128) };
+        return { members:roster(s), profiles: profileBatch(profileCursor++), protocol: 'paket-web/3', facts: [...s.latest.values()].filter(fact => fact.device !== endpoint).slice(-128) };
       });
     } else {
       // Do not enter a shift until the host has accepted the invitation.
       try {
-        const hello: any = await node.request(invite.host, {protocol:'paket-web/2',room:invite.room,auth,facts:[],profiles:[]}, 8000);
-        if (hello?.protocol !== 'paket-web/2') throw new Error('Invalid host reply');
+        const hello: any = await node.request(invite.host, {protocol:'paket-web/3',room:invite.room,auth,facts:[],profiles:[]}, 8000);
+        if (hello?.protocol !== 'paket-web/3') throw new Error('Invalid host reply');
         acceptMembers(s,hello.members);
       } catch (error) { await node.close(); throw error; }
       const tick = async () => {
@@ -156,8 +156,8 @@ export const mesh = {
         const started=performance.now();
         const batch = s.pending.splice(0, 32);
         try {
-          const reply: any = await node.request(invite.host, { protocol: 'paket-web/2', room: invite.room, auth, facts: batch, profiles: profileBatch(profileCursor++) }, 4000);
-          if (reply?.protocol !== 'paket-web/2' || !Array.isArray(reply.facts) || reply.facts.length > 128) throw new Error('Invalid host reply');
+          const reply: any = await node.request(invite.host, { protocol: 'paket-web/3', room: invite.room, auth, facts: batch, profiles: profileBatch(profileCursor++) }, 4000);
+          if (reply?.protocol !== 'paket-web/3' || !Array.isArray(reply.facts) || reply.facts.length > 128) throw new Error('Invalid host reply');
           acceptMembers(s,reply.members);emitMembers(s);
           if (Array.isArray(reply.profiles) && reply.profiles.length <= 2) for (const record of reply.profiles) { try { await acceptProfile(record); } catch { /* Verify each profile independently of the host. */ } }
           for (const fact of reply.facts) if (validFact(fact, invite.origin)) incoming(s, fact);

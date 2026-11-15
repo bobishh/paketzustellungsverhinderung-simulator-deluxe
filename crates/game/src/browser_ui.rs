@@ -42,6 +42,8 @@ pub(crate) fn update(
     let data = serde_json::json!({"position":xy(t.translation),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|(p,t)|serde_json::json!({"id":p.device,"position":xy(t.translation),"form":p.form,"age":(clock.elapsed_secs()-p.received).max(0.)})).collect::<Vec<_>>()});
     crate::platform::ui_event("paket-radar", &data.to_string());
     let mut hud = jobs.hud_data(t.translation);
+    hud["dispatcher"] = jobs.dispatcher(clock.elapsed_secs());
+    hud["intercom"] = jobs.browser_intercom(clock.elapsed_secs());
     hud["minute"] = serde_json::json!(shift.minute());
     hud["day"] = serde_json::json!(shift.day());
     hud["vote"] = shift.hud(&ride);
@@ -89,6 +91,15 @@ pub(crate) fn input(
             "shift-vote" => {
                 if let Some(i) = c["choice"].as_u64().filter(|i| *i < 3) {
                     shift.vote(i as u8);
+                }
+            }
+            "intercom" => {
+                if let (Some(revision), Some(kind)) = (c["revision"].as_u64(), c["kind"].as_str()) {
+                    let choice = c["choice"]
+                        .as_u64()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .unwrap_or(0);
+                    jobs.intercom_action(revision, kind, choice);
                 }
             }
             "delivery" => {

@@ -192,7 +192,7 @@ fn install_ride(app: &mut App) {
                 jobs::settle_thrown.before(jobs::residents),
                 invite_control,
                 return_to_map,
-                dogs::walk,
+                dogs::walk.after(jobs::courier),
                 dogs::animate_tails,
                 actors::animate_people,
                 actors::animate_vehicles,

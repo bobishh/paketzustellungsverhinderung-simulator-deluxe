@@ -1,13 +1,44 @@
 import './hud.css';
 import {deliveryGuidance, type DeliveryStop} from './guidance';
 type Stop = DeliveryStop;
-type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; day:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number };
+type IntercomOption = {kind:string; choice?:number; label:string; pressed?:boolean};
+type Intercom = {revision:number; message:string; status:string; options:IntercomOption[]};
+type Dispatcher = {message:string; timer:string; action:string};
+type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; day:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number; dispatcher?:Dispatcher|null; intercom?:Intercom|null };
 const root=document.querySelector<HTMLElement>('#ride-hud')!;
 const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!;
 const settings=document.querySelector<HTMLButtonElement>('#settings')!;
 const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
 const send=(command:{action:string;[key:string]:unknown})=>globalThis.paketCommands.push(command);
 const el=(id:string)=>document.getElementById(id)!;
+let intercomRevision: number|undefined;
+function showIntercom(panel?: Intercom|null) {
+  el('intercom-panel').hidden = !panel;
+  if (!panel) {
+    el('intercom-options').replaceChildren();
+    intercomRevision = undefined;
+    return;
+  }
+  put('intercom-message', panel.message);
+  put('intercom-status', panel.status);
+  if (intercomRevision === panel.revision) return;
+  const focused = (document.activeElement as HTMLElement|null)?.dataset.intercom;
+  intercomRevision = panel.revision;
+  const options = panel.options.map(({kind, choice, label, pressed}) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.dataset.intercom = kind + String(choice ?? '');
+    if (pressed !== undefined) button.setAttribute('aria-pressed', String(pressed));
+    button.onclick = () => {
+      send({action:'intercom', revision:panel.revision, kind, choice});
+      if (kind === 'close' || kind === 'reply') canvas.focus({preventScroll:true});
+    };
+    return button;
+  });
+  el('intercom-options').replaceChildren(...options);
+  options.find(b => b.dataset.intercom === focused)?.focus({preventScroll:true});
+}
 const put=(id:string,value:string)=>{const node=el(id);if(node.textContent!==value)node.textContent=value;};
 const states:Record<Stop['state'],string>={'in-van':'In the van',carrying:'In your hands','in-flight':'In flight','photo-due':'Photo needed',filed:'Delivered',handed:'Handed over'};
 const buttons=new Map<number,HTMLButtonElement>();
@@ -47,6 +78,12 @@ window.addEventListener('keydown',e=>{
     if(!e.repeat)send({action:'delivery-step',delta:e.shiftKey?-1:1});
     return;
   }
+  if(e.key==='Escape'&&state?.intercom){
+    e.preventDefault();e.stopImmediatePropagation();
+    if(!e.repeat)send({action:'intercom',revision:state.intercom.revision,kind:'close'});
+    canvas.focus({preventScroll:true});
+    return;
+  }
   if(e.key==='F1'){e.preventDefault();e.stopImmediatePropagation();if(dialog.open)closeSettings();else openSettings();}
   else if(document.querySelector('dialog[open]'))e.stopImmediatePropagation();
 },true);
@@ -61,6 +98,7 @@ document.addEventListener('pointerlockchange',()=>{
 window.addEventListener('paket-mode',((e:CustomEvent<string>)=>{
   ride=e.detail==='ride';root.hidden=!ride;settings.hidden=!ride;showStops(false);lastStatus='';buttons.clear();el('route-list').replaceChildren();
   if(dialog.open)dialog.close();
+  showIntercom();el('dispatcher').hidden=true;
   if(ride)send({action:'sensitivity',value:sensitivity});
 }) as EventListener);
 window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
@@ -95,7 +133,14 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
   }
   const guidance=deliveryGuidance(s);
   put('delivery-step',guidance.step);put('delivery-detail',guidance.detail);
-  put('hud-action',guidance.action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
+  const dispatch = s.form === 'courier' ? s.dispatcher : null;
+  el('dispatcher').hidden = !dispatch;
+  if(dispatch){
+    put('dispatcher-message',dispatch.message);
+    put('dispatcher-timer',dispatch.timer);
+  }
+  showIntercom(s.intercom);
+  put('hud-action',dispatch && s.stunSeconds <= 0 && !s.ended ? dispatch.action : guidance.action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
   el('shock-status').hidden=!(s.stunSeconds>0);
   if(s.stunSeconds>0)put('shock-status',`BITTEN · IN SHOCK · ${s.stunSeconds.toFixed(1)}s`);
   const difficulty=el('difficulty') as HTMLSelectElement;

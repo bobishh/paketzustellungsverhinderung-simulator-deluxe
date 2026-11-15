@@ -28,7 +28,7 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
         const now=performance.now(),east=w.walkAt?(now-w.walkAt)/1000*4:0;
         w.paketMesh.publish(session.device,{kind:'actor',origin,device:session.device,sequence:++sequence,pose:{avatar:'courier',east,north:0,up:0,heading:Math.PI/2,velocity_east:w.walkAt?4:0,velocity_north:0,parked_van:null}});
         w.paketMesh.publish(session.device,{kind:'route',origin,device:session.device,day:1,revision:2,stops:[
-          {building_id:'way/10',label:'Mesh stop A',position:[-40,0,-10],completion:{device:session.device,photo:true,score:100}},
+          {building_id:'way/10',label:'Mesh stop A',position:[-40,0,-10],completion:{device:session.device,photo:false,score:335}},
           {building_id:'way/11',label:'Mesh stop B',position:[0,0,-10],completion:null},
           {building_id:'way/12',label:'Mesh stop C',position:[40,0,-10],completion:null},
         ]});
@@ -51,7 +51,7 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
     await expect(guest.locator('#stop-address')).toHaveText('Mesh stop B');
     await expect(guest.locator('#hud-score')).toHaveText('0');
     await guest.locator('#route-toggle').click();
-    await expect(guest.locator('#route-list .route-stop').first()).toContainText('Delivered');
+    await expect(guest.locator('#route-list .route-stop').first()).toContainText('Handed over');
     await guest.locator('#route-toggle').click();
     await guest.locator('#share').click();await expect(guest.locator('#share-link')).toHaveValue(link);await guest.locator('#share-close').click();
     await expect(guest.locator('#share-dialog')).toBeHidden();

@@ -43,7 +43,7 @@ impl Jobs {
         }
     }
     fn advance_shared_selection(&mut self) {
-        let done = |p: &Parcel| matches!(p.state, ParcelState::Filed(_) | ParcelState::Handed);
+        let done = |p: &Parcel| matches!(p.state, ParcelState::Filed(_) | ParcelState::Handed(_));
         if self.parcels.get(self.navigation).is_some_and(done) {
             if let Some(next) = self.parcels.iter().position(|p| !done(p)) {
                 self.navigation = next;
@@ -158,7 +158,7 @@ impl Jobs {
                 }
                 let (photo, score) = match p.state {
                     ParcelState::Filed(score) => (true, score),
-                    ParcelState::Handed => (false, 0),
+                    ParcelState::Handed(score) => (false, score),
                     _ => return None,
                 };
                 Some((
@@ -221,8 +221,11 @@ impl Jobs {
 fn valid_receipt(r: &DeliveryReceipt) -> bool {
     !r.device.is_empty()
         && r.device.len() <= 256
-        && matches!(r.score, 0 | 25 | 100)
-        && (r.photo || r.score == 0)
+        && if r.photo {
+            matches!(r.score, 0 | 25 | 100)
+        } else {
+            (0..=sabotage::MAX_AWARD).contains(&r.score)
+        }
 }
 fn valid_stops(stops: &[RouteStop]) -> bool {
     let mut ids = HashSet::new();
@@ -243,7 +246,7 @@ fn complete(parcel: &mut Parcel, receipt: DeliveryReceipt, commands: &mut Comman
     parcel.state = if receipt.photo {
         ParcelState::Filed(receipt.score)
     } else {
-        ParcelState::Handed
+        ParcelState::Handed(receipt.score)
     };
     parcel.completion = Some(receipt);
     parcel.dropped_at = None;
@@ -317,6 +320,25 @@ mod tests {
         assert!(!jobs.confirm_delivery(1, "way/1", receipt("bob"), &mut world.commands()));
         assert_eq!(jobs.parcels[0].completion.as_ref().unwrap().device, "alice");
         assert_eq!(jobs.progress()["score"], 0);
+    }
+    #[test]
+    fn handover_awards_follow_the_winning_receipt_without_adding_a_photo() {
+        let mut world = World::new();
+        let mut jobs = Jobs::default();
+        jobs.day = 1;
+        jobs.configure_shared("host", false);
+        let mut route = stops();
+        route[0].completion = Some(DeliveryReceipt {
+            device: "host".into(),
+            photo: false,
+            score: 335,
+        });
+        assert!(jobs.receive_route(1, 1, route.clone(), &mut world.commands()));
+        assert_eq!(jobs.progress()["score"], 335);
+        assert_eq!(jobs.progress()["photos"], 0);
+        assert_eq!(jobs.progress()["delivered"], 1);
+        assert!(jobs.receive_route(1, 2, route, &mut world.commands()));
+        assert_eq!(jobs.progress()["score"], 335);
     }
     #[test]
     fn own_receipts_credit_once_and_new_days_reset_them() {

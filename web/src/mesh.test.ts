@@ -14,9 +14,9 @@ it('rejects unrelated world coordinates, spoofed actor devices and oversized fac
   expect(validFact({ ...fact, sequence: -1 }, origin)).toBe(false);
 });
 it('recognizes a browser invite and rejects incompatible native or malformed invites', () => {
-  const invite = { protocol: 'paket-web/2', origin, host: 'a'.repeat(64), room: 'b'.repeat(64), relay: 'https://relay.example/' };
+  const invite = { protocol: 'paket-web/3', origin, host: 'a'.repeat(64), room: 'b'.repeat(64), relay: 'https://relay.example/' };
   expect(decodeInvite(JSON.stringify(invite))).toEqual(invite);
-  for (const value of [{ ...invite, protocol: 'paket-web/1' }, { ...invite, protocol: 'paket/1' }, { ...invite, relay: 'http://localhost/' }, { ...invite, room: 'guessable' }]) {
+  for (const value of [{ ...invite, protocol: 'paket-web/1' }, { ...invite, protocol: 'paket-web/2' }, { ...invite, protocol: 'paket/1' }, { ...invite, relay: 'http://localhost/' }, { ...invite, room: 'guessable' }]) {
     expect(() => decodeInvite(JSON.stringify(value))).toThrow();
   }
 });
@@ -48,7 +48,7 @@ it('accepts elevated and legacy parked vans but rejects invalid elevations', () 
 });
 
 it('shares the same URL after joining from a directory JSON invitation', () => {
-  const invite = {protocol:'paket-web/2',origin,host:'a'.repeat(64),relay:'https://relay.example/',room:'b'.repeat(64)} as const;
+  const invite = {protocol:'paket-web/3',origin,host:'a'.repeat(64),relay:'https://relay.example/',room:'b'.repeat(64)} as const;
   const listed = {room:invite.room,host:invite.host,protocol:invite.protocol,relay:invite.relay,origin:{lon:origin.lon,lat:origin.lat}};
   const link = inviteLink(invite,'https://game.test');
   expect(link.startsWith('https://game.test/#join=')).toBe(true);
@@ -66,5 +66,7 @@ it('validates a bounded shared route and authenticated delivery claims',()=>{
   const claim={kind:'delivered',origin,device:actor,day:1,building_id:'way/1',photo:true,score:100};
   expect(validFact(claim,origin,actor)).toBe(true);
   expect(validFact(claim,origin,'b'.repeat(64))).toBe(false);
-  expect(validFact({...claim,photo:false,score:100},origin,actor)).toBe(false);
+  expect(validFact({...claim,photo:false,score:335},origin,actor)).toBe(true);
+  expect(validFact({...claim,photo:false,score:401},origin,actor)).toBe(false);
+  expect(validFact({...claim,photo:true,score:335},origin,actor)).toBe(false);
 });

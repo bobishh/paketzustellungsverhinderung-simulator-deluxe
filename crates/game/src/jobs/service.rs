@@ -1,10 +1,13 @@
 //! Doorbells, resident schedules and the small delivery conversations.
 use super::*;
 use bevy::{picking::hover::Hovered, ui_widgets::Button};
+use sabotage::{Attempt, Pitch, Scenario};
 
 #[derive(Default)]
 pub(super) struct Service {
     pub modal: Option<Modal>,
+    pub attempts: HashMap<String, Attempt>,
+    pub browser_action: Option<Action>,
     pub visited: HashSet<String>,
     pub bonus: i32,
     pub dialogue_result: Option<i32>,
@@ -26,6 +29,10 @@ pub(super) enum ModalKind {
         started: Option<f32>,
         budget: f32,
         rare: bool,
+    },
+    Neighbor {
+        address: String,
+        message: String,
     },
     Dialogue {
         recipient: Entity,
@@ -53,7 +60,7 @@ impl Citizen {
         )
     }
 }
-fn hash(id: &str) -> u32 {
+pub(super) fn hash(id: &str) -> u32 {
     id.bytes().fold(2166136261u32, |h, b| {
         (h ^ u32::from(b)).wrapping_mul(16777619)
     })
@@ -93,6 +100,7 @@ pub(super) fn citizen(id: &str) -> Citizen {
 pub(crate) enum Action {
     Bell(u8),
     Reply(u8),
+    Pitch(u8),
     Fault,
     Close,
 }
@@ -102,6 +110,148 @@ pub(crate) struct Panel;
 pub(crate) struct TimerLabel;
 #[derive(Component)]
 pub(crate) struct Marker(u8);
+
+impl Jobs {
+    pub fn browser_intercom(&self, now: f32) -> serde_json::Value {
+        let Some(modal) = &self.service.modal else {
+            return serde_json::Value::Null;
+        };
+        let mut options = Vec::new();
+        let message = match &modal.kind {
+            ModalKind::Intercom {
+                address,
+                pressed,
+                started,
+                budget,
+                rare,
+            } => {
+                for i in 0..6 {
+                    let id = if i == 0 {
+                        address.clone()
+                    } else {
+                        format!("{address}/{i}")
+                    };
+                    let name = citizen(&id).name;
+                    let label = if i == 0 {
+                        format!("Ring recipient · {name}")
+                    } else {
+                        name
+                    };
+                    options.push(serde_json::json!({"kind":"bell","choice":i,"label":label,"pressed":pressed & (1 << i) != 0}));
+                }
+                if *rare && self.service.visited.contains(address) {
+                    options
+                        .push(serde_json::json!({"kind":"fault","label":"Report broken intercom"}));
+                }
+                match started {
+                    Some(start) => format!(
+                        "{} / 6 bells · {:.1}s",
+                        pressed.count_ones(),
+                        (budget - (now - start)).max(0.)
+                    ),
+                    None => "All 6 bells in time: +40 KPI".into(),
+                }
+            }
+            ModalKind::Neighbor { message, .. } => {
+                for (i, pitch) in Pitch::OPTIONS.iter().enumerate() {
+                    options
+                        .push(serde_json::json!({"kind":"pitch","choice":i,"label":pitch.label()}));
+                }
+                message.clone()
+            }
+            ModalKind::Dialogue { name, expires, .. } => {
+                for (i, label) in [
+                    format!("1 · {name}. Here you go."),
+                    format!(
+                        "2 · {}… Schnaffel?",
+                        name.split_whitespace().next().unwrap_or("Er")
+                    ),
+                    "3 · Whoever lives here.".into(),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    options.push(serde_json::json!({"kind":"reply","choice":i,"label":label}));
+                }
+                format!("Who is this parcel for? · {:.1}s", (expires - now).max(0.))
+            }
+        };
+        options.push(serde_json::json!({"kind":"close","label":"Close"}));
+        serde_json::json!({"revision": self.service.revision, "message": message, "status": self.status, "options": options})
+    }
+
+    fn active_attempt(&self) -> Option<(&Parcel, &Attempt, &str)> {
+        let parcel = self.parcels.get(self.selected)?;
+        if !matches!(
+            parcel.state,
+            ParcelState::Carrying | ParcelState::Dropped { .. } | ParcelState::Flying { .. }
+        ) {
+            return None;
+        }
+        let attempt = self.service.attempts.get(&parcel.address)?;
+        let neighbor = self
+            .parcels
+            .iter()
+            .find(|p| p.address == attempt.neighbor)?;
+        Some((parcel, attempt, &neighbor.label))
+    }
+
+    pub fn dispatcher(&self, now: f32) -> serde_json::Value {
+        let Some((parcel, attempt, label)) = self.active_attempt() else {
+            return serde_json::Value::Null;
+        };
+        let seconds = attempt.seconds(now);
+        let points = attempt.award(
+            now,
+            actors::horizontal_distance(parcel.point, attempt.destination),
+        );
+        let mut timer = if seconds > 0 {
+            format!("{seconds}s before decay · {points} KPI")
+        } else if points > 0 {
+            format!("{points} KPI · bonus falling")
+        } else {
+            "0 KPI · handover still counts".into()
+        };
+        if attempt.scenario == Scenario::Vacation && !attempt.backup {
+            let departure = (30. - (now - attempt.started)).ceil() as i32;
+            if departure > 0 {
+                timer.push_str(&format!(" · Leaves in {departure}s"));
+            } else {
+                timer.push_str(" · Neighbor left");
+            }
+        }
+        serde_json::json!({
+            "message": attempt.message(&parcel.address, label),
+            "timer": timer,
+            "action": if self.dog_parcel.is_some() || (attempt.answer_at.is_some() && self.prompt.contains("Hand over to the neighbor")) {
+                self.prompt.clone()
+            } else if matches!(parcel.state, ParcelState::Carrying) {
+                if attempt.scenario == Scenario::Fussy && !attempt.prepared {
+                    "E · Place the parcel at the real door".into()
+                } else if let Some(answer) = attempt.answer_at {
+                    if answer > now { format!("Neighbor answers in {:.0}s", (answer - now).ceil()) }
+                    else { "Meet the neighbor outside · E to hand over".into() }
+                } else {
+                    "Follow the marker · R to call the neighbor".into()
+                }
+            } else { self.prompt.clone() },
+        })
+    }
+
+    pub fn intercom_action(&mut self, revision: u64, kind: &str, choice: u8) {
+        if self.service.modal.is_none() || self.service.revision != revision {
+            return;
+        }
+        self.service.browser_action = match kind {
+            "bell" => Some(Action::Bell(choice)),
+            "reply" if choice < 3 => Some(Action::Reply(choice)),
+            "pitch" => Some(Action::Pitch(choice)),
+            "fault" => Some(Action::Fault),
+            "close" => Some(Action::Close),
+            _ => None,
+        };
+    }
+}
 
 pub(crate) fn service_update(
     mut commands: Commands,
@@ -116,6 +266,7 @@ pub(crate) fn service_update(
     residents: Query<(Entity, &Resident, &Transform)>,
     vans: Query<&Transform, With<ParkedVan>>,
     models: Res<Models>,
+    street: Res<crate::StreetMaterials>,
     spatial: SpatialQuery,
 ) {
     let Ok((actor_id, player, actor)) = player.single() else {
@@ -134,7 +285,11 @@ pub(crate) fn service_update(
     if player.form != Avatar::Courier {
         return;
     }
-    let mut action = actions.iter().next().copied();
+    let mut action = jobs
+        .service
+        .browser_action
+        .take()
+        .or_else(|| actions.iter().next().copied());
     if keys.just_pressed(KeyCode::Escape) {
         action = Some(Action::Close);
     }
@@ -159,6 +314,28 @@ pub(crate) fn service_update(
         if let Some(mut modal) = jobs.service.modal.take() {
             let mut keep = true;
             match (&mut modal.kind, action) {
+                (ModalKind::Neighbor { address, message }, Action::Pitch(choice)) => {
+                    if let Some(attempt) = jobs.service.attempts.get_mut(address)
+                        && let Some(&pitch) = Pitch::OPTIONS.get(choice as usize)
+                    {
+                        match attempt.evaluate(now, pitch) {
+                            Ok(()) => {
+                                attempt.answer_at.get_or_insert(now + 2.);
+                                let neighbor = attempt.neighbor.clone();
+                                *message =
+                                    format!("{} is coming to the door.", citizen(&neighbor).name);
+                                jobs.open_doors.insert(neighbor.clone());
+                                jobs.emit(
+                                    &ride,
+                                    StreetAction::Door {
+                                        building_id: neighbor,
+                                    },
+                                );
+                            }
+                            Err(reason) => *message = reason.into(),
+                        }
+                    }
+                }
                 (ModalKind::Dialogue { .. }, Action::Reply(choice)) => {
                     jobs.service.dialogue_result = Some(if choice == 1 { 15 } else { 0 });
                     keep = false;
@@ -183,7 +360,35 @@ pub(crate) fn service_update(
                     if i == 0 {
                         jobs.service.visited.insert(address.clone());
                         let citizen = citizen(address);
-                        if citizen.home_at(shift.minute()) {
+                        let home = citizen.home_at(shift.minute());
+                        if let Some(parcel) = jobs.parcels.get(jobs.selected)
+                            && parcel.address == *address
+                            && matches!(
+                                parcel.state,
+                                ParcelState::Carrying | ParcelState::Dropped { .. }
+                            )
+                            && let Some(scenario) = Scenario::at(address)
+                            && !jobs.service.attempts.contains_key(address)
+                            && let Some(neighbor) = nearest_neighbor(&jobs, parcel, None)
+                        {
+                            let attempt = Attempt {
+                                scenario,
+                                started: now,
+                                neighbor: neighbor.address.clone(),
+                                destination: neighbor.point,
+                                backup: false,
+                                prepared: false,
+                                answer_at: None,
+                                recipient_at: home.then_some(now + citizen.delay),
+                            };
+                            jobs.service.attempts.insert(address.clone(), attempt);
+                            if scenario == Scenario::Dog
+                                && let Some(b) = buildings.iter().find(|b| b.id == *address)
+                            {
+                                street.dogs.at_door(&mut commands, b.entrance, b.outward);
+                            }
+                        }
+                        if home {
                             jobs.open_doors.insert(address.clone());
                             jobs.emit(
                                 &ride,
@@ -195,6 +400,14 @@ pub(crate) fn service_update(
                                 "{} is on the way · about {:.0} seconds",
                                 citizen.name, citizen.delay
                             );
+                            if jobs
+                                .service
+                                .attempts
+                                .get(address)
+                                .is_some_and(|a| a.scenario == Scenario::SleepingBaby)
+                            {
+                                jobs.status.insert_str(0, "The bell woke the baby. ");
+                            }
                         } else {
                             jobs.status =
                                 format!("No answer from {}. {}", citizen.name, citizen.schedule());
@@ -259,7 +472,7 @@ pub(crate) fn service_update(
                     "Whole batch loaded. Follow the orange marker to the dumping spot.".into();
             } else if collected && actors::horizontal_distance(target, actor.translation) < 3.4 {
                 for (i, parcel) in jobs.parcels.iter_mut().enumerate() {
-                    if !matches!(parcel.state, ParcelState::Filed(_) | ParcelState::Handed) {
+                    if !matches!(parcel.state, ParcelState::Filed(_) | ParcelState::Handed(_)) {
                         if let Some(prop) = parcel.prop.take() {
                             commands.entity(prop).despawn();
                         }
@@ -305,6 +518,10 @@ pub(crate) fn service_update(
     };
     if active
         && in_reach
+        && jobs.dog_parcel.is_none()
+        && jobs.service.attempts.get(&address).is_none_or(|attempt| {
+            matches!(parcel.state, ParcelState::Dropped { .. }) && attempt.answer_at.is_none()
+        })
         && !jobs.service.conversations.contains(&index)
         && jobs.service.dialogue_result.is_none()
     {
@@ -337,6 +554,43 @@ pub(crate) fn service_update(
         }
     }
     if keys.just_pressed(KeyCode::KeyR) {
+        if active
+            && let Some(attempt) = jobs.service.attempts.get(&address)
+            && let Some(b) = buildings.iter().find(|b| {
+                b.id == attempt.neighbor
+                    && actors::horizontal_distance(b.entrance, actor.translation) < 4.5
+                    && (actors::horizontal_distance(b.entrance, actor.translation)
+                        < actors::horizontal_distance(parcel.point, actor.translation))
+            })
+        {
+            let camera = intercom_camera(b);
+            let mut message = format!("{}: Who is the parcel for?", citizen(&b.id).name);
+            if attempt.departed(now) {
+                let backup = nearest_neighbor(&jobs, parcel, Some(&attempt.neighbor))
+                    .map(|p| (p.address.clone(), p.point, p.label.clone()));
+                let attempt = jobs.service.attempts.get_mut(&address).unwrap();
+                if let Some((id, point, label)) = backup {
+                    attempt.neighbor = id;
+                    attempt.destination = point;
+                    attempt.backup = true;
+                    attempt.answer_at = None;
+                    message = format!("The neighbor has left for vacation. Try {label}.");
+                } else {
+                    message =
+                        "The neighbor has left for vacation. Try the recipient or file a photo."
+                            .into();
+                }
+                jobs.status = message;
+                jobs.service.revision += 1;
+                return;
+            }
+            jobs.service.modal = Some(Modal {
+                camera,
+                kind: ModalKind::Neighbor { address, message },
+            });
+            jobs.service.revision += 1;
+            return;
+        }
         let address = jobs
             .parcels
             .get(jobs.navigation)
@@ -344,9 +598,7 @@ pub(crate) fn service_update(
         if let Some(b) = buildings.iter().find(|b| {
             b.id == address && actors::horizontal_distance(b.entrance, actor.translation) < 4.5
         }) {
-            let camera =
-                Transform::from_translation(b.threshold + b.outward * 1.6 + Vec3::Y * 1.55)
-                    .looking_at(b.threshold + Vec3::Y * 1.45, Vec3::Y);
+            let camera = intercom_camera(b);
             jobs.service.modal = Some(Modal {
                 camera,
                 kind: ModalKind::Intercom {
@@ -362,6 +614,28 @@ pub(crate) fn service_update(
             jobs.status = "Approach the orange delivery marker to use the intercom [R].".into();
         }
     }
+}
+
+fn nearest_neighbor<'a>(
+    jobs: &'a Jobs,
+    parcel: &Parcel,
+    exclude: Option<&str>,
+) -> Option<&'a Parcel> {
+    jobs.parcels
+        .iter()
+        .filter(|p| p.address != parcel.address && exclude != Some(p.address.as_str()))
+        .filter(|p| actors::horizontal_distance(p.point, parcel.point) <= 100.)
+        .min_by(|a, b| {
+            a.point
+                .distance_squared(parcel.point)
+                .total_cmp(&b.point.distance_squared(parcel.point))
+                .then(a.address.cmp(&b.address))
+        })
+}
+
+fn intercom_camera(b: &BuildingLink) -> Transform {
+    Transform::from_translation(b.threshold + b.outward * 1.6 + Vec3::Y * 1.55)
+        .looking_at(b.threshold + Vec3::Y * 1.45, Vec3::Y)
 }
 
 fn text(value: impl Into<String>, size: f32) -> impl Bundle {
@@ -411,7 +685,9 @@ pub(crate) fn service_ui(
         for root in &panels {
             commands.entity(root).despawn();
         }
-        if let Some(modal) = &jobs.service.modal {
+        if !cfg!(target_arch = "wasm32")
+            && let Some(modal) = &jobs.service.modal
+        {
             commands
                 .spawn((
                     Panel,
@@ -473,6 +749,13 @@ pub(crate) fn service_ui(
                                 );
                             }
                         }
+                        ModalKind::Neighbor { message, .. } => {
+                            p.spawn(text("NEIGHBOR INTERCOM", 24.));
+                            p.spawn(text(message, 16.));
+                            for (i, pitch) in Pitch::OPTIONS.iter().enumerate() {
+                                button(p, Action::Pitch(i as u8), pitch.label().into(), false);
+                            }
+                        }
                         ModalKind::Dialogue { name, .. } => {
                             p.spawn(text("Who is this parcel for?", 24.));
                             p.spawn((TimerLabel, text("", 17.)));
@@ -500,7 +783,9 @@ pub(crate) fn service_ui(
         }
     }
     for mut label in &mut timers {
-        if let Some(modal) = &jobs.service.modal {
+        if !cfg!(target_arch = "wasm32")
+            && let Some(modal) = &jobs.service.modal
+        {
             label.0 = match &modal.kind {
                 ModalKind::Dialogue { expires, .. } => format!(
                     "Answer in {:.1}s · mangled name +15 KPI",
@@ -552,18 +837,23 @@ pub(crate) fn service_ui(
     for (kind, mut node, mut label) in &mut markers {
         let citizen = citizen(&parcel.address);
         let (position, value) = if kind.0 == 0 {
-            let target = jobs
-                .service
-                .bulk
-                .filter(|(_, loaded)| *loaded)
-                .map_or(parcel.point, |(p, _)| p);
+            let active = jobs.active_attempt();
+            let target = jobs.current_target().unwrap_or(parcel.point);
+            let description = if let Some((parcel, attempt, label)) = active {
+                format!(
+                    "{}\n{}s before bonus decay",
+                    attempt.message(&parcel.address, label),
+                    attempt.seconds(now)
+                )
+            } else {
+                format!("{}\n[R] Intercom", citizen.name)
+            };
             (
                 target + Vec3::Y * 2.7,
                 format!(
-                    "{} · {:.0} m\n{}\n[R] Intercom",
+                    "{} · {:.0} m\n{description}",
                     parcel.label,
-                    actors::horizontal_distance(target, actor.translation),
-                    citizen.name
+                    actors::horizontal_distance(target, actor.translation)
                 ),
             )
         } else if let Some((npc, t)) = residents.iter().find(|(n, _)| n.address == parcel.address) {

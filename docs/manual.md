@@ -14,6 +14,10 @@ If a recipient catches you, finish the timed name dialogue or press **E** beside
 
 This is a bad-courier simulator. A proper delivery earns **0 KPI**. Photographing a wrong-address delivery earns **100 KPI**, or **25** if you were caught. The timed all-bells challenge, name dialogue and rare broken-intercom opportunity offer separate bonuses.
 
+Some stops send a dispatcher SMS after you call the recipient. Follow its clue, walk to the marked neighbor and use **R** to talk through their intercom. Use **E** when they reach the door. Sabotage pays for the handover and its distance from the original address. The bonus starts falling 45 seconds after the first ring. Calling again keeps the original countdown.
+
+A dog can grab an unattended parcel during a dispatcher challenge. Follow the box and press **E** nearby to recover it. A return to the original doorstep closes the stop for 0 KPI.
+
 ## Where is the cursor?
 
 **Esc** releases the mouse. Click the game to capture it again. **Tab / Shift+Tab** inspect the next/previous delivery; browser and system combinations such as Cmd+Tab are left alone. Tab retains normal focus navigation in forms and dialogs.

@@ -16,6 +16,9 @@ pub(crate) struct Dog {
     mood: Mood,
 }
 
+#[derive(Component)]
+pub(crate) struct DeliveryDog;
+
 #[derive(Default)]
 enum Mood {
     #[default]
@@ -128,6 +131,28 @@ impl DogKit {
                     .with_rotation(facing(forward)),
                 Visibility::default(),
                 ChildOf(parent),
+            ))
+            .id();
+        self.model(commands, dog);
+    }
+
+    pub(crate) fn at_door(&self, commands: &mut Commands, position: Vec3, outward: Vec3) {
+        let start = (position + outward * 2.4).with_y(0.045);
+        let forward = outward.cross(Vec3::Y);
+        let dog = commands
+            .spawn((
+                Dog {
+                    start,
+                    forward,
+                    length: 2.,
+                    distance: 0.,
+                    direction: 1.,
+                    mood: Mood::Patrol,
+                },
+                Transform::from_translation(start).with_rotation(facing(forward)),
+                Visibility::default(),
+                DespawnOnExit(crate::Mode::Ride),
+                DeliveryDog,
             ))
             .id();
         self.model(commands, dog);
@@ -273,8 +298,10 @@ fn facing(direction: Vec3) -> Quat {
 
 pub(crate) fn walk(
     time: Res<Time>,
+    clock: Res<Time<Virtual>>,
+    mut commands: Commands,
     mut player: Query<(Entity, &mut Player, &Transform), Without<Dog>>,
-    mut dogs: Query<(&mut Dog, &mut Transform)>,
+    mut dogs: Query<(Entity, &mut Dog, &mut Transform)>,
     mut jobs: ResMut<crate::jobs::Jobs>,
     spatial: avian3d::prelude::SpatialQuery,
 ) {
@@ -283,7 +310,21 @@ pub(crate) fn walk(
     };
     let dt = time.delta_secs();
     let now = time.elapsed_secs();
-    for (mut dog, mut transform) in &mut dogs {
+    for (entity, mut dog, mut transform) in &mut dogs {
+        if !matches!(dog.mood, Mood::Leap { .. })
+            && jobs.dog_delivery_step(
+                &mut commands,
+                &spatial,
+                (actor, &mut player),
+                entity,
+                &mut transform,
+                clock.elapsed_secs(),
+                dt,
+            )
+        {
+            dog.mood = Mood::Recover(now + 3.);
+            continue;
+        }
         let delta = (rider.translation - transform.translation).with_y(0.);
         let visible = player.form == paket_session::Avatar::Courier
             && !jobs.interaction_active()
