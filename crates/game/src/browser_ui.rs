@@ -12,6 +12,8 @@ pub(crate) fn update(
     time: Res<Time>,
     clock: Res<Time<Virtual>>,
     roads: Res<Roads>,
+    elevation: Res<crate::elevation::Elevation>,
+    sports: Query<&crate::places::SportsOutline>,
     jobs: Res<Jobs>,
     shift: Res<Shift>,
     player: Query<(&Player, &Transform, &avian3d::prelude::LinearVelocity)>,
@@ -22,6 +24,7 @@ pub(crate) fn update(
     peers: Query<(&RemoteActor, &Transform)>,
     mut timer: Local<f32>,
     mut version: Local<Option<(u64, u64)>>,
+    mut outlines: Local<String>,
 ) {
     if !cfg!(target_arch = "wasm32") {
         return;
@@ -38,8 +41,14 @@ pub(crate) fn update(
         *version = Some((roads.generation, shift.day()));
         crate::platform::ui_event("paket-map-roads", &roads.radar());
     }
+    let shapes =
+        serde_json::to_string(&sports.iter().map(|shape| &shape.0).collect::<Vec<_>>()).unwrap();
+    if *outlines != shapes {
+        crate::platform::ui_event("paket-map-sports", &shapes);
+        *outlines = shapes;
+    }
     let xy = |p: Vec3| [p.x, p.z];
-    let data = serde_json::json!({"position":xy(t.translation),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|(p,t)|serde_json::json!({"id":p.device,"position":xy(t.translation),"form":p.form,"age":(clock.elapsed_secs()-p.received).max(0.)})).collect::<Vec<_>>()});
+    let data = serde_json::json!({"position":xy(t.translation),"altitude":t.translation.y,"terrain":elevation.heights.available(),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|(p,t)|serde_json::json!({"id":p.device,"position":xy(t.translation),"form":p.form,"age":(clock.elapsed_secs()-p.received).max(0.)})).collect::<Vec<_>>()});
     crate::platform::ui_event("paket-radar", &data.to_string());
     let mut hud = jobs.hud_data(t.translation);
     hud["dispatcher"] = jobs.dispatcher(clock.elapsed_secs());

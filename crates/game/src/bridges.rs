@@ -1,4 +1,6 @@
 //! Elevated OSM bridge decks. Their render mesh is also the physical driving surface.
+pub(crate) mod layout;
+
 use crate::{
     Mode, StreetMaterials,
     actors::{ParkedVan, Player},
@@ -78,7 +80,12 @@ fn triangle_height(point: Vec3, [a, b, c]: [Vec3; 3]) -> Option<f32> {
         .then_some(a.y + u * (b.y - a.y) + v * (c.y - a.y))
 }
 
+#[cfg(test)]
 fn plans(streets: &[&Street]) -> Vec<Span> {
+    elevated_plans(streets, &crate::elevation::Heights::default())
+}
+
+fn elevated_plans(streets: &[&Street], heights: &crate::elevation::Heights) -> Vec<Span> {
     let paths = streets
         .iter()
         .map(|s| {
@@ -139,6 +146,8 @@ fn plans(streets: &[&Street]) -> Vec<Span> {
             }
             // Layer is ordering, not metres. Use a consistent game-scale clearance.
             let clearance = 2.4 * f32::from(s.bridge.unwrap_or(1).clamp(1, 4));
+            let near = heights.at(paths[i][0]);
+            let far = heights.at(*paths[i].last().unwrap());
             let mut distance = 0.;
             let mut points = vec![];
             for (segment, pair) in paths[i].windows(2).enumerate() {
@@ -151,11 +160,11 @@ fn plans(streets: &[&Street]) -> Vec<Span> {
                     let t = step as f32 / steps as f32;
                     let along = distance + length * t;
                     let from_bank = (bank[i * 2] + along).min(bank[i * 2 + 1] + lengths[i] - along);
-                    points.push(
-                        pair[0]
-                            .lerp(pair[1], t)
-                            .with_y(GROUND + (from_bank * GRADE).min(clearance)),
-                    );
+                    points.push(pair[0].lerp(pair[1], t).with_y(
+                        near.lerp(far, along / lengths[i])
+                            + GROUND
+                            + (from_bank * GRADE).min(clearance),
+                    ));
                 }
                 distance += length;
             }
@@ -227,11 +236,11 @@ impl Geometry {
     }
 }
 
-fn strip(span: &Span, from: f32, to: f32, minimum_height: f32) -> Mesh {
+fn strip(span: &Span, from: f32, to: f32, vertical_offset: f32) -> Mesh {
     let mut mesh = Geometry::default();
     for i in 0..span.points.len() - 1 {
-        let a = span.points[i].with_y(span.points[i].y.max(minimum_height));
-        let b = span.points[i + 1].with_y(span.points[i + 1].y.max(minimum_height));
+        let a = span.points[i].with_y(span.points[i].y + vertical_offset);
+        let b = span.points[i + 1].with_y(span.points[i + 1].y + vertical_offset);
         let u = span.sides[i];
         let v = span.sides[i + 1];
         mesh.quad(
@@ -273,6 +282,7 @@ pub(crate) fn rebuild(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     street_materials: Res<StreetMaterials>,
+    elevation: Option<Res<crate::elevation::Elevation>>,
     mut actors: Query<(&mut Transform, Option<&Player>), Or<(With<Player>, With<ParkedVan>)>>,
 ) {
     if bridges.generation == roads.generation {
@@ -282,15 +292,18 @@ pub(crate) fn rebuild(
     if let Some(root) = bridges.root.take() {
         commands.entity(root).try_despawn();
     }
-    let streets = roads
-        .streets()
+    let layout = roads.layout();
+    let streets = layout
+        .iter()
         .filter(|s| s.bridge.is_some())
         .collect::<Vec<_>>();
     let previous = Bridges {
         spans: std::mem::take(&mut bridges.spans),
         ..default()
     };
-    bridges.spans = plans(&streets);
+    let flat = crate::elevation::Heights::default();
+    let heights = elevation.as_ref().map_or(&flat, |e| &e.heights);
+    bridges.spans = elevated_plans(&streets, heights);
     if bridges.spans.is_empty() {
         return;
     }
@@ -325,7 +338,7 @@ pub(crate) fn rebuild(
         .id();
     bridges.root = Some(root);
     for span in &bridges.spans {
-        let deck = strip(span, -span.left, span.right, GROUND);
+        let deck = strip(span, -span.left, span.right, 0.);
         let collider = Collider::trimesh_from_mesh(&deck).expect("nondegenerate bridge deck");
         commands.spawn((
             BridgeDeck,
@@ -351,7 +364,7 @@ pub(crate) fn rebuild(
                 // Flat roads render at +0.026 above the physical ground.
                 // Match that at the bank so grass cannot show through the ramp.
                 commands.spawn((
-                    Mesh3d(meshes.add(crate::shapes::lit(strip(span, from, to, 0.026)))),
+                    Mesh3d(meshes.add(crate::shapes::lit(strip(span, from, to, 0.081)))),
                     MeshMaterial3d(material.clone()),
                     Transform::IDENTITY,
                     ChildOf(root),
@@ -417,7 +430,7 @@ pub(crate) fn rebuild(
                     0.075,
                 );
             }
-            if i % 9 == 4 && a.y > 1.5 {
+            if i % 9 == 4 && a.y - heights.at(a) > 1.5 {
                 for offset in [-span.left * 0.65, span.right * 0.65] {
                     let top = a + u * offset - down;
                     beam(
@@ -425,7 +438,7 @@ pub(crate) fn rebuild(
                         root,
                         &cube,
                         &concrete,
-                        top.with_y(-0.8),
+                        top.with_y(heights.at(top) - 0.8),
                         top,
                         0.65,
                         0.65,
@@ -495,6 +508,7 @@ mod tests {
             name: None,
             surface: Surface::Asphalt,
             spawnable: true,
+            motor_road: true,
             bridge: Some(1),
         }
     }

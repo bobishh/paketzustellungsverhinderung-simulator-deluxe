@@ -1,0 +1,126 @@
+{
+  "elements": [
+    {
+      "type": "way",
+      "id": 25290651,
+      "bounds": {
+        "minlat": 52.2698853,
+        "minlon": 10.5323284,
+        "maxlat": 52.2700271,
+        "maxlon": 10.5328401
+      },
+      "nodes": [
+        275462116,
+        270699152
+      ],
+      "geometry": [
+        {
+          "lat": 52.2698853,
+          "lon": 10.5323284
+        },
+        {
+          "lat": 52.2700271,
+          "lon": 10.5328401
+        }
+      ],
+      "tags": {
+        "bicycle": "use_sidepath",
+        "bridge": "yes",
+        "foot": "use_sidepath",
+        "highway": "secondary",
+        "lanes": "2",
+        "layer": "1",
+        "lit": "yes",
+        "maxspeed": "50",
+        "maxweight:signed": "no",
+        "name": "Humboldtstra\u00dfe",
+        "name:etymology:wikidata": "Q6694",
+        "parking:both": "no",
+        "postal_code": "38106",
+        "shoulder": "no",
+        "sidewalk:both": "separate",
+        "smoothness": "excellent",
+        "surface": "asphalt"
+      }
+    },
+    {
+      "type": "way",
+      "id": 384167666,
+      "bounds": {
+        "minlat": 52.269837,
+        "minlon": 10.5323633,
+        "maxlat": 52.2699743,
+        "maxlon": 10.5328779
+      },
+      "nodes": [
+        3874575714,
+        1894416631
+      ],
+      "geometry": [
+        {
+          "lat": 52.2699743,
+          "lon": 10.5328779
+        },
+        {
+          "lat": 52.269837,
+          "lon": 10.5323633
+        }
+      ],
+      "tags": {
+        "bicycle": "designated",
+        "bridge": "yes",
+        "check_date:smoothness": "2026-07-28",
+        "foot": "designated",
+        "footway": "sidewalk",
+        "highway": "path",
+        "layer": "1",
+        "lit": "yes",
+        "oneway": "no",
+        "segregated": "no",
+        "smoothness": "good",
+        "surface": "concrete",
+        "traffic_sign": "DE:241",
+        "wheelchair": "yes"
+      }
+    },
+    {
+      "type": "way",
+      "id": 549026811,
+      "bounds": {
+        "minlat": 52.2699394,
+        "minlon": 10.5322879,
+        "maxlat": 52.2700758,
+        "maxlon": 10.5328022
+      },
+      "nodes": [
+        3312512370,
+        5303618676
+      ],
+      "geometry": [
+        {
+          "lat": 52.2700758,
+          "lon": 10.5328022
+        },
+        {
+          "lat": 52.2699394,
+          "lon": 10.5322879
+        }
+      ],
+      "tags": {
+        "bicycle": "designated",
+        "bridge": "yes",
+        "check_date:smoothness": "2026-07-28",
+        "foot": "designated",
+        "footway": "sidewalk",
+        "highway": "path",
+        "layer": "1",
+        "lit": "yes",
+        "segregated": "no",
+        "smoothness": "good",
+        "surface": "concrete",
+        "traffic_sign": "DE:241",
+        "wheelchair": "yes"
+      }
+    }
+  ]
+}

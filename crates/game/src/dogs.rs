@@ -137,7 +137,7 @@ impl DogKit {
     }
 
     pub(crate) fn at_door(&self, commands: &mut Commands, position: Vec3, outward: Vec3) {
-        let start = (position + outward * 2.4).with_y(0.045);
+        let start = position + outward * 2.4 + Vec3::Y * 0.045;
         let forward = outward.cross(Vec3::Y);
         let dog = commands
             .spawn((
@@ -304,6 +304,7 @@ pub(crate) fn walk(
     mut dogs: Query<(Entity, &mut Dog, &mut Transform)>,
     mut jobs: ResMut<crate::jobs::Jobs>,
     spatial: avian3d::prelude::SpatialQuery,
+    elevation: Res<crate::elevation::Elevation>,
 ) {
     let Ok((actor, mut player, rider)) = player.single_mut() else {
         return;
@@ -311,6 +312,9 @@ pub(crate) fn walk(
     let dt = time.delta_secs();
     let now = time.elapsed_secs();
     for (entity, mut dog, mut transform) in &mut dogs {
+        if !matches!(dog.mood, Mood::Leap { .. }) {
+            transform.translation.y = elevation.heights.at(transform.translation) + 0.045;
+        }
         if !matches!(dog.mood, Mood::Leap { .. })
             && jobs.dog_delivery_step(
                 &mut commands,
@@ -383,6 +387,7 @@ pub(crate) fn walk(
                     dog.mood = Mood::Patrol;
                 }
                 let home = dog.start + dog.forward * dog.distance;
+                let home = home.with_y(elevation.heights.at(home) + 0.045);
                 let delta = home - transform.translation;
                 transform.translation += delta.clamp_length_max(dt * 1.5);
                 if delta.length() > 0.1 {
@@ -396,6 +401,7 @@ pub(crate) fn walk(
         let next = (dog.distance + dog.direction * speed * dt).clamp(0.0, dog.length);
         dog.distance = next;
         transform.translation = dog.start + dog.forward * dog.distance;
+        transform.translation.y = elevation.heights.at(transform.translation) + 0.045;
         transform.rotation = transform.rotation.slerp(
             facing(dog.forward * dog.direction),
             1.0 - (-14.0 * dt).exp(),

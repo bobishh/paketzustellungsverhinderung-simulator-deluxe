@@ -10,7 +10,7 @@ export function mapRequest(url) {
   const ne = landscape ? project(1650, 1650) : project((x + 1) * 180, (y + 1) * 180);
   const bbox = [...sw, ...ne].map(n => n.toFixed(6)).join(',');
   const query = landscape ? `[out:json][timeout:16];(wr["natural"~"^(water|wood)$"](${bbox});wr["landuse"="forest"](${bbox});wr["waterway"="riverbank"](${bbox}););out geom;` :
-    `[out:json][timeout:25];(way["building"](${bbox});way["highway"](${bbox});nwr["leisure"="playground"](${bbox});node["amenity"="bench"](${bbox});node["natural"="tree"](${bbox}););out geom;`;
+    `[out:json][timeout:25];(way["building"](${bbox});way["highway"](${bbox});nwr["leisure"~"^(playground|stadium|pitch)$"](${bbox});wr["man_made"="bridge"](${bbox});node["amenity"="bench"](${bbox});node["natural"="tree"](${bbox}););out geom;`;
   return { query, file: `${lat.toFixed(5)}_${lon.toFixed(5)}_${landscape ? 'landscape' : `${x}_${y}`}.json` };
 }
 async function directory(request, env) {
@@ -78,13 +78,31 @@ export default {
         ctx.waitUntil(caches.default.put(cacheKey,response.clone()));return response;
       } catch {return new Response('Address search unavailable',{status:503,headers});}
     }
+    if (url.pathname.startsWith('/elevation/')) {
+      const match = /^\/elevation\/(\d{1,4})\/(\d{1,4})\.png$/.exec(url.pathname);
+      if (!match || Number(match[1]) >= 8192 || Number(match[2]) >= 8192) {
+        return new Response('Invalid elevation tile', {status:400, headers});
+      }
+      try {
+        const bundled = await env.ASSETS.fetch(new Request(url.origin + url.pathname, request));
+        if (bundled.ok) return bundled;
+        const path = `${Number(match[1])}/${Number(match[2])}.png`;
+        const response = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/13/${path}`, {
+          method:request.method, signal:AbortSignal.timeout(3500), cf:{cacheEverything:true,cacheTtl:86400},
+        });
+        if (!response.ok || !response.headers.get('content-type')?.includes('image/png')) throw new Error('Unavailable tile');
+        return new Response(response.body, {headers:{...headers,'content-type':'image/png','cache-control':'public,max-age=86400'}});
+      } catch {
+        return new Response('Elevation unavailable', {status:503,headers:{...headers,'cache-control':'no-store'}});
+      }
+    }
     if (url.pathname === '/api/osm') {
       let map;
       try { map = mapRequest(url); } catch { return new Response('Invalid map request', { status: 400, headers }); }
-      const assetUrl = new URL(`/osm/${map.file}`, url);
+      const assetUrl = new URL(`/osm-v3/${map.file}`, url);
       const bundled = await env.ASSETS.fetch(new Request(assetUrl));
       if (bundled.ok) return new Response(request.method === 'HEAD' ? null : bundled.body, { headers: { ...headers, 'content-type': 'application/json', 'cache-control': 'public,max-age=86400' } });
-      const cacheKey = new Request(new URL(`/map-cache/v2/${map.file}`, url));
+      const cacheKey = new Request(new URL(`/map-cache/v3/${map.file}`, url));
       const cached = await caches.default.match(cacheKey);
       if (cached) return request.method === 'HEAD' ? new Response(null, cached) : cached;
       for (const endpoint of ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
@@ -98,6 +116,8 @@ export default {
           return request.method === 'HEAD' ? new Response(null, response) : response;
         } catch { /* Try the next map provider. */ }
       }
+      const fallback = await env.ASSETS.fetch(new Request(new URL(`/osm/${map.file}`, url)));
+      if (fallback.ok) return new Response(request.method === 'HEAD' ? null : fallback.body, {headers:{...headers,'content-type':'application/json','cache-control':'public,max-age=60'}});
       return new Response('Map provider is busy. Please retry.', { status: 503, headers: { ...headers, 'retry-after': '15' } });
     }
     const route = ['/', '/identity/return'].includes(url.pathname) ? new URL('/index.html', url) : url;

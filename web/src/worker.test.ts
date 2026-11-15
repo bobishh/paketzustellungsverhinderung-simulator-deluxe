@@ -10,8 +10,22 @@ describe('map boundary', () => {
   it('uses only bounded generated queries and stable public cache names', () => {
     const m = mapRequest(new URL('https://game.test/api/osm?lat=52.4275793&lon=13.741161&x=0&y=0&data=evil'));
     expect(m.file).toBe('52.42758_13.74116_0_0.json');
-    expect(m.query).toContain('way["building"]'); expect(m.query).not.toContain('evil');
+    expect(m.query).toContain('way["building"]');
+    expect(m.query).toContain('stadium|pitch');
+    expect(m.query).toContain('wr["man_made"="bridge"]'); expect(m.query).not.toContain('evil');
   });
+  it('serves a bundled elevation PNG and rejects tile coordinates outside zoom 13', async () => {
+    const tiles: string[] = [];
+    const env = {ASSETS:{fetch:async (r:Request) => {
+      tiles.push(new URL(r.url).pathname);
+      return new Response('PNG', {headers:{'content-type':'image/png'}});
+    }}};
+    const path = '/elevation/4400/2687.png';
+    expect((await worker.fetch(new Request('https://game.test'+path),env,{})).headers.get('content-type')).toBe('image/png');
+    expect((await worker.fetch(new Request('https://game.test/elevation/8192/0.png'),env,{})).status).toBe(400);
+    expect(tiles).toEqual([path]);
+  });
+
   it('serves callbacks as HTML but does not turn missing scripts into a successful HTML response', async () => {
     const urls: string[] = [];
     const env = { ASSETS: { fetch: async (r: Request) => { urls.push(new URL(r.url).pathname); return new Response('', { status: 404 }); } } };

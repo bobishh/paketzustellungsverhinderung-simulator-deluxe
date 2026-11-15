@@ -31,6 +31,7 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
       geometry:[ll(x-4,8),ll(x+4,8),ll(x+4,17),ll(x-4,17),ll(x-4,8)],
     })),
   ]};
+  await page.route('**/elevation/**', r => r.fulfill({status:503}));
   await page.route('**/api/osm?*', r => r.fulfill({json:fixture}));
   await page.goto('/?lat=0&lon=0');
   await page.locator('#play').click();

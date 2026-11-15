@@ -92,6 +92,7 @@ pub struct Street {
     pub spawnable: bool,
     /// OSM bridge layer; relative stacking order, not an absolute elevation.
     pub bridge: Option<i8>,
+    pub motor_road: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,11 +116,19 @@ struct Element {
     #[serde(default)]
     tags: HashMap<String, String>,
     geometry: Option<Vec<LatLonJson>>,
+    #[serde(default)]
+    members: Vec<GeometryMember>,
     lat: Option<f64>,
     lon: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
+struct GeometryMember {
+    role: String,
+    #[serde(default)]
+    geometry: Vec<LatLonJson>,
+}
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
 struct LatLonJson {
     lat: f64,
     lon: f64,
@@ -184,9 +193,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
     let mut passage_ways = Vec::new();
     let mut skipped = 0;
     for element in doc.elements {
-        if let Some(place) = places::parse(&element, origin) {
-            places.push(place);
-        }
+        places.extend(places::parse(&element, origin));
         if element.kind != "way" {
             continue;
         }
@@ -278,6 +285,27 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
                         .clamp(2.2, 6.0);
                     passage_ways.push((line.clone(), f64::from(width_m), height));
                 }
+                let motor_road = matches!(
+                    highway.as_str(),
+                    "motorway"
+                        | "trunk"
+                        | "primary"
+                        | "secondary"
+                        | "tertiary"
+                        | "motorway_link"
+                        | "trunk_link"
+                        | "primary_link"
+                        | "secondary_link"
+                        | "tertiary_link"
+                        | "residential"
+                        | "unclassified"
+                        | "living_street"
+                        | "service"
+                        | "road"
+                ) && !matches!(
+                    element.tags.get("motor_vehicle").map(String::as_str),
+                    Some("no")
+                );
                 streets.push(Street {
                     id,
                     centerline: line,
@@ -286,6 +314,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
                     name: element.tags.get("name").cloned(),
                     surface,
                     spawnable,
+                    motor_road,
                     bridge: element
                         .tags
                         .get("bridge")
@@ -376,7 +405,7 @@ pub fn load_tile(
         let bytes = fs::read(&path).map_err(|error| error.to_string())?;
         let current = serde_json::from_slice::<serde_json::Value>(&bytes)
             .ok()
-            .is_some_and(|v| v["paket_features"] == 2);
+            .is_some_and(|v| v["paket_features"] == 3);
         if current || !allow_network {
             return parse_overpass(&bytes, origin);
         }
@@ -415,7 +444,7 @@ pub fn fetch_tile(origin: LatLon, tile: TileId) -> Result<Vec<u8>, String> {
         },
     );
     let query = format!(
-        "[out:json][timeout:25];(way[\"building\"]({south:.6},{west:.6},{north:.6},{east:.6});way[\"highway\"]({south:.6},{west:.6},{north:.6},{east:.6});nwr[\"leisure\"=\"playground\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"amenity\"=\"bench\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"natural\"=\"tree\"]({south:.6},{west:.6},{north:.6},{east:.6}););out geom;",
+        "[out:json][timeout:25];(way[\"building\"]({south:.6},{west:.6},{north:.6},{east:.6});way[\"highway\"]({south:.6},{west:.6},{north:.6},{east:.6});nwr[\"leisure\"~\"^(playground|stadium|pitch)$\"]({south:.6},{west:.6},{north:.6},{east:.6});wr[\"man_made\"=\"bridge\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"amenity\"=\"bench\"]({south:.6},{west:.6},{north:.6},{east:.6});node[\"natural\"=\"tree\"]({south:.6},{west:.6},{north:.6},{east:.6}););out geom;",
         south = south_west.lat,
         west = south_west.lon,
         north = north_east.lat,
@@ -442,7 +471,7 @@ pub fn fetch_tile(origin: LatLon, tile: TileId) -> Result<Vec<u8>, String> {
                     .and_then(|body| {
                         let mut data: serde_json::Value =
                             serde_json::from_str(&body).map_err(|e| e.to_string())?;
-                        data["paket_features"] = serde_json::json!(2);
+                        data["paket_features"] = serde_json::json!(3);
                         serde_json::to_vec(&data).map_err(|e| e.to_string())
                     });
             }
@@ -772,4 +801,20 @@ fn point_in_triangle(p: EastNorth, a: EastNorth, b: EastNorth, c: EastNorth) -> 
 
 fn div_floor(value: f64, size: f64) -> i32 {
     (value / size).floor() as i32
+}
+
+#[cfg(test)]
+mod feature_regressions {
+    use super::*;
+
+    #[test]
+    fn reads_stadium_outlines_and_field_relations_from_osm() {
+        let raw = br#"{"elements":[
+          {"type":"way","id":20,"tags":{"leisure":"stadium"},"geometry":[{"lat":0,"lon":0},{"lat":0,"lon":0.001},{"lat":0.001,"lon":0.001},{"lat":0.001,"lon":0},{"lat":0,"lon":0}]},
+          {"type":"relation","id":21,"tags":{"type":"multipolygon","leisure":"pitch","sport":"soccer"},"members":[{"type":"way","ref":22,"role":"outer","geometry":[{"lat":0.0001,"lon":0.0001},{"lat":0.0001,"lon":0.0009},{"lat":0.0008,"lon":0.0009}]},{"type":"way","ref":23,"role":"outer","geometry":[{"lat":0.0008,"lon":0.0009},{"lat":0.0008,"lon":0.0001},{"lat":0.0001,"lon":0.0001}]}]}
+        ]}"#;
+        let map = parse_overpass(raw, LatLon { lat: 0., lon: 0. }).unwrap();
+        assert_eq!(map.places.len(), 2);
+        assert!(map.places.iter().all(|p| p.outline.len() == 4));
+    }
 }

@@ -15,6 +15,7 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
   const ll=(east:number,north:number)=>({lat:north/6378137*180/Math.PI,lon:east/6378137*180/Math.PI});
   const fixture={elements:[{type:'way',id:1,tags:{highway:'residential',name:'Test Street'},geometry:[ll(-100,0),ll(100,0)]},
     ...[-40,0,40].map((x,i)=>({type:'way',id:10+i,tags:{building:'yes','building:levels':'2','addr:street':'Test Street','addr:housenumber':String(i+1)},geometry:[ll(x-6,10),ll(x+6,10),ll(x+6,20),ll(x-6,20),ll(x-6,10)]}))]};
+  await guest.route('**/elevation/**', r => r.fulfill({status:503}));
   await guest.route('**/api/osm?*',r=>r.fulfill({contentType:'application/json',body:JSON.stringify(fixture)}));
   try{
     // The producer uses the actual identity and Iroh transport. A controlled clock

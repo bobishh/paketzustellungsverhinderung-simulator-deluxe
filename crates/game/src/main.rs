@@ -3,6 +3,7 @@ mod bridges;
 mod browser_ui;
 mod buildings;
 mod dogs;
+mod elevation;
 mod jobs;
 mod map;
 mod places;
@@ -158,7 +159,10 @@ fn main() {
 fn install_ride(app: &mut App) {
     app.init_resource::<actors::Controls>()
         .init_resource::<shift::Shift>()
-        .add_systems(OnEnter(Mode::Ride), (setup, terrain::start))
+        .add_systems(
+            OnEnter(Mode::Ride),
+            (setup, terrain::start, elevation::start),
+        )
         .add_systems(OnExit(Mode::Ride), cleanup_ride)
         .add_systems(
             FixedUpdate,
@@ -170,7 +174,7 @@ fn install_ride(app: &mut App) {
             Update,
             (
                 (
-                    stream_tiles,
+                    (elevation::finish, follow_floor, stream_tiles).chain(),
                     browser_ui::input,
                     (shift::tick, jobs::new_day).chain(),
                     jobs::service_update,
@@ -188,7 +192,6 @@ fn install_ride(app: &mut App) {
                     action_prompt,
                 )
                     .chain(),
-                follow_floor,
                 jobs::settle_thrown.before(jobs::residents),
                 invite_control,
                 return_to_map,
@@ -341,6 +344,7 @@ fn cleanup_ride(
         cursor.grab_mode = CursorGrabMode::None;
     }
     commands.remove_resource::<terrain::Landscape>();
+    commands.remove_resource::<elevation::Elevation>();
     if continuing.is_none() {
         commands.remove_resource::<Ride>();
     }
@@ -935,6 +939,7 @@ fn stream_tiles(
     street_materials: Res<StreetMaterials>,
     mut jobs: ResMut<Jobs>,
     mut roads: ResMut<roads::Roads>,
+    elevation: Res<elevation::Elevation>,
     player: Query<&Transform, With<Player>>,
 ) {
     let dt = time.delta_secs();
@@ -1008,6 +1013,10 @@ fn stream_tiles(
         platform::load_scene(cache, origin, tile, network, tx);
         ride.pending.insert(tile, Mutex::new(rx));
     }
+    if !elevation.ready() {
+        return;
+    }
+    let heights = &elevation.heights;
     let ready: Vec<(TileId, Result<MapScene, String>)> = ride
         .pending
         .iter()
@@ -1043,14 +1052,15 @@ fn stream_tiles(
                     .buildings
                     .iter()
                     .filter(|building| !building.accessory)
-                    .map(building_link)
+                    .map(|b| raised_building(b, heights))
                     .collect();
                 jobs.seed(addresses, &mut commands, &models, !ride.guest);
             }
             if player.is_none() {
                 let start = match ride.role {
                     Role::Dog => jobs.room.as_ref().map(jobs::Room::start),
-                    Role::Courier => street_start(&scene, ride.origin, ride.guest),
+                    Role::Courier => street_start(&scene, ride.origin, ride.guest)
+                        .map(|(p, d)| (p.with_y(heights.at(p) - 0.04), d)),
                 };
                 if let Some((position, direction)) = start {
                     actors::spawn(
@@ -1072,6 +1082,7 @@ fn stream_tiles(
             &scene,
             &mut ride.spawned,
             &mut roads,
+            heights,
         );
         ride.loaded.insert(tile, features);
     }
@@ -1089,6 +1100,7 @@ fn to_world(point: EastNorth, y: f32) -> Vec3 {
 }
 
 fn stay_on_ground(
+    elevation: Res<elevation::Elevation>,
     mut actor: Query<(
         &Player,
         &mut Transform,
@@ -1099,13 +1111,16 @@ fn stay_on_ground(
     let Ok((player, mut transform, mut linear, mut angular)) = actor.single_mut() else {
         return;
     };
-    if transform.translation.is_finite() && transform.translation.y >= 0.08 {
+    if transform.translation.is_finite()
+        && transform.translation.y >= elevation.heights.at(transform.translation) + 0.08
+    {
         return;
     }
     if !transform.translation.is_finite() {
         transform.translation = Vec3::ZERO;
     }
-    transform.translation.y = actors::half_height(player.form) + 0.15;
+    transform.translation.y =
+        elevation.heights.at(transform.translation) + actors::half_height(player.form) + 0.15;
     linear.0 = Vec3::ZERO;
     angular.0 = Vec3::ZERO;
 }
@@ -1421,19 +1436,46 @@ fn remote_visuals(
 
 fn follow_floor(
     bike: Query<&Transform, With<Player>>,
-    mut floor: Query<&mut Transform, (With<WorldFloor>, Without<Player>)>,
+    elevation: Res<elevation::Elevation>,
+    mut raised: Local<bool>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut floor: Query<
+        (
+            &mut Transform,
+            &mut Mesh3d,
+            &mut Collider,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
+        (With<WorldFloor>, Without<Player>),
+    >,
 ) {
-    let (Ok(bike), Ok(mut floor)) = (bike.single(), floor.single_mut()) else {
+    let Ok((mut floor, mut mesh, mut collider, material)) = floor.single_mut() else {
         return;
     };
-    let translation = Vec3::new(
-        (bike.translation.x / 200.0).round() * 200.0,
-        floor.translation.y,
-        (bike.translation.z / 200.0).round() * 200.0,
-    );
-    if translation != floor.translation {
-        floor.translation = translation;
+    let here = bike.single().map_or(Vec3::ZERO, |bike| bike.translation);
+    if !elevation.heights.available() {
+        *raised = false;
+        floor.translation.x = (here.x / 200.).round() * 200.;
+        floor.translation.z = (here.z / 200.).round() * 200.;
+        return;
     }
+    if floor.translation.y == 0. && *raised && here.xz().distance(floor.translation.xz()) < 800. {
+        return;
+    }
+    let center = Vec3::new(
+        (here.x / 800.).round() * 800.,
+        0.,
+        (here.z / 800.).round() * 800.,
+    );
+    let (surface, physical) = elevation::floor(&elevation.heights, center, FLOOR_METERS * 0.5);
+    mesh.0 = meshes.add(shapes::lit(surface));
+    *collider = physical;
+    floor.translation = center;
+    if let Some(mut grass) = materials.get_mut(material) {
+        grass.uv_transform = Affine2::IDENTITY;
+    }
+    *raised = true;
 }
 
 fn guide(
@@ -1636,6 +1678,14 @@ fn building_link(building: &paket_geo::Building) -> BuildingLink {
     }
 }
 
+fn raised_building(building: &paket_geo::Building, heights: &elevation::Heights) -> BuildingLink {
+    let mut link = building_link(building);
+    let height = heights.at(link.threshold);
+    link.threshold.y += height;
+    link.entrance.y += height;
+    link
+}
+
 fn spawn_tile(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -1644,6 +1694,7 @@ fn spawn_tile(
     scene: &MapScene,
     spawned: &mut HashMap<String, (Entity, usize)>,
     roads: &mut roads::Roads,
+    heights: &elevation::Heights,
 ) -> Vec<String> {
     let mut features = Vec::new();
     for street in &scene.streets {
@@ -1669,7 +1720,12 @@ fn spawn_tile(
             *references += 1;
             continue;
         }
-        let entity = street_materials.places.spawn(commands, meshes, place);
+        if place.kind == paket_geo::places::Kind::Bridge {
+            roads.insert_bridge_outline(place);
+        }
+        let entity = street_materials
+            .places
+            .spawn(commands, meshes, place, heights);
         spawned.insert(place.id.clone(), (entity, 1));
     }
     for building in &scene.buildings {
@@ -1680,12 +1736,15 @@ fn spawn_tile(
         }
         let mesh = meshes.add(shapes::lit(buildings::mesh(building)));
         let collider = building_collider(building);
+        let link = raised_building(building, heights);
+        let height = link.threshold.y - building_link(building).threshold.y;
         let mut entity = commands.spawn((
             DespawnOnExit(Mode::Ride),
+            Transform::from_xyz(0., height, 0.),
             Mesh3d(mesh),
             MeshMaterial3d(street_materials.buildings.clone()),
             RigidBody::Static,
-            building_link(building),
+            link,
         ));
         if let Some(collider) = collider {
             entity.insert(collider);

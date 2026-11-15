@@ -43,7 +43,7 @@ impl Area {
     }
 }
 
-fn in_ring(p: EastNorth, ring: &[EastNorth]) -> bool {
+pub(super) fn in_ring(p: EastNorth, ring: &[EastNorth]) -> bool {
     ring.iter()
         .zip(ring.iter().cycle().skip(1))
         .fold(false, |inside, (a, b)| {
@@ -164,7 +164,7 @@ pub fn parse(bytes: &[u8], origin: LatLon) -> Result<Vec<Area>, String> {
     Ok(areas)
 }
 
-fn stitch(mut lines: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
+pub(super) fn stitch<T: Copy + PartialEq>(mut lines: Vec<Vec<T>>) -> Vec<Vec<T>> {
     let mut rings = Vec::new();
     while let Some(mut chain) = lines.pop() {
         if chain.len() < 2 {

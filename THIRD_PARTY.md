@@ -14,3 +14,7 @@ Source: https://github.com/google/fonts/tree/main/ofl/notosansjp
 Map fixtures (`fixtures/kreuzberg.json`, `fixtures/koertestrasse.json`) and bundled neighbourhood data are © OpenStreetMap contributors, available under the Open Database License (ODbL).
 Copyright and license: https://www.openstreetmap.org/copyright
 The Körtestraße fixture records public map geometry used to regress courtyard passage access.
+
+The Humboldtstraße bridge fixture is © OpenStreetMap contributors under the ODbL.
+Elevation tiles come from the [Mapzen Terrain Tiles open dataset](https://registry.opendata.aws/terrain-tiles/).
+The dataset combines multiple regional and global elevation sources. See [Mapzen's data attribution and licenses](https://github.com/tilezen/joerd/blob/master/docs/attribution.md) for the source notices, including Copernicus EU-DEM.

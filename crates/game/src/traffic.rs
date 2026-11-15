@@ -156,7 +156,11 @@ pub(crate) fn spawn(
         world.seen.insert(street.id.clone());
         for pedestrian in [false, true] {
             if (pedestrian && world.people >= 20)
-                || (!pedestrian && (world.cars >= 12 || !street.spawnable || street.width_m < 4.5))
+                || (!pedestrian
+                    && (world.cars >= 12
+                        || !street.motor_road
+                        || !street.spawnable
+                        || street.width_m < 4.5))
             {
                 continue;
             }
@@ -232,6 +236,7 @@ pub(crate) fn drive(
     player: Query<&Player>,
     vans: Query<Entity, With<ParkedVan>>,
     bridges: Option<Res<crate::bridges::Bridges>>,
+    elevation: Option<Res<crate::elevation::Elevation>>,
     decks: Query<Entity, With<crate::bridges::BridgeDeck>>,
     mut traffic: Query<(Entity, &mut Traffic, &mut Transform, &mut LinearVelocity)>,
 ) {
@@ -244,7 +249,11 @@ pub(crate) fn drive(
     for (entity, mut actor, mut transform, mut velocity) in &mut traffic {
         velocity.0 = Vec3::ZERO;
         if let Some(bridges) = &bridges {
-            let ground = bridges.height_at(transform.translation).unwrap_or(0.);
+            let ground = bridges.height_at(transform.translation).unwrap_or_else(|| {
+                elevation
+                    .as_ref()
+                    .map_or(0., |e| e.heights.at(transform.translation))
+            });
             transform.translation.y = ground + if actor.pedestrian { 0.9 } else { 0.8 };
         }
         if shift.ended() {

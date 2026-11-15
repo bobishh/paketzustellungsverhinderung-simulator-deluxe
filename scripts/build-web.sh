@@ -12,10 +12,18 @@ cp ../mesh/packages/mesh-transport/transport-wasm/meta_mesh.js ../mesh/packages/
 # Public OSM geometry for curated starter cities avoids first-load Overpass delays.
 python3 - <<'PY'
 from pathlib import Path
-import shutil
+import json, shutil
 for p in Path('cache/osm').glob('*.json'):
     if p.name.startswith(('52.48950_13.39080_', '40.72650_-73.98150_', '-23.55050_-46.68920_', '35.66160_139.66820_', '-33.93350_18.41120_', '-33.88450_151.21330_')):
-        shutil.copy2(p, Path('web/public/osm')/p.name)
+        source = json.loads(p.read_text())
+        folder = Path('web/public/osm-v3' if source.get('paket_features') == 3 or p.name.endswith('_landscape.json') else 'web/public/osm')
+        folder.mkdir(exist_ok=True)
+        shutil.copy2(p, folder / p.name)
+for p in Path('cache/elevation').glob('*.png'):
+    x, y = p.stem.split('-')
+    folder = Path('web/public/elevation') / x
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(p, folder / (y + '.png'))
 PY
 (cd web && npm run check && npm run build)
 # Workers assets have a 25 MiB per-file limit. Serve the precompressed module at its normal URL.

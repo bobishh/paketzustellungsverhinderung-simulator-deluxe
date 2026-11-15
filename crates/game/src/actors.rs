@@ -824,7 +824,7 @@ pub(crate) fn spawn(
         Avatar::Courier
     };
     let rotation = heading(direction);
-    let ground = point.with_y(-0.04);
+    let ground = point;
     let entity = commands
         .spawn((
             RigidBody::Dynamic,

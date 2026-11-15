@@ -77,10 +77,14 @@ pub(crate) fn start(mut commands: Commands, ride: Res<Ride>) {
 pub(crate) fn finish(
     mut commands: Commands,
     mut landscape: ResMut<Landscape>,
+    elevation: Res<crate::elevation::Elevation>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
+    if !elevation.ready() {
+        return;
+    }
     let Some(pending) = landscape.pending.as_mut() else {
         return;
     };
@@ -175,6 +179,7 @@ pub(crate) fn finish(
         )
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
         .with_inserted_indices(Indices::U32(triangles));
+        let mesh = crate::elevation::drape(mesh, &elevation.heights, Vec3::ZERO);
         commands.spawn((
             Mesh3d(meshes.add(crate::shapes::lit(mesh))),
             MeshMaterial3d(material),
@@ -182,7 +187,14 @@ pub(crate) fn finish(
             ChildOf(root),
         ));
     }
-    trees(&mut commands, &mut meshes, &mut materials, &areas, root);
+    trees(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &areas,
+        root,
+        &elevation.heights,
+    );
     landscape.water = areas
         .into_iter()
         .filter(|area| area.cover == Cover::Water)
@@ -289,6 +301,7 @@ fn trees(
     materials: &mut Assets<StandardMaterial>,
     areas: &[Area],
     root: Entity,
+    heights: &crate::elevation::Heights,
 ) {
     let trunk = Cylinder::new(0.18, 3.8).mesh().resolution(5).build();
     let pine = Cone::new(2.8, 7.0).mesh().resolution(7).build();
@@ -324,6 +337,7 @@ fn trees(
             continue;
         }
         let base = to_world(point, 0.0);
+        let base = base.with_y(heights.at(base));
         let scale = 0.73 + (hash % 42) as f32 * 0.016;
         add(
             0,

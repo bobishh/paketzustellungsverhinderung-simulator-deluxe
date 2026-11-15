@@ -1,8 +1,9 @@
 import {peerColor,readMembers,ringMarker,type Point,type Peer,type Member} from './peers';
-type Road = { points: Point[]; width: number };
-type Radar = { position: Point; heading: number; target?: Point; van?: Point; dogs: Point[]; people: Point[]; peers: Peer[] };
+type Road = { points: Point[]; width: number; bridge?:boolean };
+type Radar = { position: Point; heading: number; target?: Point; van?: Point; dogs: Point[]; people: Point[]; peers: Peer[]; terrain?:boolean };
 type Stop = {index:number;address:string;name:string;point:Point;state:string};
 let roads: Road[] = [];
+let sports: Point[][][] = [];
 let radar:Radar|undefined, stops:Stop[]=[], selected=0, riding=false, interaction=false;
 let centre:Point=[0,0], halfWidth=250;
 const mapDialog=document.querySelector<HTMLDialogElement>('#route-map-dialog')!;
@@ -19,13 +20,25 @@ function fitRoute(){
   halfWidth=Math.max(100,(maxX-minX)/2+45,((maxY-minY)/2+45)*1000/700);
   drawRoute();
 }
+function drawSports(ctx:CanvasRenderingContext2D, xy:(point:Point)=>Point){
+  ctx.fillStyle='#3e6941';ctx.strokeStyle='#a4b88b';ctx.lineWidth=1;
+  for(const shape of sports){
+    ctx.beginPath();
+    for(const ring of shape){
+      ring.forEach((p,i)=>{const [x,y]=xy(p);if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');ctx.stroke();
+  }
+}
 function drawRoute(){
   if(!mapDialog.open||!radar)return;
   const c=routeCtx,scale=1000/(halfWidth*2);
   const xy=(p:Point):Point=>[500+(p[0]-centre[0])*scale,350+(p[1]-centre[1])*scale];
   c.fillStyle='#233b2e';c.fillRect(0,0,1000,700);
+  drawSports(c,xy);
   c.lineCap='round';c.lineJoin='round';
-  for(const road of roads){c.beginPath();road.points.forEach((p,i)=>{const [x,y]=xy(p);if(i)c.lineTo(x,y);else c.moveTo(x,y);});c.lineWidth=Math.max(2,road.width*scale);c.strokeStyle='#778774';c.stroke();}
+  for(const road of roads){c.beginPath();road.points.forEach((p,i)=>{const [x,y]=xy(p);if(i)c.lineTo(x,y);else c.moveTo(x,y);});c.lineWidth=Math.max(2,road.width*scale);c.strokeStyle=road.bridge?'#c5b594':'#778774';c.stroke();}
   const dot=(p:Point,color:string,size:number,square=false)=>{const [x,y]=xy(p);c.fillStyle=color;c.strokeStyle='#13251d';c.lineWidth=3;c.beginPath();if(square)c.rect(x-size,y-size,size*2,size*2);else c.arc(x,y,size,0,Math.PI*2);c.fill();c.stroke();};
   for(const p of radar.people)dot(p,'#a7ddca',5);
   for(const p of radar.dogs)dot(p,'#efba76',4);
@@ -60,21 +73,24 @@ window.addEventListener('keydown',event=>{
   if(document.querySelector('dialog[open]')||/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName))return;
   event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)openMap();
 },true);
-window.addEventListener('paket-mode',((event:CustomEvent<string>)=>{riding=event.detail==='ride';if(mapDialog.open)mapDialog.close();radar=undefined;stops=[];roads=[];})as EventListener);
+window.addEventListener('paket-mode',((event:CustomEvent<string>)=>{riding=event.detail==='ride';if(mapDialog.open)mapDialog.close();radar=undefined;stops=[];roads=[];sports=[];})as EventListener);
 window.addEventListener('paket-hud',((event:CustomEvent<{routes:Stop[];selected:number;interaction:boolean}>)=>{stops=event.detail.routes.filter(s=>s.point?.length===2);selected=event.detail.selected;interaction=event.detail.interaction;drawRoute();})as EventListener);
 window.addEventListener('paket-day',((event:CustomEvent<{day:number}>)=>{globalThis.paketNotify(`Day ${event.detail.day} · 09:00. Fresh parcels in your van.`);})as EventListener);
 const canvas = document.querySelector<HTMLCanvasElement>('#radar')!;
 const ctx = canvas.getContext('2d')!;
 window.addEventListener('paket-map-roads', ((e: CustomEvent<Road[]>) => { roads = e.detail; }) as EventListener);
-window.addEventListener('paket-radar', ((e: CustomEvent<{ position: Point; heading: number; target?: Point; van?: Point; dogs: Point[]; people: Point[]; peers: Peer[] }>) => {
+window.addEventListener('paket-map-sports', ((e: CustomEvent<Point[][][]>) => { sports=e.detail; }) as EventListener);
+window.addEventListener('paket-radar', ((e: CustomEvent<Radar>) => {
   const s = radar = e.detail, half = 80, scale = 480 / (half * 2);
   drawRoute();
   const xy = (p: Point): Point => [240 + (p[0] - s.position[0]) * scale, 240 + (p[1] - s.position[1]) * scale];
   ctx.clearRect(0, 0, 480, 480); ctx.fillStyle = '#233b2e'; ctx.fillRect(0, 0, 480, 480);
+  drawSports(ctx,xy);
+  document.getElementById('terrain-credit')!.hidden=!s.terrain;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const road of roads) {
     ctx.beginPath(); road.points.forEach((p, i) => { const [x,y] = xy(p); if (i) ctx.lineTo(x,y); else ctx.moveTo(x,y); });
-    ctx.lineWidth = Math.max(3, road.width * scale); ctx.strokeStyle = '#7d8775'; ctx.stroke();
+    ctx.lineWidth = Math.max(3, road.width * scale); ctx.strokeStyle = road.bridge?'#c5b594':'#7d8775'; ctx.stroke();
   }
   const dot = (p: Point, color: string, size: number, square = false, clamp = false) => {
     let [x,y] = xy(p); if(clamp){x=Math.max(12,Math.min(468,x));y=Math.max(12,Math.min(468,y));}

@@ -51,6 +51,7 @@ pub(crate) struct Jobs {
     pub pursued: bool,
     dog_parcel: Option<(Entity, usize, f32)>,
     dog_recovery: f32,
+    handover_offer: Option<(usize, f32)>,
 }
 
 struct Parcel {
@@ -257,7 +258,7 @@ impl Jobs {
             let room_address = &addresses[0];
             self.room = Some(Room {
                 address: room_address.id.clone(),
-                center: room_address.threshold.with_y(-0.04) - room_address.outward * 1.66,
+                center: (room_address.threshold - Vec3::Y * 0.04) - room_address.outward * 1.66,
                 direction: room_address.outward,
             });
         }
@@ -291,7 +292,7 @@ impl Jobs {
                 .iter()
                 .position(|p| p.address == address.id)
                 .unwrap();
-            let home = (address.threshold - address.outward * 1.15).with_y(-0.04);
+            let home = address.threshold - address.outward * 1.15 - Vec3::Y * 0.04;
             let entity = commands
                 .spawn((
                     Resident {
@@ -299,7 +300,7 @@ impl Jobs {
                         heading: address.outward,
                         watching: false,
                         address: address.id.clone(),
-                        doorstep: address.entrance.with_y(-0.04),
+                        doorstep: address.entrance - Vec3::Y * 0.04,
                         state: ResidentState::Inside,
                         answered: false,
                         last_seen: home,
@@ -476,10 +477,10 @@ impl Jobs {
                     commands
                         .entity(prop)
                         .remove::<ChildOf>()
-                        .insert(Transform::from_translation(here.with_y(0.17)));
+                        .insert(Transform::from_translation(here.with_y(here.y + 0.125)));
                 }
                 parcel.state = ParcelState::Dropped {
-                    position: here.with_y(0.17),
+                    position: here.with_y(here.y + 0.125),
                     wrong_address: true,
                 };
                 self.dog_parcel = None;
@@ -488,7 +489,14 @@ impl Jobs {
                 return true;
             }
         } else {
-            if distance > 5. || !visible(spatial, here.with_y(0.48), position.with_y(0.48), actor) {
+            if distance > 5.
+                || !visible(
+                    spatial,
+                    here.with_y(here.y + 0.435),
+                    position.with_y(position.y + 0.31),
+                    actor,
+                )
+            {
                 return false;
             }
             if distance < 0.75
@@ -505,7 +513,12 @@ impl Jobs {
             }
         }
         let step = delta.clamp_length_max(dt * 3.2);
-        if visible(spatial, here.with_y(0.5), (here + step).with_y(0.5), actor) {
+        if visible(
+            spatial,
+            here + Vec3::Y * 0.455,
+            here + step + Vec3::Y * 0.455,
+            actor,
+        ) {
             transform.translation += step;
             if step.length_squared() > 1e-6 {
                 transform.look_to(step, Vec3::Y);
@@ -513,7 +526,7 @@ impl Jobs {
         }
         if carrying.is_some() {
             parcel.state = ParcelState::Dropped {
-                position: transform.translation.with_y(0.43),
+                position: transform.translation + Vec3::Y * 0.385,
                 wrong_address,
             };
         }
@@ -680,6 +693,7 @@ pub(crate) fn new_day(
     }
     jobs.dog_parcel = None;
     jobs.dog_recovery = 0.;
+    jobs.handover_offer = None;
     jobs.reset_shared_day();
     let revision = jobs.service.revision + 1;
     jobs.service = service::Service::default();
@@ -769,6 +783,7 @@ pub(crate) fn visible(spatial: &SpatialQuery, eye: Vec3, point: Vec3, exclude: E
 }
 
 pub(crate) fn residents(
+    elevation: Res<crate::elevation::Elevation>,
     mut commands: Commands,
     time: Res<Time>,
     clock: Res<Time<Virtual>>,
@@ -878,7 +893,7 @@ pub(crate) fn residents(
             );
         npc.watching = sees;
         if sees {
-            npc.last_seen = actor.translation.with_y(-0.04);
+            npc.last_seen = actor.translation;
             npc.memory_until = now + 3.0;
             if correct_drop || answering_neighbor.is_some() {
                 // An ordinary delivery is not a reason to stalk the courier.
@@ -931,6 +946,11 @@ pub(crate) fn residents(
                 player_entity,
             ) {
                 transform.translation += direction * step;
+                if (transform.translation - npc.doorstep).dot(npc.heading) > 0.3 {
+                    transform.translation.y = elevation.heights.at(transform.translation) - 0.04;
+                } else {
+                    transform.translation.y = npc.home.y;
+                }
                 let facing = Transform::IDENTITY.looking_to(direction, Vec3::Y).rotation;
                 transform.rotation = transform
                     .rotation
@@ -1167,7 +1187,11 @@ pub(crate) fn courier(
         }
         _ => false,
     };
+    let handover_was_offered = jobs
+        .handover_offer
+        .is_some_and(|(offered, until)| offered == index && now <= until);
     if let Some((_, bonus)) = receiver.filter(|_| within_reach) {
+        jobs.handover_offer = Some((index, now + 0.4));
         jobs.prompt = if let Some(points) = bonus {
             format!("[E] Hand over to the neighbor  |  {points} KPI")
         } else {
@@ -1225,11 +1249,14 @@ pub(crate) fn courier(
                 npc.memory_until = 0.0;
             }
             if entity == receiver {
-                npc.held = Some(prop);
+                if let Some(previous) = npc.held.replace(prop) {
+                    commands.entity(previous).try_despawn();
+                }
                 commands.entity(entity).insert(actors::HoldingParcel);
             }
         }
         jobs.parcels[index].state = ParcelState::Handed(sabotage_bonus.unwrap_or(0));
+        jobs.handover_offer = None;
         player.photo = false;
         commands.entity(player.visual).insert(Visibility::Inherited);
         jobs.proof_pending = None;
@@ -1248,6 +1275,14 @@ pub(crate) fn courier(
             jobs.status = format!("Name mangled, parcel handed over · +{bonus} KPI");
         }
         jobs.advance_after_delivery(index);
+        return;
+    }
+    if keys.just_pressed(KeyCode::KeyE)
+        && handover_was_offered
+        && matches!(state, ParcelState::Carrying)
+    {
+        jobs.handover_offer = None;
+        jobs.status = "The recipient is out of reach. The parcel is still in your hands.".into();
         return;
     }
     if keys.just_pressed(KeyCode::KeyE) && !player.photo {
@@ -1286,7 +1321,8 @@ pub(crate) fn courier(
                     .min_by(|a, b| a.1.total_cmp(&b.1));
                 if let Some((building, _)) = nearest {
                     let wrong_address = building.id != parcel.address;
-                    let position = (jobs.doorstep(building) + building.outward * 0.25).with_y(0.17);
+                    let position =
+                        jobs.doorstep(building) + building.outward * 0.25 + Vec3::Y * 0.17;
                     let root = commands
                         .spawn((
                             Transform::from_translation(position),
@@ -1450,6 +1486,7 @@ pub(crate) fn courier(
 }
 
 pub(crate) fn settle_thrown(
+    elevation: Res<crate::elevation::Elevation>,
     time: Res<Time>,
     mut commands: Commands,
     mut jobs: ResMut<Jobs>,
@@ -1470,7 +1507,7 @@ pub(crate) fn settle_thrown(
             continue;
         }
         let position = transform.translation;
-        if !position.is_finite() || position.y < -10.0 {
+        if !position.is_finite() || position.y < elevation.heights.at(position) - 10.0 {
             jobs.parcels[flight.index].state = ParcelState::InVan;
             jobs.parcels[flight.index].prop = None;
             commands.entity(entity).despawn();
@@ -1489,7 +1526,7 @@ pub(crate) fn settle_thrown(
         let nearby = buildings
             .iter()
             .filter(|b| !b.accessory)
-            .filter(|b| position.distance(jobs.doorstep(b).with_y(0.17)) <= DROP_DISTANCE)
+            .filter(|b| position.distance(jobs.doorstep(b) + Vec3::Y * 0.17) <= DROP_DISTANCE)
             .min_by(|a, b| {
                 position
                     .distance_squared(a.entrance)
@@ -2268,6 +2305,61 @@ mod tests {
         assert!(!app.world().resource::<Jobs>().pursued);
         assert_eq!(app.world().resource::<Jobs>().selected, 1);
         assert_eq!(app.world().resource::<Jobs>().navigation, 1);
+    }
+
+    #[test]
+    fn a_dog_at_the_door_cannot_take_a_parcel_from_the_receiving_resident() {
+        let mut app = headless_ride(Role::Courier);
+        let index = app
+            .world()
+            .resource::<Jobs>()
+            .parcels
+            .iter()
+            .position(|p| p.address == "way/205")
+            .unwrap();
+        app.world_mut()
+            .resource_mut::<Jobs>()
+            .select_delivery(index);
+        press(&mut app, KeyCode::KeyE);
+        ring_selected(&mut app);
+        let resident = meet_resident(&mut app, "way/205".into(), 1.8);
+        let dog = {
+            let world = app.world_mut();
+            world
+                .query_filtered::<Entity, With<crate::dogs::DeliveryDog>>()
+                .single(world)
+                .unwrap()
+        };
+        let door = app.world().get::<Resident>(resident).unwrap().doorstep;
+        app.world_mut()
+            .get_mut::<Transform>(dog)
+            .unwrap()
+            .translation = door + Vec3::Y * 0.045;
+        press(&mut app, KeyCode::KeyE);
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.parcels[index].state, ParcelState::Handed(0));
+        assert!(jobs.dog_parcel.is_none());
+        let prop = app.world().get::<Resident>(resident).unwrap().held.unwrap();
+        assert_eq!(app.world().get::<ChildOf>(prop).unwrap().parent(), resident);
+    }
+
+    #[test]
+    fn a_recipient_stepping_out_of_reach_does_not_turn_a_handover_into_a_drop() {
+        let mut app = headless_ride(Role::Courier);
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::KeyE);
+        ring_selected(&mut app);
+        let address = app.world().resource::<Jobs>().parcels[1].address.clone();
+        let resident = meet_resident(&mut app, address, 1.8);
+        assert!(app.world().resource::<Jobs>().prompt.contains("Hand over"));
+        app.world_mut()
+            .get_mut::<Transform>(resident)
+            .unwrap()
+            .translation += Vec3::X * 20.;
+        press(&mut app, KeyCode::KeyE);
+        let jobs = app.world().resource::<Jobs>();
+        assert_eq!(jobs.parcels[1].state, ParcelState::Carrying);
+        assert!(jobs.status.contains("out of reach"));
     }
 
     #[test]

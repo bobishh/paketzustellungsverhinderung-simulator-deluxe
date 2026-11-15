@@ -18,6 +18,7 @@ use std::{
 #[derive(Resource, Default)]
 pub(crate) struct Roads {
     streets: BTreeMap<String, Street>,
+    bridge_outlines: BTreeMap<String, paket_geo::places::Place>,
     dirty: bool,
     pending: Option<Mutex<mpsc::Receiver<Vec<(usize, Mesh)>>>>,
     roots: Vec<Entity>,
@@ -35,12 +36,35 @@ impl Roads {
             self.generation += 1;
         }
     }
+    pub fn layout(&self) -> Vec<Street> {
+        let streets = self.streets.values().cloned().collect::<Vec<_>>();
+        let outlines = self.bridge_outlines.values().cloned().collect::<Vec<_>>();
+        crate::bridges::layout::resolve(&streets, &outlines)
+    }
+    pub fn insert_bridge_outline(&mut self, place: &paket_geo::places::Place) {
+        self.bridge_outlines.insert(place.id.clone(), place.clone());
+        self.generation += 1;
+        self.dirty = true;
+    }
     pub fn remove(&mut self, id: &str) {
+        self.dirty |= self.bridge_outlines.remove(id).is_some();
         self.dirty |= self.streets.remove(id).is_some();
         self.generation += 1;
     }
     pub fn radar(&self) -> String {
-        serde_json::to_string(&self.streets.values().map(|s|serde_json::json!({"points":s.centerline.iter().map(|p|[p.east,-p.north]).collect::<Vec<_>>(),"width":s.width_m})).collect::<Vec<_>>()).unwrap()
+        let layout = self.layout();
+        let roads = layout
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "points":s.centerline.iter().map(|p|[p.east,-p.north]).collect::<Vec<_>>(),
+                    "width":s.width_m+s.sidewalk_m.iter().sum::<f32>(),
+                    "bridge":s.bridge.is_some(),
+                    "motorRoad":s.motor_road,
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::to_string(&roads).unwrap()
     }
 }
 
@@ -49,6 +73,7 @@ pub(crate) fn rebuild(
     mut roads: ResMut<Roads>,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Res<StreetMaterials>,
+    elevation: Res<crate::elevation::Elevation>,
 ) {
     if let Some(pending) = &mut roads.pending {
         match pending.get_mut().unwrap().try_recv() {
@@ -79,12 +104,17 @@ pub(crate) fn rebuild(
         }
     }
     if roads.dirty && roads.pending.is_none() {
-        let streets = roads.streets.values().cloned().collect::<Vec<_>>();
+        let streets = roads.layout();
         let (tx, rx) = mpsc::channel();
         roads.dirty = false;
         roads.pending = Some(Mutex::new(rx));
+        let heights = elevation.heights.clone();
         let work = move || {
-            let _ = tx.send(build(&streets));
+            let meshes = build(&streets)
+                .into_iter()
+                .map(|(kind, mesh)| (kind, crate::elevation::drape(mesh, &heights, Vec3::ZERO)))
+                .collect();
+            let _ = tx.send(meshes);
         };
         #[cfg(not(target_arch = "wasm32"))]
         thread::spawn(work);
@@ -259,6 +289,7 @@ mod tests {
             name: None,
             surface: Surface::Paving,
             spawnable: true,
+            motor_road: true,
             bridge: None,
         };
         let path = Street {
@@ -278,6 +309,7 @@ mod tests {
             name: None,
             surface: Surface::Asphalt,
             spawnable: false,
+            motor_road: false,
             bridge: None,
         };
         let layers = layers(&[road, path]);
