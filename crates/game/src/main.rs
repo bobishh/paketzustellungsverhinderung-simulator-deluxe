@@ -74,6 +74,7 @@ fn main() {
                     canvas: Some("#game".into()),
                     #[cfg(target_arch = "wasm32")]
                     fit_canvas_to_parent: true,
+                    #[cfg(not(target_arch = "wasm32"))]
                     resize_constraints: bevy::window::WindowResizeConstraints {
                         min_width: 800.0,
                         min_height: 580.0,
@@ -662,8 +663,14 @@ fn setup(
     commands.insert_resource(bridges::Bridges::default());
     commands.insert_resource(traffic::TrafficWorld::new(&mut meshes, &mut materials));
     commands.insert_resource(Models::new(&mut meshes, &mut materials, &mut images));
-    let earth = scattering.add(ScatteringMedium::earth(256, 256));
-    commands.spawn((Atmosphere::earth(earth), DespawnOnExit(Mode::Ride)));
+    let full_fidelity = !cfg!(target_arch = "wasm32")
+        || platform::arguments()
+            .iter()
+            .any(|arg| arg == "--press-shot");
+    if full_fidelity {
+        let earth = scattering.add(ScatteringMedium::earth(256, 256));
+        commands.spawn((Atmosphere::earth(earth), DespawnOnExit(Mode::Ride)));
+    }
     commands.insert_resource(StreetMaterials {
         buildings: materials.add(surfaces::material(
             &mut images,
@@ -692,7 +699,11 @@ fn setup(
         DespawnOnExit(Mode::Ride),
         Camera3d::default(),
         actors::FollowCamera::default(),
-        Msaa::Sample4,
+        if full_fidelity {
+            Msaa::Sample4
+        } else {
+            Msaa::Off
+        },
         Projection::Perspective(PerspectiveProjection {
             fov: 64_f32.to_radians(),
             ..default()
@@ -710,7 +721,7 @@ fn setup(
         DirectionalLight {
             illuminance: 22_000.0,
             color: Color::srgb(1.0, 0.94, 0.84),
-            shadow_maps_enabled: true,
+            shadow_maps_enabled: full_fidelity,
             ..default()
         },
         SunDisk::EARTH,
@@ -736,6 +747,7 @@ fn setup(
         RigidBody::Static,
         Collider::cuboid(FLOOR_METERS, 4.0, FLOOR_METERS),
         WorldFloor,
+        bevy::light::NotShadowCaster,
         DespawnOnExit(Mode::Ride),
     ));
     commands.spawn((
@@ -1456,8 +1468,14 @@ fn follow_floor(
     let here = bike.single().map_or(Vec3::ZERO, |bike| bike.translation);
     if !elevation.heights.available() {
         *raised = false;
-        floor.translation.x = (here.x / 200.).round() * 200.;
-        floor.translation.z = (here.z / 200.).round() * 200.;
+        let center = Vec3::new(
+            (here.x / 200.).round() * 200.,
+            floor.translation.y,
+            (here.z / 200.).round() * 200.,
+        );
+        if floor.translation != center {
+            floor.translation = center;
+        }
         return;
     }
     if floor.translation.y == 0. && *raised && here.xz().distance(floor.translation.xz()) < 800. {

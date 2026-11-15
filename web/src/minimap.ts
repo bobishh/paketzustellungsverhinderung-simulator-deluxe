@@ -1,7 +1,7 @@
 import {peerColor,readMembers,ringMarker,type Point,type Peer,type Member} from './peers';
 type Road = { points: Point[]; width: number; bridge?:boolean };
 type Radar = { position: Point; heading: number; target?: Point; van?: Point; dogs: Point[]; people: Point[]; peers: Peer[]; terrain?:boolean };
-type Stop = {index:number;address:string;name:string;point:Point;state:string};
+type Stop = {index:number;address:string;name:string;point:Point;parcelPoint?:Point|null;state:string};
 let roads: Road[] = [];
 let sports: Point[][][] = [];
 let radar:Radar|undefined, stops:Stop[]=[], selected=0, riding=false, interaction=false;
@@ -40,6 +40,7 @@ function drawRoute(){
   c.lineCap='round';c.lineJoin='round';
   for(const road of roads){c.beginPath();road.points.forEach((p,i)=>{const [x,y]=xy(p);if(i)c.lineTo(x,y);else c.moveTo(x,y);});c.lineWidth=Math.max(2,road.width*scale);c.strokeStyle=road.bridge?'#c5b594':'#778774';c.stroke();}
   const dot=(p:Point,color:string,size:number,square=false)=>{const [x,y]=xy(p);c.fillStyle=color;c.strokeStyle='#13251d';c.lineWidth=3;c.beginPath();if(square)c.rect(x-size,y-size,size*2,size*2);else c.arc(x,y,size,0,Math.PI*2);c.fill();c.stroke();};
+  for(const stop of stops)if(stop.parcelPoint)dot(stop.parcelPoint,'#e6ba7b',6,true);
   for(const p of radar.people)dot(p,'#a7ddca',5);
   for(const p of radar.dogs)dot(p,'#efba76',4);
   for(const p of radar.peers)dot(p.position,colorFor(p.id),7);
@@ -97,6 +98,7 @@ window.addEventListener('paket-radar', ((e: CustomEvent<Radar>) => {
     ctx.fillStyle = color;ctx.strokeStyle='#17231e';ctx.lineWidth=3;ctx.beginPath();
     if(square)ctx.rect(x-size,y-size,size*2,size*2);else ctx.arc(x,y,size,0,Math.PI*2);ctx.fill();ctx.stroke();
   };
+  for(const stop of stops)if(stop.parcelPoint)dot(stop.parcelPoint,'#e6ba7b',5,true);
   for(const p of s.dogs)dot(p,'#efba76',5);
   for(const p of s.people)dot(p,'#a7ddca',6);
   for(const p of s.peers)dot(p.position,colorFor(p.id),7);

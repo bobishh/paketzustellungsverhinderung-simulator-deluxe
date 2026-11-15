@@ -219,6 +219,11 @@ pub(crate) fn floor(heights: &Heights, center: Vec3, half: f32) -> (Mesh, Collid
             }
         }
     }
+    // Parry stores the grid by column (east) then row (south).
+    let columns = (0..side)
+        .map(|x| (0..side).map(|z| position[z * side + x].y).collect())
+        .collect();
+    let collider = Collider::heightfield(columns, Vec3::new(half * 2., 1., half * 2.));
     let mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
@@ -227,7 +232,6 @@ pub(crate) fn floor(heights: &Heights, center: Vec3, half: f32) -> (Mesh, Collid
     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uv)
     .with_inserted_indices(Indices::U32(indices))
     .with_computed_smooth_normals();
-    let collider = Collider::trimesh_from_mesh(&mesh).expect("terrain triangles");
     (mesh, collider)
 }
 

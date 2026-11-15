@@ -59,7 +59,27 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
 
   await canvas.focus();
   await key('e');
-  await expect(page.locator('#stop-state')).toHaveText('In your hands');
+  const parcelState = page.locator('#stop-state');
+  await expect(parcelState).toHaveText('In your hands');
+  if (scenario.name === 'feud') await test.step('exchange and set aside an unrung parcel', async () => {
+    await key('Tab');
+    await expect(page.locator('#hud-action')).toContainText('Exchange for selected parcel');
+    await key('e');
+    await expect(parcelState).toHaveText('In your hands');
+    await expect(page.locator('#notice')).toContainText('Parcel exchanged');
+    await key('Shift+Tab');
+    await expect(page.locator('#hud-action')).toContainText('Exchange for selected parcel');
+    await key('e');
+    await expect(parcelState).toHaveText('In your hands');
+    await key('x');
+    await expect(parcelState).toHaveText('Set aside');
+    await key('Tab');
+    await expect(parcelState).toHaveText('In the van');
+    await key('Shift+Tab');
+    await expect(page.locator('#hud-action')).toContainText('Pick up box');
+    await key('e');
+    await expect(parcelState).toHaveText('In your hands');
+  });
   await walkToMarker(2.1);
   await key('r');
   const intercom = page.getByRole('group', {name:'Intercom'});

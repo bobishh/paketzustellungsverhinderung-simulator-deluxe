@@ -59,7 +59,8 @@ The header has no home navigation. During a shift, Identity sign-in is hidden an
 - R: recipient intercom; click bells. 1–3: timed delivery dialogue.
 - Tab / Shift+Tab: next / previous delivery while the game is focused. In forms and dialogs Tab keeps normal focus navigation.
 - T: throw the held parcel after ringing the recipient. Wait for it to land, then photograph it or pick it back up.
-- Q near your van: return the held parcel, then collect the selected one with E.
+- E beside your van: collect a parcel or exchange it for the selected one. Q returns the held parcel.
+- X: set a box aside. Select its stop to find the box and use E to pick it up.
 - E: pick up, place or hand over a parcel. A correct handover earns 0 KPI.
 - Dog: E bite/scratch, Space jump, G mark a van, B bark.
 - F: camera; Space / left mouse: take a delivery photo. In the browser, **Download photo** saves the latest PNG.

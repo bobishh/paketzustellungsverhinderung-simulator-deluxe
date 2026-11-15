@@ -78,23 +78,39 @@ pub(crate) fn material(images: &mut Assets<Image>, kind: Surface, tint: Color) -
             heights.push(height);
         }
     }
-    let mut normals = Vec::with_capacity(colors.len());
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let at = |dx: usize, dy: usize| heights[((y + dy) % SIZE) * SIZE + (x + dx) % SIZE];
-            let n =
-                Vec3::new(at(SIZE - 1, 0) - at(1, 0), at(0, SIZE - 1) - at(0, 1), 1.0).normalize();
-            normals.extend([
-                ((n.x * 0.5 + 0.5) * 255.) as u8,
-                ((n.y * 0.5 + 0.5) * 255.) as u8,
-                ((n.z * 0.5 + 0.5) * 255.) as u8,
-                255,
-            ]);
+    let detailed = !cfg!(target_arch = "wasm32")
+        || crate::platform::arguments()
+            .iter()
+            .any(|arg| arg == "--press-shot");
+    let normal_map_texture = detailed.then(|| {
+        let mut normals = Vec::with_capacity(colors.len());
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let at = |dx: usize, dy: usize| heights[((y + dy) % SIZE) * SIZE + (x + dx) % SIZE];
+                let n = Vec3::new(at(SIZE - 1, 0) - at(1, 0), at(0, SIZE - 1) - at(0, 1), 1.0)
+                    .normalize();
+                normals.extend([
+                    ((n.x * 0.5 + 0.5) * 255.) as u8,
+                    ((n.y * 0.5 + 0.5) * 255.) as u8,
+                    ((n.z * 0.5 + 0.5) * 255.) as u8,
+                    255,
+                ]);
+            }
         }
-    }
+        images.add(mipmapped(SIZE, normals, false))
+    });
     StandardMaterial {
         base_color_texture: Some(images.add(mipmapped(SIZE, colors, true))),
-        normal_map_texture: Some(images.add(mipmapped(SIZE, normals, false))),
+        normal_map_texture,
+        unlit: !detailed
+            && matches!(
+                kind,
+                Surface::Asphalt
+                    | Surface::Paving
+                    | Surface::Gravel
+                    | Surface::Grass
+                    | Surface::Plaster
+            ),
         ..matte(tint, 0.91)
     }
 }

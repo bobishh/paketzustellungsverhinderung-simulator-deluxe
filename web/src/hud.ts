@@ -40,7 +40,7 @@ function showIntercom(panel?: Intercom|null) {
   options.find(b => b.dataset.intercom === focused)?.focus({preventScroll:true});
 }
 const put=(id:string,value:string)=>{const node=el(id);if(node.textContent!==value)node.textContent=value;};
-const states:Record<Stop['state'],string>={'in-van':'In the van',carrying:'In your hands','in-flight':'In flight','photo-due':'Photo needed',filed:'Delivered',handed:'Handed over'};
+const states:Record<Stop['state'],string>={'in-van':'In the van',carrying:'In your hands','in-flight':'In flight','set-aside':'Set aside','photo-due':'Photo needed',filed:'Delivered',handed:'Handed over'};
 const buttons=new Map<number,HTMLButtonElement>();
 let ride=false, state:Hud|undefined, lastStatus='', expanded=false;
 let sensitivity=0.0024;
@@ -112,7 +112,7 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
   const selected=s.routes[s.selected],active=s.routes[s.active];
   if(selected){
     put('stop-number',`STOP ${String(s.selected+1).padStart(2,'0')} / ${s.routes.length}`);
-    put('stop-address',selected.address);put('stop-recipient',selected.name);put('stop-distance',meters(selected.distance));
+    put('stop-address',selected.address);put('stop-recipient',selected.name);put('stop-distance',meters(selected.state==='set-aside'?(selected.parcelDistance??selected.distance):selected.distance));
     put('stop-state',states[selected.state]);
   }
   const holding=active&&['carrying','in-flight','photo-due'].includes(active.state)&&s.active!==s.selected;
@@ -128,7 +128,7 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
     button.setAttribute('aria-pressed',String(stop.index===s.selected));
     button.querySelector('.route-index')!.textContent=String(stop.index+1).padStart(2,'0');
     button.querySelector('b')!.textContent=stop.address;button.querySelector('small')!.textContent=stop.name;
-    button.querySelector('em')!.textContent=states[stop.state];button.querySelector('.route-distance')!.textContent=meters(stop.distance);
+    button.querySelector('em')!.textContent=states[stop.state];button.querySelector('.route-distance')!.textContent=meters(stop.state==='set-aside'?(stop.parcelDistance??stop.distance):stop.distance);
     button.disabled=s.interaction;
   }
   const guidance=deliveryGuidance(s);
@@ -140,7 +140,7 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
     put('dispatcher-timer',dispatch.timer);
   }
   showIntercom(s.intercom);
-  put('hud-action',dispatch && s.stunSeconds <= 0 && !s.ended ? dispatch.action : guidance.action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
+  put('hud-action',dispatch && s.active===s.selected && s.stunSeconds <= 0 && !s.ended ? dispatch.action : guidance.action);el('hud-action').classList.toggle('photo-ready',s.photoReady);
   el('shock-status').hidden=!(s.stunSeconds>0);
   if(s.stunSeconds>0)put('shock-status',`BITTEN · IN SHOCK · ${s.stunSeconds.toFixed(1)}s`);
   const difficulty=el('difficulty') as HTMLSelectElement;

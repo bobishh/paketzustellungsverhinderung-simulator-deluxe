@@ -13,8 +13,8 @@ describe('delivery guidance',()=>{
   expect(deliveryGuidance(state).action).toBe('E · Collect this parcel');
   expect(deliveryGuidance({...state,vanDistance:30}).action).toContain('Return to your van · 30 m');
  });
- it('does not suggest dropping before the actual bell is pressed',()=>{
-  const carrying={...state,routes:[{...stop,state:'carrying' as const}]};
+ it('prompts for the bell before delivery when away from the van',()=>{
+  const carrying={...state,vanDistance:30,routes:[{...stop,state:'carrying' as const}]};
   expect(deliveryGuidance(carrying).detail).toContain('click the bell');
   expect(deliveryGuidance({...carrying,routes:[{...carrying.routes[0],rung:true}]}).action).toContain('T · Throw');
  });

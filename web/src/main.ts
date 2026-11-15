@@ -28,8 +28,42 @@ document.querySelector('#photo')!.addEventListener('click', () => {
   const download = document.createElement('a');
   download.href = photoUrl; download.download = photoName; download.click();
 });
+const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
+const gameArea = canvas.parentElement!;
+const scenePixelBudget = 320_000;
+let pixelBudget = scenePixelBudget;
+let riding = false;
+let lastPose = 0;
+let slowPoses = 0;
+
+function resizeScene() {
+  if (!riding || document.body.classList.contains('press-shot')) return;
+  const area = gameArea.clientWidth * gameArea.clientHeight;
+  const scale = Math.min(1, Math.sqrt(pixelBudget / (area * devicePixelRatio ** 2)));
+  // Resize the canvas content box for the GPU and scale its presentation back
+  // to the full game area. The HTML HUD uses the browser's normal resolution.
+  canvas.style.setProperty('--scene-size', `${scale * 100}%`);
+  canvas.style.setProperty('--scene-upscale', String(1 / scale));
+}
+new ResizeObserver(resizeScene).observe(gameArea);
+window.addEventListener('resize', resizeScene);
+window.addEventListener('paket-radar', () => {
+  if (!riding || pixelBudget < scenePixelBudget || document.hidden) return;
+  const now = performance.now();
+  slowPoses = lastPose && now - lastPose > 170 ? slowPoses + 1 : 0;
+  lastPose = now;
+  if (slowPoses === 4) {
+    pixelBudget = 160_000;
+    resizeScene();
+  }
+});
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
-  document.querySelector<HTMLElement>('#signin')!.hidden = event.detail === 'ride';
+  riding = event.detail === 'ride';
+  lastPose = 0;
+  slowPoses = 0;
+  document.querySelector<HTMLElement>('#signin')!.hidden = riding;
+  canvas.classList.toggle('bounded-scene', riding && !document.body.classList.contains('press-shot'));
+  resizeScene();
 }) as EventListener);
 globalThis.paketPhoto = (bytes, index) => {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
@@ -44,7 +78,7 @@ void ready.catch(() => undefined);
 document.querySelector('#signin')!.addEventListener('click', () => { void signIn().catch(error => paketNotify(error.message)); });
 document.querySelector('#fullscreen')!.addEventListener('click', () => { void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(error => paketNotify(error.message)); });
 let running = false;
-document.querySelector<HTMLCanvasElement>('#game')!.addEventListener('pointerdown', event => {
+canvas.addEventListener('pointerdown', event => {
   if (running && globalThis.paketWantsPointer && !document.pointerLockElement) {
     void (event.currentTarget as HTMLCanvasElement).requestPointerLock()?.catch(() => paketNotify('Click the game to capture the mouse. Esc releases it.'));
   }
@@ -71,7 +105,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     showStartup();
     running = true;
     document.querySelector<HTMLElement>('#start')!.hidden = true;
-    document.querySelector<HTMLCanvasElement>('#game')!.focus();
+    canvas.focus();
     paketNotify('Click the game to look around · Esc releases the cursor');
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
