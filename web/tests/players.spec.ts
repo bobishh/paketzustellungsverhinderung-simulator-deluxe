@@ -124,6 +124,8 @@ test('scene resolution starts sharp, adapts to slow frames, and is remembered', 
   await page.reload();
   await page.locator('#play').click();
   await expect(canvas).toHaveAttribute('data-render-scale',calibrated!);
+  await page.evaluate(()=>{for(let i=0;i<1500;i++)globalThis.paketFrame(1000/60);});
+  await expect(canvas).toHaveAttribute('data-render-scale','1');
 });
 
 test('a failed invite opens the lobby with the same address ready to retry', async ({page}) => {

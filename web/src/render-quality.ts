@@ -5,9 +5,10 @@ const area=canvas.parentElement!;
 const scales=[1,0.85,0.7,0.55,0.43,0.34,0.26,0.2];
 let software=false;
 export function setSoftwareRendering(fallback:boolean){software=fallback;}
-const storageKey=()=>software?'paket.render-quality.software.v1':'paket.render-quality.v1';
+const storageKey=()=>software?'paket.render-quality.software.v2':'paket.render-quality.v2';
 let tier=0, active=false, ready=false, viewport=0, warmup=0, frames:number[]=[];
-let sampled=0, slowWindows=0, fastWindows=0, triedHigher=false;
+let sampled=0, slowWindows=0, fastWindows=0, recoveryWindows=8;
+let observedDensity: number | undefined;
 
 function reset(warmupMs=900){
   warmup=warmupMs;
@@ -19,20 +20,27 @@ function reset(warmupMs=900){
 
 function apply(){
   const scale=scales[tier];
-  canvas.classList.toggle('bounded-scene',active && scale<1);
+  // Winit sizes the surface from the browser's device-pixel observer. Its
+  // density can differ from devicePixelRatio, including with Chromium emulation.
+  const layoutScale=active ? scale*devicePixelRatio/(observedDensity ?? devicePixelRatio) : 1;
+  canvas.classList.toggle('bounded-scene',active && Math.abs(layoutScale-1)>0.001);
   canvas.dataset.renderScale=String(active ? scale : 1);
-  canvas.style.setProperty('--scene-size', `${scale*100}%`);
-  canvas.style.setProperty('--scene-upscale', String(1/scale));
+  canvas.style.setProperty('--scene-size', `${layoutScale*100}%`);
+  canvas.style.setProperty('--scene-upscale', String(1/layoutScale));
 }
 
 function selectViewport(){
   if(!active)return;
   const pixels=area.clientWidth*area.clientHeight*devicePixelRatio**2;
-  if(!pixels || (viewport && pixels/viewport>0.75 && pixels/viewport<1.35))return;
+  if(!pixels)return;
+  if(viewport && pixels/viewport>0.75 && pixels/viewport<1.35){
+    apply();
+    return;
+  }
   viewport=pixels;
   const softwareTier=scales.findIndex(scale=>pixels*scale**2<=220_000);
   tier=software ? (softwareTier===-1?scales.length-1:softwareTier) : 0;
-  triedHigher=false;
+  recoveryWindows=8;
   try{
     const saved=JSON.parse(localStorage.getItem(storageKey())??'null');
     if(saved && saved.pixels/pixels>0.75 && saved.pixels/pixels<1.35 && scales[saved.tier])tier=saved.tier;
@@ -41,7 +49,14 @@ function selectViewport(){
   apply();
 }
 
-new ResizeObserver(selectViewport).observe(area);
+const observer=new ResizeObserver(([entry])=>{
+  const {width}=entry.contentRect;
+  const physical=entry.devicePixelContentBoxSize?.[0]?.inlineSize;
+  observedDensity=width>0 && physical ? physical/width : undefined;
+  selectViewport();
+});
+try{observer.observe(area,{box:'device-pixel-content-box'});}
+catch{observer.observe(area);}
 window.addEventListener('resize',selectViewport);
 document.addEventListener('visibilitychange',()=>reset());
 window.addEventListener('paket-mode',((event:CustomEvent<string>)=>{
@@ -74,12 +89,11 @@ globalThis.paketFrame=ms=>{
   fastWindows=duration<19 ? fastWindows+1 : 0;
   if(slowWindows>=2 && tier<scales.length-1){
     tier=Math.min(scales.length-1,tier+(duration>55?2:1));
-    triedHigher=true;
+    recoveryWindows=Math.min(recoveryWindows*2,32);
     reset();
     apply();
-  }else if(fastWindows>=8 && tier>0 && !triedHigher){
+  }else if(fastWindows>=recoveryWindows && tier>0){
     tier--;
-    triedHigher=true;
     reset();
     apply();
   }else if(slowWindows===0 || tier===scales.length-1){
