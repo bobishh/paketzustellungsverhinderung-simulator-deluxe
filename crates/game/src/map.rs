@@ -129,6 +129,7 @@ type TileResult = (Tile, Option<Image>);
 pub struct Map {
     center: DVec2,
     zoom: u8,
+    raster_map: bool,
     cache: PathBuf,
     active: HashMap<(i32, i32), Entity>,
     images: HashMap<Tile, Handle<Image>>,
@@ -171,6 +172,7 @@ impl Map {
         Self {
             center: project(center, zoom),
             zoom,
+            raster_map: !cfg!(target_arch = "wasm32"),
             cached_map: Arc::new(cached::CachedMap::read(&cache.with_file_name("osm"))),
             cache,
             active: HashMap::new(),
@@ -487,6 +489,9 @@ pub fn setup(mut commands: Commands) {
 }
 
 fn viewport_size(window: &Window) -> Vec2 {
+    if cfg!(target_arch = "wasm32") && window.width() <= 600. {
+        return Vec2::new(window.width(), window.height() * 0.35);
+    }
     Vec2::new(
         (window.width() - SIDEBAR).max(0.0),
         (window.height() - TOOLBAR).max(0.0),
@@ -554,6 +559,7 @@ pub fn input(
     for command in external {
         match command["action"].as_str() {
             Some("retry-map") => map.failed.clear(),
+            Some("raster-map") => map.raster_map = true,
             Some("select") => {
                 if let (Some(lat), Some(lon)) = (command["lat"].as_f64(), command["lon"].as_f64()) {
                     if lat.is_finite() && lon.is_finite() && lat.abs() <= 85. && lon.abs() <= 180. {
@@ -744,7 +750,7 @@ pub fn update_lobby(
     map.page = map.page.min(last_page);
     let first = map.page * RIDE_SLOTS;
     let point = map.point();
-    crate::platform::ui_event("paket-lobby",&serde_json::json!({"lat":point.lat,"lon":point.lon,"label":location_name(point),"status":map.status,"ready":matches!(map.connection,Connection::Ready{..}),"pending":matches!(map.connection,Connection::Pending{..}),"link":match &map.connection {Connection::Ready{link,..}=>link.as_str(),_=>""}}).to_string());
+    crate::platform::ui_event("paket-lobby",&serde_json::json!({"lat":point.lat,"lon":point.lon,"zoom":map.zoom,"label":location_name(point),"status":map.status,"ready":matches!(map.connection,Connection::Ready{..}),"pending":matches!(map.connection,Connection::Pending{..}),"link":match &map.connection {Connection::Ready{link,..}=>link.as_str(),_=>""}}).to_string());
     for (mut text, location, status, nearby, slot) in &mut labels {
         let value = if location {
             location_name(point)
@@ -830,12 +836,23 @@ pub fn tiles(
     mut map: ResMut<Map>,
     mut images: ResMut<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    viewport: Query<Entity, With<Viewport>>,
+    mut viewports: Query<(Entity, &mut Node), (With<Viewport>, Without<ImageNode>)>,
     mut nodes: Query<(&mut Node, &mut ImageNode)>,
 ) {
-    let (Ok(window), Ok(viewport)) = (windows.single(), viewport.single()) else {
+    let (Ok(window), Ok((viewport, mut node))) = (windows.single(), viewports.single_mut()) else {
         return;
     };
+    let size = viewport_size(window);
+    if cfg!(target_arch = "wasm32")
+        && (node.width != Val::Px(size.x) || node.height != Val::Px(size.y))
+    {
+        node.position_type = PositionType::Absolute;
+        node.width = Val::Px(size.x);
+        node.height = Val::Px(size.y);
+    }
+    if !map.raster_map {
+        return;
+    }
     let finished: Vec<_> = map
         .rx
         .lock()
@@ -850,7 +867,7 @@ pub fn tiles(
         }
     }
 
-    let half = viewport_size(window).as_dvec2() / 2.0;
+    let half = size.as_dvec2() / 2.0;
     let top_left = map.center - half;
     let from = (top_left / TILE).floor().as_ivec2();
     let to = ((map.center + half) / TILE).floor().as_ivec2();

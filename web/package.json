@@ -13,7 +13,8 @@
   "dependencies": {
     "@meta-uber/mesh-identity": "file:../../mesh/packages/mesh-identity",
     "@meta-uber/mesh-pairing": "file:../../mesh/packages/mesh-pairing",
-    "@meta-uber/mesh-transport": "file:../../mesh/packages/mesh-transport"
+    "@meta-uber/mesh-transport": "file:../../mesh/packages/mesh-transport",
+    "maplibre-gl": "6.18.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

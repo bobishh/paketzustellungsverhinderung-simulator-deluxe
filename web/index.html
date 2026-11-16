@@ -1,11 +1,21 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#ef7d32"><title>Paketzustellungsverhinderung Simulator Deluxe</title><meta name="description" content="Be the courier. Be the dog. A very unprofessional delivery simulator on real streets."></head><body>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#ef7d32"><title>Paketzustellungsverhinderung Simulator Deluxe</title><meta name="description" content="Play as a courier or a dog on streets mapped from OpenStreetMap."></head><body>
 <header><div class="brand" aria-label="Paketzustellungsverhinderung Simulator Deluxe"><svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M4 9 16 3 28 9v14l-12 6-12-6Z M4 9l12 6 12-6 M16 15v14 M10 6l12 6v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="brand-title">Paketzustellungs<wbr>verhinderung<small>Simulator Deluxe</small></span></div><div class="account"><button id="player-profile"><span id="identity-name">Guest courier</span> · Profile</button><button id="signin">Sign in with Identity</button><button id="share" disabled>Share mesh</button><button id="photo" hidden>Download photo</button><button id="how-to-play">How to play</button><button id="settings" hidden>Settings</button><button id="fullscreen" aria-label="Toggle full screen">⛶</button></div></header>
 <main>
 <div id="world-loading" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="world-loading-text">Loading map…</span><button id="retry-map" hidden>Retry map</button></div>
 <div class="game-viewport"><canvas id="game" tabindex="0" aria-label="Courier game"></canvas></div>
-<section id="start"><img class="hero-image" src="/assets/delivery-day.webp" alt="A courier holding a parcel while a terrier leaps at his leg"><div class="hero-copy"><span class="eyebrow">A very unprofessional delivery simulator</span><h1>Paketzustellungs<wbr>verhinderung<span>Simulator Deluxe</span></h1><p class="intro">Deliver nothing.<br>Document everything.</p><button id="play" class="primary">Play <span>↗</span></button><span id="start-spinner" class="spinner" hidden aria-hidden="true"></span><p id="loading" role="status">Keyboard + mouse · WebGPU</p></div><div class="stamp"><span>ON TIME?</span><strong>0 POINTS.</strong></div><div class="hero-footer"><span>DREHLSS · PAKETE. IRGENDWANN.</span><a href="https://github.com/bobishh/paketzustellungsverhinderung-simulator-deluxe" target="_blank" rel="noopener">Source code ↗</a></div></section>
+<section id="start" aria-labelledby="game-title">
+  <div class="hero-copy">
+    <h1 id="game-title">Paketzustellungs<wbr>verhinderung<span>Simulator Deluxe</span></h1>
+    <p class="hero-intro">Play as a courier or a dog on real streets.</p>
+    <button id="play" class="primary">Play <span aria-hidden="true">→</span><span id="start-spinner" class="spinner" hidden aria-hidden="true"></span></button>
+    <p id="loading" role="status">Requires a browser with WebGPU.</p>
+  </div>
+  <img class="hero-image" src="/assets/delivery-day.webp" alt="A courier holding a parcel next to a leaping dog on a Berlin street" fetchpriority="high">
+  <footer class="hero-footer"><a href="https://github.com/bobishh/paketzustellungsverhinderung-simulator-deluxe" target="_blank" rel="noopener">Source code ↗</a></footer>
+</section>
 <section id="lobby" hidden aria-label="Choose a shift">
+<div id="lobby-map" aria-hidden="true"></div>
 <div class="map-tools"><button data-command="zoom-out" aria-label="Zoom out">−</button><button data-command="zoom-in" aria-label="Zoom in">+</button><span>Drag the map to fine-tune your start</span></div>
 <aside class="lobby-panel">
 <button id="resume-mesh" type="button" hidden>Return to your mesh</button>
@@ -16,7 +26,7 @@
 <div class="city-grid" aria-label="Choose a city"></div><div class="selected-place"><span class="dot"></span><span id="selected-place">Berlin · Kreuzberg</span></div>
 <p class="eyebrow">02 / YOUR ROLE</p><div class="role-picker" role="group" aria-label="Choose a role"><button data-role="courier" aria-pressed="true"><b>Courier</b><small>Lose the parcel.</small></button><button data-role="dog" aria-pressed="false"><b>Dog</b><small>Find the courier.</small></button></div>
 <label class="public-mesh-option"><input id="public-mesh" type="checkbox"> List my mesh publicly</label><p class="mesh-privacy">Anyone can join a listed mesh and see its neighbourhood. Leave unchecked to invite friends only.</p><div class="start-actions"><button id="solo" class="primary">Play solo <span>→</span></button><button id="friends">Play with friends ↗</button></div><p id="lobby-status" role="status">A shift lasts 48 minutes. Drop in whenever.</p>
-<small class="attribution">Map data © OpenStreetMap contributors · Search by Photon</small></aside></section>
+<small class="attribution"><span id="lobby-map-credit" hidden><a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">© OpenMapTiles</a> · </span><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Search by Photon</small></aside></section>
 <aside id="minimap" hidden><section class="radar-frame"><canvas id="radar" width="480" height="480" aria-label="Nearby roads, player, van, delivery and dogs"></canvas><svg id="radar-markers" viewBox="0 0 480 480" aria-label="Directions to players and delivery"><circle cx="240" cy="240" r="208" fill="none" stroke="#fff7" stroke-width="2"/></svg></section><div><b>N ↑</b><span>You ▲ · Delivery <i>◆</i> · Van ▪</span><span id="map-range">160 m</span></div><section id="mesh-players" aria-labelledby="peer-title"><h3 id="peer-title">Players in mesh <span id="peer-count">0</span></h3><ul id="peer-list"></ul><p id="peer-empty">No other players in this mesh.</p></section></aside>
 <section id="ride-hud" hidden aria-label="Shift dashboard">
 <div class="hud-top"><div class="shift-clock"><small id="shift-label">SHIFT ENDS 17:00</small><time id="shift-time">09:00</time><div class="shift-track"><i id="shift-progress"></i></div></div><div class="score-box"><strong id="hud-score">0</strong><small>KPI</small></div><button id="hud-map">Map ↗</button></div>

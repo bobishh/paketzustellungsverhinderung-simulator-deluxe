@@ -1,4 +1,5 @@
 import './style.css';
+import './basemap';
 import {openInvitation} from './lobby';
 import {setSoftwareRendering} from './render-quality';
 import {showStartup} from './loading';

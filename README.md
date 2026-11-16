@@ -47,7 +47,7 @@ NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leavin
 
 The browser minimap uses the loaded street geometry and actual actor positions. Other players appear in a roster with matching numbered colour markers around the map circumference. The larger orange diamond points toward the selected delivery. Remote actors interpolate buffered network poses, briefly predict through jitter, and disappear after ten seconds without a new pose. Loading indicators cover the public directory, map tiles and game startup; failed map tiles can be retried. Player careers live in the application's IndexedDB store and replicate over the game mesh as signed, application-scoped per-device records. Peers verify Identity certificate chains and signatures before merging monotonic counters. Profiles combine the same person's devices without double-counting replays; new face seeds and guest-to-Identity career attachment persist across reloads. The portrait is procedural. This is peer replication through joined games: independent cross-device discovery through the Identity resource catalogue is not wired yet, and there is no always-online keeper. Clients retain received replicas locally.
 
-The landing image is an in-engine screenshot, reproducible with `?lat=52.4895&lon=13.3908&press-shot`. The scene uses the same actor and dog meshes as play.
+The browser lobby renders OpenFreeMap's Dark vector basemap and falls back to OpenStreetMap raster tiles if the vector map is unavailable. Both use the same neighbourhood picker. The landing image is captured in-engine at Chamissoplatz, Berlin. To reproduce it, open `?lat=52.4895&lon=13.3908&press-shot` and choose **Play**. The scene uses the game's actor, dog, car and playground geometry.
 
 ## How to play
 

@@ -65,7 +65,7 @@ impl TrafficWorld {
             brakes: material(Color::srgb(0.85, 0.08, 0.025)),
         }
     }
-    fn car(&self, commands: &mut Commands, root: Entity, index: usize) {
+    pub(crate) fn car(&self, commands: &mut Commands, root: Entity, index: usize) {
         let paint = &self.paint[index % self.paint.len()];
         for (p, size, m) in [
             (Vec3::ZERO, Vec3::new(1.7, 0.65, 3.8), paint),
