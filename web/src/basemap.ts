@@ -27,7 +27,7 @@ async function openMap(session: NonNullable<typeof view>) {
     const map = new Map({
       container,
       ...mapCamera(session.camera),
-      style: 'https://tiles.openfreemap.org/styles/dark',
+      style: 'https://tiles.openfreemap.org/styles/fiord',
       interactive: false,
       attributionControl: false,
       fadeDuration: 0,
@@ -35,6 +35,9 @@ async function openMap(session: NonNullable<typeof view>) {
     session.map = map;
     map.once('load', () => {
       window.clearTimeout(session.timeout);
+      if (map.getLayer('highway_name_other')) {
+        map.setPaintProperty('highway_name_other', 'text-color', '#e5edf5');
+      }
       container.dataset.ready = 'true';
       credit.hidden = false;
       window.dispatchEvent(new CustomEvent('paket-map-loading', {

@@ -31,8 +31,13 @@ document.querySelector('#photo')!.addEventListener('click', () => {
   download.href = photoUrl; download.download = photoName; download.click();
 });
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
+let showedLookHint = false;
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
   document.querySelector<HTMLElement>('#signin')!.hidden = event.detail === 'ride';
+  if (event.detail === 'ride' && !showedLookHint && matchMedia('(pointer: fine)').matches) {
+    showedLookHint = true;
+    paketNotify('Click the game to look around · Esc releases the cursor');
+  }
 }) as EventListener);
 globalThis.paketPhoto = (bytes, index) => {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
@@ -77,7 +82,6 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     running = true;
     document.querySelector<HTMLElement>('#start')!.hidden = true;
     canvas.focus();
-    paketNotify('Click the game to look around · Esc releases the cursor');
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : String(error);
     button.disabled = false;

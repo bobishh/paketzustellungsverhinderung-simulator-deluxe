@@ -24,7 +24,7 @@ test.beforeEach(async ({page}) => {
 });
 
 test('the styled map appears and recenters on the selected city', async ({page}) => {
-  await page.route('https://tiles.openfreemap.org/styles/dark', route => route.fulfill({
+  await page.route('https://tiles.openfreemap.org/styles/fiord', route => route.fulfill({
     json: {
       version: 8,
       sources: {
@@ -73,7 +73,7 @@ test('the styled map appears and recenters on the selected city', async ({page})
 });
 
 test('a failed vector style asks the game to load the raster map', async ({page}) => {
-  await page.route('https://tiles.openfreemap.org/styles/dark', route => route.fulfill({status: 503}));
+  await page.route('https://tiles.openfreemap.org/styles/fiord', route => route.fulfill({status: 503}));
   await page.goto('/');
   await page.getByRole('button', {name: 'Play', exact: true}).click();
   await expect.poll(() => page.evaluate(() => globalThis.paketCommands)).toContainEqual({
