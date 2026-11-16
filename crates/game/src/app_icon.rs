@@ -40,18 +40,18 @@ pub(crate) fn install(app: &mut App) {
         warn!("Could not create the window icon");
         return;
     };
-    app.add_systems(
+    app.insert_non_send(icon).add_systems(
         Update,
-        move |_: bevy::ecs::system::NonSendMarker,
-              mut created: MessageReader<WindowCreated>,
-              primary: Query<(), With<PrimaryWindow>>| {
+        |icon: NonSend<Icon>,
+         mut created: MessageReader<WindowCreated>,
+         primary: Query<(), With<PrimaryWindow>>| {
             for event in created
                 .read()
                 .filter(|event| primary.contains(event.window))
             {
                 bevy::winit::WINIT_WINDOWS.with_borrow(|windows| {
                     if let Some(window) = windows.get_window(event.window) {
-                        window.set_window_icon(Some(icon.clone()));
+                        window.set_window_icon(Some((*icon).clone()));
                     }
                 });
             }
