@@ -72,12 +72,20 @@ test('the courier walks with both hands on the parcel and both soles clear of th
   }
   const moving = (await samples()).filter(sample => sample.carrying);
   const end = moving.at(-1)!.seconds;
-  const stride = moving.filter(sample => sample.seconds > end - 2);
-  const swings = stride.flatMap(({soles}) =>
-    Math.max(...soles) > 0.045 && Math.abs(soles[0] - soles[1]) > 0.035
-      ? [Number(soles[1] > soles[0])] : []);
-  const steps = swings.filter((foot, i) => i > 0 && foot !== swings[i - 1]).length;
-  expect(steps).toBeGreaterThanOrEqual(3);
+  const swings: {foot: number; seconds: number}[] = [];
+  for (const {soles, seconds} of moving) {
+    const difference = soles[0] - soles[1];
+    if (seconds <= end - 2.25 || Math.abs(difference) < 0.016) continue;
+    const foot = Number(difference > 0);
+    const previous = swings.at(-1);
+    if (!previous || (foot !== previous.foot && seconds - previous.seconds > 0.24)) {
+      swings.push({foot, seconds});
+    }
+  }
+  const steps = swings.slice(1).map((swing, i) => swing.seconds - swings[i].seconds);
+  expect(steps.length).toBeGreaterThanOrEqual(3);
+  steps.sort((a, b) => a - b);
+  expect(steps[Math.floor(steps.length / 2)]).toBeLessThan(0.56);
   const carrying = moving.slice(-16);
   expect(carrying).toHaveLength(16);
   expect(Math.max(...carrying.flatMap(sample => sample.grip))).toBeLessThan(0.06);
