@@ -117,13 +117,13 @@ test('scene resolution starts sharp, adapts to slow frames, and is remembered', 
   await expect(canvas).toHaveAttribute('data-render-scale','1');
   await page.evaluate(()=>{for(let i=0;i<180;i++)globalThis.paketFrame(1000/60);});
   await expect(canvas).toHaveAttribute('data-render-scale','1');
-  await page.evaluate(()=>{for(let i=0;i<130;i++)globalThis.paketFrame(40);});
-  await expect.poll(()=>canvas.getAttribute('data-render-scale')).not.toBe('1');
-  await page.evaluate(()=>{for(let i=0;i<240;i++)globalThis.paketFrame(1000/60);});
-  const calibrated=await canvas.getAttribute('data-render-scale');
+  await page.evaluate(()=>{for(let i=0;i<60;i++)globalThis.paketFrame(40);});
+  await expect(canvas).toHaveAttribute('data-render-scale','0.85');
+  await page.evaluate(()=>{for(let i=0;i<160;i++)globalThis.paketFrame(21);});
+  await expect(canvas).toHaveAttribute('data-render-scale','0.85');
   await page.reload();
   await page.locator('#play').click();
-  await expect(canvas).toHaveAttribute('data-render-scale',calibrated!);
+  await expect(canvas).toHaveAttribute('data-render-scale','0.85');
   await page.evaluate(()=>{for(let i=0;i<1500;i++)globalThis.paketFrame(1000/60);});
   await expect(canvas).toHaveAttribute('data-render-scale','1');
 });

@@ -7,6 +7,11 @@ test('the start screen shows the game and offers Play at desktop and phone width
   await page.goto('/');
 
   const start = page.locator('#start');
+  const favicon = page.locator('link[rel="icon"][type="image/svg+xml"]');
+  await expect(favicon).toHaveAttribute('href', '/favicon.svg');
+  const icon = await page.request.get('/favicon.svg');
+  expect(icon.ok()).toBeTruthy();
+  expect(icon.headers()['content-type']).toContain('image/svg+xml');
   const art = start.getByRole('img', {name: /courier.*dog/i});
   const play = start.getByRole('button', {name: 'Play', exact: true});
   await expect(art).toBeVisible();

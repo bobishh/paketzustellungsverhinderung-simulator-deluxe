@@ -5,6 +5,8 @@
 /.env*
 *.log
 /web/node_modules/
-/web/public/
+/web/public/*
+!/web/public/favicon.ico
+!/web/public/favicon.svg
 /web/dist/
 /web/.wrangler/

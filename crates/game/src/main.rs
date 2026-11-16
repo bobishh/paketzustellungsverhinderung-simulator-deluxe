@@ -1,4 +1,6 @@
 mod actors;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod app_icon;
 mod bridges;
 mod browser_ui;
 mod buildings;
@@ -109,6 +111,8 @@ fn main() {
             .chain()
             .run_if(in_state(Mode::Map)),
     );
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    app_icon::install(&mut app);
     // Bundle Latin, Cyrillic, kana and kanji instead of relying on system fonts:
     // WebAssembly text rendering cannot borrow the browser's font fallback.
     app.world_mut()

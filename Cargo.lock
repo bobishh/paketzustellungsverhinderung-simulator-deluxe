@@ -6627,6 +6627,9 @@ dependencies = [
  "getrandom 0.4.3",
  "image",
  "js-sys",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "paket-geo",
  "paket-session",
  "rand",
@@ -6635,6 +6638,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-time",
+ "winit",
 ]
 
 [[package]]
