@@ -352,7 +352,7 @@ impl Jobs {
                     DespawnOnExit(Mode::Ride),
                 ))
                 .id();
-            models.person(commands, entity, false);
+            models.citizens.spawn(commands, entity, index);
         }
     }
 

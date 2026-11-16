@@ -59,6 +59,7 @@ function renderIdentity(approval: DeviceAuthorizationApproval) {
   const signedName = approval.profileState && identityProfileValue(approval.profileState, 'name').values[0];
   document.querySelector('#identity-name')!.textContent = typeof signedName === 'string' ? signedName : approval.identity.displayName;
   document.querySelector('#signin')!.textContent = 'Switch Identity';
+  document.querySelector('#profile-identity-note')!.textContent = 'This career is linked to your Identity profile.';
 }
 export async function signIn() {
   const current = await store.bootstrap('Courier');

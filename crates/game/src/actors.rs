@@ -90,7 +90,7 @@ pub(crate) struct Models {
     wheel: Handle<Mesh>,
     hub: Handle<Mesh>,
     coat: Handle<StandardMaterial>,
-    resident: Handle<StandardMaterial>,
+    pub citizens: crate::citizens::Kit,
     face: Handle<StandardMaterial>,
     fabric: Handle<StandardMaterial>,
     reflective: Handle<StandardMaterial>,
@@ -111,6 +111,7 @@ impl Models {
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
         images: &mut Assets<Image>,
+        citizens: crate::citizens::Kit,
     ) -> Self {
         use crate::surfaces::{Surface, material, matte};
         Self {
@@ -131,11 +132,7 @@ impl Models {
                 Surface::Fabric,
                 Color::srgb(0.80, 0.34, 0.095),
             )),
-            resident: materials.add(material(
-                images,
-                Surface::Fabric,
-                Color::srgb(0.22, 0.43, 0.44),
-            )),
+            citizens,
             face: materials.add(matte(Color::srgb(0.66, 0.45, 0.34), 0.64)),
             fabric: materials.add(material(
                 images,
@@ -192,7 +189,7 @@ impl Models {
             ))
             .id();
         match form {
-            Avatar::Courier => self.person(commands, root, true),
+            Avatar::Courier => self.courier(commands, root),
             Avatar::Dog => dogs.model(commands, root),
             Avatar::Van => self.van(commands, root),
         }
@@ -318,8 +315,8 @@ impl Models {
         }
     }
 
-    pub fn person(&self, commands: &mut Commands, parent: Entity, courier: bool) {
-        let jacket = if courier { &self.coat } else { &self.resident };
+    pub fn courier(&self, commands: &mut Commands, parent: Entity) {
+        let jacket = &self.coat;
         let mut part = |point, size, material, shape: &Handle<Mesh>| {
             self.part(
                 commands,
@@ -364,7 +361,7 @@ impl Models {
         part(
             Vec3::new(0., 1.690, 0.005),
             Vec3::new(0.224, 0.121, 0.226),
-            if courier { &self.dark } else { &self.fabric },
+            &self.dark,
             &self.sphere,
         );
         for side in [-1.0, 1.0] {
@@ -381,76 +378,70 @@ impl Models {
                 &self.sphere,
             );
         }
-        if courier {
-            part(
-                Vec3::new(0., 1.673, -0.092),
-                Vec3::new(0.213, 0.023, 0.133),
-                &self.dark,
-                &self.sphere,
-            );
-            part(
-                Vec3::new(0., 1.18, -0.118),
-                Vec3::new(0.30, 0.028, 0.029),
-                &self.reflective,
-                &self.box_mesh,
-            );
-            part(
-                Vec3::new(0., 1.18, 0.142),
-                Vec3::new(0.34, 0.40, 0.19),
-                &self.dark,
-                &self.box_mesh,
-            );
-            part(
-                Vec3::new(0., 1.22, 0.237),
-                Vec3::new(0.255, 0.245, 0.022),
-                jacket,
-                &self.box_mesh,
-            );
-        }
+        part(
+            Vec3::new(0., 1.673, -0.092),
+            Vec3::new(0.213, 0.023, 0.133),
+            &self.dark,
+            &self.sphere,
+        );
+        part(
+            Vec3::new(0., 1.18, -0.118),
+            Vec3::new(0.30, 0.028, 0.029),
+            &self.reflective,
+            &self.box_mesh,
+        );
+        part(
+            Vec3::new(0., 1.18, 0.142),
+            Vec3::new(0.34, 0.40, 0.19),
+            &self.dark,
+            &self.box_mesh,
+        );
+        part(
+            Vec3::new(0., 1.22, 0.237),
+            Vec3::new(0.255, 0.245, 0.022),
+            jacket,
+            &self.box_mesh,
+        );
         // Tailored vest panels, zip, webbing and a clipped delivery scanner.
-        if courier {
-            for side in [-1.0, 1.0] {
-                part(
-                    Vec3::new(side * 0.14, 1.24, -0.122),
-                    Vec3::new(0.035, 0.31, 0.023),
-                    &self.dark,
-                    &self.box_mesh,
-                );
-                part(
-                    Vec3::new(side * 0.14, 1.22, 0.146),
-                    Vec3::new(0.038, 0.35, 0.022),
-                    &self.dark,
-                    &self.box_mesh,
-                );
-                part(
-                    Vec3::new(side * 0.125, 1.05, -0.131),
-                    Vec3::new(0.11, 0.095, 0.026),
-                    &self.fabric,
-                    &self.box_mesh,
-                );
-            }
+        for side in [-1.0, 1.0] {
             part(
-                Vec3::new(0., 1.20, -0.12),
-                Vec3::new(0.012, 0.40, 0.025),
-                &self.metal,
+                Vec3::new(side * 0.14, 1.24, -0.122),
+                Vec3::new(0.035, 0.31, 0.023),
+                &self.dark,
                 &self.box_mesh,
             );
             part(
-                Vec3::new(0.12, 1.32, -0.14),
-                Vec3::new(0.07, 0.04, 0.016),
-                &self.reflective,
+                Vec3::new(side * 0.14, 1.22, 0.146),
+                Vec3::new(0.038, 0.35, 0.022),
+                &self.dark,
+                &self.box_mesh,
+            );
+            part(
+                Vec3::new(side * 0.125, 1.05, -0.131),
+                Vec3::new(0.11, 0.095, 0.026),
+                &self.fabric,
                 &self.box_mesh,
             );
         }
-        if courier {
-            self.part(
-                commands,
-                parent,
-                &self.mark,
-                &self.reflective,
-                Transform::from_xyz(0., 1.23, 0.252).with_scale(Vec3::splat(0.14)),
-            );
-        }
+        part(
+            Vec3::new(0., 1.20, -0.12),
+            Vec3::new(0.012, 0.40, 0.025),
+            &self.metal,
+            &self.box_mesh,
+        );
+        part(
+            Vec3::new(0.12, 1.32, -0.14),
+            Vec3::new(0.07, 0.04, 0.016),
+            &self.reflective,
+            &self.box_mesh,
+        );
+        self.part(
+            commands,
+            parent,
+            &self.mark,
+            &self.reflective,
+            Transform::from_xyz(0., 1.23, 0.252).with_scale(Vec3::splat(0.14)),
+        );
         commands.entity(parent).insert(WalkCycle::default());
         for side in [-1.0, 1.0] {
             let leg = commands

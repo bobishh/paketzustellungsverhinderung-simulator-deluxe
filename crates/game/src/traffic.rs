@@ -28,92 +28,30 @@ pub(crate) struct TrafficWorld {
     seen: HashSet<String>,
     cars: usize,
     people: usize,
-    cube: Handle<Mesh>,
-    wheel: Handle<Mesh>,
-    paint: Vec<Handle<StandardMaterial>>,
-    rubber: Handle<StandardMaterial>,
-    glass: Handle<StandardMaterial>,
-    lights: Handle<StandardMaterial>,
-    brakes: Handle<StandardMaterial>,
+    car_models: [Handle<WorldAsset>; 3],
 }
 impl TrafficWorld {
-    pub fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
-        let mut material = |color| {
-            materials.add(StandardMaterial {
-                base_color: color,
-                perceptual_roughness: 0.6,
-                ..default()
-            })
-        };
+    pub fn new(assets: &AssetServer) -> Self {
+        let car_models = [
+            "street/car-sedan.glb",
+            "street/car-compact.glb",
+            "street/car-suv.glb",
+        ]
+        .map(|path| assets.load(GltfAssetLabel::Scene(0).from_asset(path)));
         Self {
             seen: HashSet::new(),
             cars: 0,
             people: 0,
-            cube: meshes.add(crate::shapes::lit(Cuboid::new(1., 1., 1.).mesh().build())),
-            wheel: meshes.add(crate::shapes::lit(
-                Cylinder::new(0.32, 0.20).mesh().resolution(16).build(),
-            )),
-            paint: vec![
-                material(Color::srgb(0.55, 0.15, 0.12)),
-                material(Color::srgb(0.2, 0.32, 0.39)),
-                material(Color::srgb(0.79, 0.76, 0.64)),
-                material(Color::srgb(0.22, 0.25, 0.23)),
-            ],
-            rubber: material(Color::srgb(0.035, 0.04, 0.04)),
-            glass: material(Color::srgb(0.12, 0.21, 0.23)),
-            lights: material(Color::srgb(1., 0.88, 0.59)),
-            brakes: material(Color::srgb(0.85, 0.08, 0.025)),
+            car_models,
         }
     }
+
     pub(crate) fn car(&self, commands: &mut Commands, root: Entity, index: usize) {
-        let paint = &self.paint[index % self.paint.len()];
-        for (p, size, m) in [
-            (Vec3::ZERO, Vec3::new(1.7, 0.65, 3.8), paint),
-            (
-                Vec3::new(0., 0.48, 0.15),
-                Vec3::new(1.48, 0.65, 1.75),
-                &self.glass,
-            ),
-            (Vec3::new(0., 0.84, 0.2), Vec3::new(1.5, 0.07, 1.8), paint),
-            (
-                Vec3::new(0., -0.2, -1.94),
-                Vec3::new(1.75, 0.18, 0.12),
-                &self.rubber,
-            ),
-            (
-                Vec3::new(0., -0.2, 1.94),
-                Vec3::new(1.75, 0.18, 0.12),
-                &self.rubber,
-            ),
-        ] {
-            commands.spawn((
-                Mesh3d(self.cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_translation(p).with_scale(size),
-                ChildOf(root),
-            ));
-        }
-        for x in [-0.86, 0.86] {
-            for z in [-1.25, 1.25] {
-                commands.spawn((
-                    Mesh3d(self.wheel.clone()),
-                    MeshMaterial3d(self.rubber.clone()),
-                    Transform::from_xyz(x, -0.4, z)
-                        .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
-                    ChildOf(root),
-                ));
-            }
-        }
-        for x in [-0.55, 0.55] {
-            for (z, m) in [(-1.93, &self.lights), (1.93, &self.brakes)] {
-                commands.spawn((
-                    Mesh3d(self.cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x, 0.02, z).with_scale(Vec3::new(0.38, 0.22, 0.06)),
-                    ChildOf(root),
-                ));
-            }
-        }
+        commands.spawn((
+            ChildOf(root),
+            WorldAssetRoot(self.car_models[index % self.car_models.len()].clone()),
+            Transform::from_xyz(0., -0.75, 0.),
+        ));
     }
 }
 fn path(points: &[paket_geo::EastNorth], offset: f32, y: f32) -> Vec<Vec3> {
@@ -215,7 +153,7 @@ pub(crate) fn spawn(
                         ChildOf(root),
                     ))
                     .id();
-                models.person(&mut commands, visual, false);
+                models.citizens.spawn(&mut commands, visual, world.people);
                 world.people += 1;
             } else {
                 commands.entity(root).insert(Car);

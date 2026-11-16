@@ -2,6 +2,10 @@ SquareFrameBicycle is from the Public Transport pack by Quaternius, February 201
 Source: https://opengameart.org/content/lowpoly-public-transport
 The original prototype asset, `assets/bicycle.glb`, was converted from `SquareFrameBicycle.obj` and scaled to 0.66 m wheels.
 
+The four animated characters in `assets/street/` come from Quaternius's [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) and [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html) packs (CC0). The GLB exports include the original meshes, skins, materials, and Idle and Walk clips.
+
+The compact car, sedan, and SUV in `assets/street/` were converted from `NormalCar2.blend`, `NormalCar1.blend`, and `SUV.blend` in the [Quaternius Cars Pack](https://quaternius.com/packs/cars.html) (CC0). The GLB exports are aligned with the game's traffic orientation and scale.
+
 Fira Mono Medium (`assets/fonts/FiraMono-Medium.ttf`) is the complete font distributed with Bevy Feathers 0.20.1, used for browser instruments.
 Digitized data copyright (c) 2012–2015, The Mozilla Foundation and Telefonica S.A.
 Licensed under the SIL Open Font License 1.1; see `assets/fonts/FiraMono-LICENSE`.

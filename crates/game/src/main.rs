@@ -2,6 +2,7 @@ mod actors;
 mod bridges;
 mod browser_ui;
 mod buildings;
+mod citizens;
 mod dogs;
 mod elevation;
 mod jobs;
@@ -65,6 +66,8 @@ fn main() {
                 } else {
                     assets.display().to_string()
                 },
+                #[cfg(target_arch = "wasm32")]
+                meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
             })
             .set(WindowPlugin {
@@ -199,6 +202,7 @@ fn install_ride(app: &mut App) {
                 dogs::walk.after(jobs::courier),
                 dogs::animate_tails,
                 actors::animate_people,
+                citizens::animate,
                 actors::animate_vehicles,
                 terrain::finish,
                 roads::rebuild,
@@ -717,6 +721,8 @@ fn jitter(index: u32) -> LatLon {
 
 fn setup(
     mut commands: Commands,
+    assets: Res<AssetServer>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -724,8 +730,13 @@ fn setup(
 ) {
     commands.insert_resource(roads::Roads::default());
     commands.insert_resource(bridges::Bridges::default());
-    commands.insert_resource(traffic::TrafficWorld::new(&mut meshes, &mut materials));
-    commands.insert_resource(Models::new(&mut meshes, &mut materials, &mut images));
+    commands.insert_resource(traffic::TrafficWorld::new(&assets));
+    commands.insert_resource(Models::new(
+        &mut meshes,
+        &mut materials,
+        &mut images,
+        citizens::Kit::new(&assets, &mut graphs),
+    ));
     let full_fidelity = !cfg!(target_arch = "wasm32")
         || platform::arguments()
             .iter()

@@ -33,7 +33,7 @@ document.querySelector('#photo')!.addEventListener('click', () => {
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 let showedLookHint = false;
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
-  document.querySelector<HTMLElement>('#signin')!.hidden = event.detail === 'ride';
+  document.querySelector<HTMLElement>('#profile-identity')!.hidden = event.detail === 'ride';
   if (event.detail === 'ride' && !showedLookHint && matchMedia('(pointer: fine)').matches) {
     showedLookHint = true;
     paketNotify('Click the game to look around · Esc releases the cursor');

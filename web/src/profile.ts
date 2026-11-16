@@ -53,7 +53,6 @@ function render(){
   content.innerHTML=`<div class="profile-top">${portrait(c.face)}<div><strong class="career-name"></strong><p>Employed for ${days} ${days===1?'day':'days'}</p><button id="new-face">New face ↻</button></div></div><div class="profile-stats"><div><b>${s.delivered}</b><small>Parcels completed</small></div><div><b>${s.score}</b><small>Career KPI</small></div><div><b>${Math.floor(s.workMs/60000)}m</b><small>Time on the job</small></div></div>`;
   content.querySelector('.career-name')!.textContent=document.querySelector('#identity-name')!.textContent??'Courier';
   for(const [title,done]of [['First day on the job',s.shifts>0],['Ring leader · 6 doorbells',s.rings>=6],['Photographic evidence',s.photos>0],['Territory claimed',s.markedVans>0],['Delivery of the day',s.special>0],['1000 KPI club',s.score>=1000]]as const){const el=document.createElement('div');el.className=`achievement${done?'':' locked'}`;el.textContent=`${done?'★':'○'}  ${title}`;content.append(el);}
-  const sync=document.createElement('p');sync.className='eyebrow';sync.textContent='Game profile · signed by your Identity · syncs with connected players';content.append(sync);
   content.querySelector('#new-face')!.addEventListener('click',()=>{local.face=crypto.getRandomValues(new Uint32Array(1))[0];local.faceUpdated=Date.now();dirty=true;render();void flush().catch(e=>paketNotify(e.message));});
 }
 if(typeof document!=='undefined'){

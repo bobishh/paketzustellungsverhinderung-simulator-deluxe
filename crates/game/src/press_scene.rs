@@ -81,7 +81,7 @@ fn compose(
                 DespawnOnExit(Mode::Ride),
             ))
             .id();
-        models.person(&mut commands, courier, true);
+        models.courier(&mut commands, courier);
         models.grimace(&mut commands, courier);
         let box_root = commands
             .spawn((
@@ -114,7 +114,7 @@ fn compose(
     let forward = rotation * Vec3::NEG_Z;
     let right = rotation * Vec3::X;
     if let Ok((mut camera, mut projection)) = cameras.single_mut() {
-        let focus = base - forward * 1.5 - right * 0.24 + Vec3::Y * 0.85;
+        let focus = base - forward * 1.5 + right * 0.92 + Vec3::Y * 0.85;
         *camera = Transform::from_translation(base + forward * 4.8 - right * 0.9 + Vec3::Y * 1.32)
             .looking_at(focus, Vec3::Y);
         if let Projection::Perspective(lens) = &mut *projection {
@@ -129,10 +129,13 @@ fn dress_chamissoplatz(
     traffic: &TrafficWorld,
     ground: impl Fn(Vec3) -> Vec3,
 ) {
-    for (position, facing) in [
+    for (variant, (position, facing)) in [
         (Vec3::new(-3.3, 0., 154.4), Vec3::Z),
         (Vec3::new(-4.8, 0., 159.5), Vec3::NEG_Z),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let pedestrian = commands
             .spawn((
                 Transform::from_translation(ground(position)).looking_to(facing, Vec3::Y),
@@ -140,11 +143,11 @@ fn dress_chamissoplatz(
                 DespawnOnExit(Mode::Ride),
             ))
             .id();
-        models.person(commands, pedestrian, false);
+        models.citizens.spawn(commands, pedestrian, variant);
     }
     let car = commands
         .spawn((
-            Transform::from_translation(ground(Vec3::new(-8.2, 0., 161.9)) + Vec3::Y * 0.72)
+            Transform::from_translation(ground(Vec3::new(-8.2, 0., 161.9)) + Vec3::Y * 0.8)
                 .looking_to(Vec3::new(-0.17, 0., 1.), Vec3::Y),
             Visibility::default(),
             DespawnOnExit(Mode::Ride),
