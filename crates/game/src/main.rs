@@ -244,7 +244,7 @@ enum Mode {
 }
 
 #[derive(Resource)]
-struct NextNeighbourhood(LatLon);
+struct NextNeighbourhood(LatLon, u32);
 
 fn travel(
     mut commands: Commands,
@@ -258,7 +258,9 @@ fn travel(
     ride.retry.clear();
     ride.spawned.clear();
     ride.waiting_for_tile = false;
-    commands.insert_resource(Jobs::default());
+    let mut jobs = Jobs::default();
+    jobs.resident_seed = destination.1;
+    commands.insert_resource(jobs);
     commands.remove_resource::<NextNeighbourhood>();
     next.set(Mode::Ride);
 }
@@ -314,13 +316,13 @@ fn start_ride(
     let ride_origin = origin;
     #[cfg(not(target_arch = "wasm32"))]
     {
-        commands.init_resource::<Jobs>();
+        commands.insert_resource(Jobs::for_ride(guest));
         commands.insert_resource(shift::Shift::new(guest));
     }
     #[cfg(target_arch = "wasm32")]
     let ride_origin = {
         let mut ride_origin = origin;
-        let mut jobs = Jobs::default();
+        let mut jobs = Jobs::for_ride(guest);
         let mut shift = shift::Shift::new(guest);
         if let Some(host) = session.as_ref().filter(|s| s.is_host) {
             for fact in &host.snapshot {
@@ -351,12 +353,19 @@ fn start_ride(
                 if let Fact::Route {
                     day,
                     revision,
+                    resident_seed,
                     stops,
                     ..
                 } = fact
                 {
                     if *day == shift.day() {
-                        jobs.restore_route(*day, *revision, stops.clone(), commands);
+                        jobs.restore_route(
+                            *day,
+                            *revision,
+                            *resident_seed,
+                            stops.clone(),
+                            commands,
+                        );
                         shift.locked = stops.iter().any(|stop| stop.completion.is_some());
                     }
                 }
@@ -1318,13 +1327,14 @@ fn sync_peers(
                 device,
                 day,
                 revision,
+                resident_seed,
                 stops,
                 ..
             } => {
                 if !session.is_host
                     && device == session.host_device()
                     && day == shift.day()
-                    && jobs.receive_route(day, revision, stops, &mut commands)
+                    && jobs.receive_route(day, revision, resident_seed, stops, &mut commands)
                 {
                     jobs.seed(
                         buildings.iter().cloned().collect(),

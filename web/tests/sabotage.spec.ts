@@ -57,6 +57,14 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   };
   await expect(page.locator('#stop-state')).toHaveText('In the van', {timeout:90_000});
 
+  await page.locator('#route-toggle').click();
+  const stops = page.locator('#route-list .route-copy');
+  await expect(stops).toHaveCount(2);
+  const names = await stops.locator('small').allTextContents();
+  expect(new Set(names.map(name => name.split(' ').at(-1))).size).toBe(2);
+  await page.locator('#route-list').getByRole('button', {name:/Test Street 1/}).click();
+  await page.locator('#route-toggle').click();
+  await expect(page.locator('#stop-address')).toHaveText('Test Street 1');
   await canvas.focus();
   await key('e');
   const parcelState = page.locator('#stop-state');
@@ -81,9 +89,10 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
     await expect(parcelState).toHaveText('In your hands');
   });
   await walkToMarker(2.1);
+  const recipient = await page.locator('#stop-recipient').textContent();
   await key('r');
   const intercom = page.getByRole('group', {name:'Intercom'});
-  await intercom.getByRole('button', {name:/recipient/i}).click();
+  await intercom.getByRole('button', {name:`Ring recipient · ${recipient}`, exact:true}).click();
   await expect(page.locator('#dispatcher-message')).toContainText(scenario.clue);
   await expect(page.locator('#dispatcher-timer')).toContainText('KPI');
   await intercom.getByRole('button', {name:'Close'}).click();

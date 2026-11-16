@@ -97,9 +97,9 @@ test('a host can reopen the same mesh with the same invitation and completed sto
       const room=JSON.parse(await globalThis.paketMesh.connect(origin));
       const shared={origin,device:room.device,day:1};
       globalThis.paketMesh.publish(room.device,{...shared,kind:'shift',elapsed_ms:90000,difficulty:1});
-      globalThis.paketMesh.publish(room.device,{...shared,kind:'route',revision:7,stops:[
+      globalThis.paketMesh.publish(room.device,{...shared,kind:'route',revision:7,resident_seed:12345,stops:[
         {building_id:'way/10',label:'Resumed stop A',position:[-40,0,-10],completion:{device:room.device,photo:false,score:335}},
-        {building_id:'way/11',label:'Resumed stop B',position:[0,0,-10],completion:null},
+        {building_id:'way/11',label:'Resumed stop B',recipient:'Mila Weber',position:[0,0,-10],completion:null},
       ]});
       return room;
     });
@@ -113,6 +113,7 @@ test('a host can reopen the same mesh with the same invitation and completed sto
     await expect(reopened.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
     await expect(reopened.locator('#hud-score')).toHaveText('335');
     await expect(reopened.locator('#route-direction')).toBeVisible();
+    await expect(reopened.locator('#stop-recipient')).toHaveText('Mila Weber');
     await reopened.getByRole('button',{name:'Settings',exact:true}).click();
     await reopened.getByRole('button',{name:'Change neighbourhood'}).click();
     await reopened.getByRole('button',{name:'Return to your mesh'}).click();
@@ -123,6 +124,7 @@ test('a host can reopen the same mesh with the same invitation and completed sto
     await guest.locator('#play').click();
     await expect(guest.locator('#route-list')).toBeHidden();
     await expect(guest.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
+    await expect(guest.locator('#stop-recipient')).toHaveText('Mila Weber');
     await expect(guest.locator('#hud-score')).toHaveText('0');
   }finally{await guestContext.close();await hostContext.close();}
 });

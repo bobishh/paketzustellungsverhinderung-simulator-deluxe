@@ -79,9 +79,20 @@ export function validFact(fact: Fact, origin: Origin, device?: string): boolean 
   const receipt=(r:any)=>r&&typeof r.device==='string'&&/^[a-f0-9]{64}$/.test(r.device)&&typeof r.photo==='boolean'&&(r.photo?[0,25,100].includes(r.score):Number.isInteger(r.score)&&r.score>=0&&r.score<=400);
   if(fact.kind==='delivered')return label(fact.building_id)&&receipt(fact);
   if(fact.kind==='route'){
-    if(!Number.isSafeInteger(fact.revision)||Number(fact.revision)<0||!Array.isArray(fact.stops)||fact.stops.length>12)return false;
-    const ids=new Set();
-    return fact.stops.every((s:any)=>{if(!s||!label(s.building_id)||ids.has(s.building_id)||!label(s.label)||!Array.isArray(s.position)||s.position.length!==3||!s.position.every((n:unknown)=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1e7)||(s.completion!==null&&!receipt(s.completion)))return false;ids.add(s.building_id);return true;});
+    const seed = fact.resident_seed;
+    if (seed !== undefined && (typeof seed !== 'number' || !Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)) return false;
+    if (!Number.isSafeInteger(fact.revision) || Number(fact.revision) < 0 || !Array.isArray(fact.stops) || fact.stops.length > 12) return false;
+    const ids = new Set();
+    for (const stop of fact.stops) {
+      if (!stop || !label(stop.building_id) || ids.has(stop.building_id) || !label(stop.label)) return false;
+      const name = stop.recipient;
+      if (name !== undefined && (typeof name !== 'string' || !name.trim() || new TextEncoder().encode(name).length > 128)) return false;
+      if (!Array.isArray(stop.position) || stop.position.length !== 3 || !stop.position.every((n: unknown) =>
+        typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e7)) return false;
+      if (stop.completion !== null && !receipt(stop.completion)) return false;
+      ids.add(stop.building_id);
+    }
+    return true;
   }
   if (!Number.isSafeInteger(fact.sequence) || fact.sequence! < 0) return false;
   if (fact.kind==='ballot')return typeof fact.courier==='boolean'&&typeof fact.finished==='boolean'&&Number.isSafeInteger(fact.score)&&Math.abs(Number(fact.score))<=1_000_000&&Number.isSafeInteger(fact.delivered)&&Number(fact.delivered)>=0&&Number(fact.delivered)<=100&&(fact.choice==null||[0,1,2].includes(fact.choice as number));

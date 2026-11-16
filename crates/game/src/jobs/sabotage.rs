@@ -148,9 +148,9 @@ impl Attempt {
         (GRACE - (now - self.started)).ceil().max(0.) as i32
     }
 
-    pub fn message(&self, address: &str, label: &str) -> String {
-        let neighbor = service::citizen(&self.neighbor).name;
-        let recipient = service::citizen(address).name;
+    pub fn message(&self, jobs: &Jobs, address: &str, label: &str) -> String {
+        let neighbor = jobs.citizen(&self.neighbor).name;
+        let recipient = jobs.citizen(address).name;
         let clue = if self.backup {
             "Ask directly. They'll take it at a lower rate."
         } else {

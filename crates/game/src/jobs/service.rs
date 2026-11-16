@@ -1,6 +1,12 @@
 //! Doorbells, resident schedules and the small delivery conversations.
 use super::*;
 use bevy::{picking::hover::Hovered, ui_widgets::Button};
+use fake::{
+    Fake,
+    faker::name::en::{FirstName, LastName},
+    locales::{Data, EN},
+};
+use rand::seq::IteratorRandom;
 use sabotage::{Attempt, Pitch, Scenario};
 
 #[derive(Default)]
@@ -112,6 +118,52 @@ pub(crate) struct TimerLabel;
 pub(crate) struct Marker(u8);
 
 impl Jobs {
+    fn name_rng(&self, id: &str) -> SmallRng {
+        SmallRng::seed_from_u64((u64::from(self.resident_seed) << 32) | u64::from(hash(id)))
+    }
+
+    pub(super) fn route_recipient(&self, id: &str) -> Option<String> {
+        if self.resident_seed == 0 {
+            return None;
+        }
+        let used: HashSet<_> = self
+            .parcels
+            .iter()
+            .filter_map(|p| {
+                p.recipient
+                    .as_deref()?
+                    .split_once(' ')
+                    .map(|(_, last)| last)
+            })
+            .collect();
+        let mut rng = self.name_rng(id);
+        let first: &str = FirstName().fake_with_rng(&mut rng);
+        let last = EN::NAME_LAST_NAME
+            .iter()
+            .copied()
+            .filter(|name| !used.contains(name))
+            .choose(&mut rng)?;
+        Some(format!("{first} {last}"))
+    }
+
+    pub(super) fn citizen(&self, id: &str) -> Citizen {
+        let mut resident = citizen(id);
+        if let Some(name) = self
+            .parcels
+            .iter()
+            .find(|p| p.address == id)
+            .and_then(|p| p.recipient.as_ref())
+        {
+            resident.name.clone_from(name);
+        } else if self.resident_seed != 0 {
+            let mut rng = self.name_rng(id);
+            let first: &str = FirstName().fake_with_rng(&mut rng);
+            let last: &str = LastName().fake_with_rng(&mut rng);
+            resident.name = format!("{first} {last}");
+        }
+        resident
+    }
+
     pub fn browser_intercom(&self, now: f32) -> serde_json::Value {
         let Some(modal) = &self.service.modal else {
             return serde_json::Value::Null;
@@ -131,7 +183,7 @@ impl Jobs {
                     } else {
                         format!("{address}/{i}")
                     };
-                    let name = citizen(&id).name;
+                    let name = self.citizen(&id).name;
                     let label = if i == 0 {
                         format!("Ring recipient · {name}")
                     } else {
@@ -221,7 +273,7 @@ impl Jobs {
             }
         }
         serde_json::json!({
-            "message": attempt.message(&parcel.address, label),
+            "message": attempt.message(self, &parcel.address, label),
             "timer": timer,
             "action": if self.dog_parcel.is_some() || (attempt.answer_at.is_some() && self.prompt.contains("Hand over to the neighbor")) {
                 self.prompt.clone()
@@ -322,8 +374,10 @@ pub(crate) fn service_update(
                             Ok(()) => {
                                 attempt.answer_at.get_or_insert(now + 2.);
                                 let neighbor = attempt.neighbor.clone();
-                                *message =
-                                    format!("{} is coming to the door.", citizen(&neighbor).name);
+                                *message = format!(
+                                    "{} is coming to the door.",
+                                    jobs.citizen(&neighbor).name
+                                );
                                 jobs.open_doors.insert(neighbor.clone());
                                 jobs.emit(
                                     &ride,
@@ -544,7 +598,7 @@ pub(crate) fn service_update(
                 camera,
                 kind: ModalKind::Dialogue {
                     recipient: entity,
-                    name: citizen(&npc.address).name,
+                    name: jobs.citizen(&npc.address).name,
                     expires: now + [9., 6., 4.][shift.difficulty as usize],
                 },
             });
@@ -564,7 +618,7 @@ pub(crate) fn service_update(
             })
         {
             let camera = intercom_camera(b);
-            let mut message = format!("{}: Who is the parcel for?", citizen(&b.id).name);
+            let mut message = format!("{}: Who is the parcel for?", jobs.citizen(&b.id).name);
             if attempt.departed(now) {
                 let backup = nearest_neighbor(&jobs, parcel, Some(&attempt.neighbor))
                     .map(|p| (p.address.clone(), p.point, p.label.clone()));
@@ -715,16 +769,16 @@ pub(crate) fn service_ui(
                             ..
                         } => {
                             p.spawn(text("INTERCOM", 24.));
-                            p.spawn(text(format!("For {}", citizen(address).name), 17.));
+                            p.spawn(text(format!("For {}", jobs.citizen(address).name), 17.));
                             p.spawn((
                                 TimerLabel,
                                 text("Ring your recipient. All 6 bells in time: +40 KPI", 14.),
                             ));
                             for i in 0..6 {
                                 let name = if i == 0 {
-                                    citizen(address).name
+                                    jobs.citizen(address).name
                                 } else {
-                                    citizen(&format!("{address}/{i}")).name
+                                    jobs.citizen(&format!("{address}/{i}")).name
                                 };
                                 button(
                                     p,
@@ -835,14 +889,14 @@ pub(crate) fn service_ui(
         return;
     };
     for (kind, mut node, mut label) in &mut markers {
-        let citizen = citizen(&parcel.address);
+        let citizen = jobs.citizen(&parcel.address);
         let (position, value) = if kind.0 == 0 {
             let active = jobs.active_attempt();
             let target = jobs.current_target().unwrap_or(parcel.point);
             let description = if let Some((parcel, attempt, label)) = active {
                 format!(
                     "{}\n{}s before bonus decay",
-                    attempt.message(&parcel.address, label),
+                    attempt.message(&jobs, &parcel.address, label),
                     attempt.seconds(now)
                 )
             } else {

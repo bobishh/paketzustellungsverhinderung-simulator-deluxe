@@ -60,6 +60,7 @@ impl Jobs {
         &mut self,
         day: u64,
         revision: u64,
+        resident_seed: u32,
         stops: Vec<RouteStop>,
         commands: &mut Commands,
     ) -> bool {
@@ -87,6 +88,7 @@ impl Jobs {
         {
             return false;
         }
+        self.resident_seed = resident_seed;
         self.apply_route(stops, commands);
         self.sharing.as_mut().unwrap().received = Some((day, revision));
         true
@@ -97,6 +99,7 @@ impl Jobs {
         &mut self,
         day: u64,
         revision: u64,
+        resident_seed: u32,
         stops: Vec<RouteStop>,
         commands: &mut Commands,
     ) {
@@ -104,6 +107,7 @@ impl Jobs {
             return;
         }
         self.day = day;
+        self.resident_seed = resident_seed;
         self.apply_route(stops, commands);
         if let Some(sharing) = &mut self.sharing {
             sharing.revision = revision;
@@ -119,6 +123,7 @@ impl Jobs {
             let mut parcel = previous.remove(&stop.building_id).unwrap_or(Parcel {
                 address: stop.building_id,
                 label: stop.label.clone(),
+                recipient: None,
                 point: Vec3::from_array(stop.position),
                 state: ParcelState::InVan,
                 completion: None,
@@ -126,6 +131,7 @@ impl Jobs {
                 prop: None,
             });
             parcel.label = stop.label;
+            parcel.recipient = stop.recipient;
             parcel.point = Vec3::from_array(stop.position);
             if let Some(receipt) = parcel.completion.clone().or(stop.completion) {
                 complete(&mut parcel, receipt, commands);
@@ -214,6 +220,7 @@ impl Jobs {
                 .map(|p| RouteStop {
                     building_id: p.address.clone(),
                     label: p.label.clone(),
+                    recipient: p.recipient.clone(),
                     position: p.point.to_array(),
                     completion: p.completion.clone(),
                 })
@@ -223,6 +230,7 @@ impl Jobs {
                 device: session.device.clone(),
                 day: self.day(),
                 revision,
+                resident_seed: self.resident_seed,
                 stops,
             });
         } else {
@@ -255,6 +263,9 @@ fn valid_stops(stops: &[RouteStop]) -> bool {
         !s.building_id.is_empty()
             && s.building_id.len() <= 256
             && ids.insert(&s.building_id)
+            && s.recipient
+                .as_ref()
+                .is_none_or(|name| !name.trim().is_empty() && name.len() <= 128)
             && !s.label.is_empty()
             && s.label.len() <= 1024
             && s.position.iter().all(|n| n.is_finite() && n.abs() <= 1e7)
@@ -289,12 +300,14 @@ mod tests {
             RouteStop {
                 building_id: "way/1".into(),
                 label: "Shared first address".into(),
+                recipient: Some("Mila Weber".into()),
                 position: [10., 0., 20.],
                 completion: Some(receipt("host")),
             },
             RouteStop {
                 building_id: "way/2".into(),
                 label: "Shared second address".into(),
+                recipient: None,
                 position: [30., 0., 40.],
                 completion: None,
             },
@@ -306,18 +319,19 @@ mod tests {
         let mut jobs = Jobs::default();
         jobs.day = 3;
         jobs.configure_shared("guest", false);
-        assert!(jobs.receive_route(3, 7, stops(), &mut world.commands()));
+        assert!(jobs.receive_route(3, 7, 0, stops(), &mut world.commands()));
         assert_eq!(jobs.parcels.len(), 2);
         assert_eq!(jobs.parcels[0].label, "Shared first address");
+        assert_eq!(jobs.hud_data(Vec3::ZERO)["routes"][0]["name"], "Mila Weber");
         assert!(matches!(jobs.parcels[0].state, ParcelState::Filed(_)));
         assert_eq!(jobs.progress()["score"], 0);
         assert_eq!(jobs.progress()["delivered"], 0);
         assert_eq!(jobs.hud_data(Vec3::ZERO)["delivered"], 1);
         assert_eq!(jobs.current_target(), Some(Vec3::new(30., 0., 40.)));
-        assert!(!jobs.receive_route(2, 99, stops(), &mut world.commands()));
+        assert!(!jobs.receive_route(2, 99, 0, stops(), &mut world.commands()));
         let mut stale = stops();
         stale[0].completion = None;
-        assert!(!jobs.receive_route(3, 6, stale, &mut world.commands()));
+        assert!(!jobs.receive_route(3, 6, 0, stale, &mut world.commands()));
         assert!(matches!(jobs.parcels[0].state, ParcelState::Filed(_)));
     }
     #[test]
@@ -330,6 +344,7 @@ mod tests {
         jobs.parcels.push(Parcel {
             address: "way/1".into(),
             label: "First".into(),
+            recipient: None,
             point: Vec3::ZERO,
             state: ParcelState::InVan,
             completion: None,
@@ -355,11 +370,11 @@ mod tests {
             photo: false,
             score: 335,
         });
-        assert!(jobs.receive_route(1, 1, route.clone(), &mut world.commands()));
+        assert!(jobs.receive_route(1, 1, 0, route.clone(), &mut world.commands()));
         assert_eq!(jobs.progress()["score"], 335);
         assert_eq!(jobs.progress()["photos"], 0);
         assert_eq!(jobs.progress()["delivered"], 1);
-        assert!(jobs.receive_route(1, 2, route, &mut world.commands()));
+        assert!(jobs.receive_route(1, 2, 0, route, &mut world.commands()));
         assert_eq!(jobs.progress()["score"], 335);
     }
     #[test]
@@ -368,19 +383,19 @@ mod tests {
         let mut jobs = Jobs::default();
         jobs.day = 1;
         jobs.configure_shared("host", false);
-        assert!(jobs.receive_route(1, 7, stops(), &mut world.commands()));
+        assert!(jobs.receive_route(1, 7, 0, stops(), &mut world.commands()));
         assert_eq!(jobs.progress()["score"], 100);
-        assert!(!jobs.receive_route(1, 7, stops(), &mut world.commands()));
+        assert!(!jobs.receive_route(1, 7, 0, stops(), &mut world.commands()));
         let mut newer = stops();
         newer[0].completion = None;
-        assert!(jobs.receive_route(1, 8, newer.clone(), &mut world.commands()));
+        assert!(jobs.receive_route(1, 8, 0, newer.clone(), &mut world.commands()));
         assert_eq!(jobs.progress()["score"], 100);
         jobs.day = 2;
         jobs.reset_shared_day();
         for p in &mut jobs.parcels {
             p.state = ParcelState::InVan;
         }
-        assert!(jobs.receive_route(2, 1, newer, &mut world.commands()));
+        assert!(jobs.receive_route(2, 1, 0, newer, &mut world.commands()));
         assert_eq!(jobs.progress()["score"], 0);
         assert_eq!(jobs.hud_data(Vec3::ZERO)["delivered"], 0);
     }
@@ -392,11 +407,11 @@ mod tests {
         jobs.configure_shared("guest", false);
         let mut initial = stops();
         initial[0].completion = None;
-        jobs.receive_route(1, 1, initial, &mut world.commands());
+        jobs.receive_route(1, 1, 0, initial, &mut world.commands());
         jobs.selected = 1;
         jobs.navigation = 0;
         jobs.parcels[1].state = ParcelState::Carrying;
-        jobs.receive_route(1, 2, stops(), &mut world.commands());
+        jobs.receive_route(1, 2, 0, stops(), &mut world.commands());
         assert_eq!(jobs.selected, 1);
         assert_eq!(jobs.navigation, 1);
         assert_eq!(jobs.parcels[1].state, ParcelState::Carrying);

@@ -91,6 +91,8 @@ pub struct DeliveryReceipt {
 pub struct RouteStop {
     pub building_id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient: Option<String>,
     pub position: [f32; 3],
     pub completion: Option<DeliveryReceipt>,
 }
@@ -142,6 +144,8 @@ pub enum Fact {
         device: String,
         day: u64,
         revision: u64,
+        #[serde(default)]
+        resident_seed: u32,
         stops: Vec<RouteStop>,
     },
     Delivered {

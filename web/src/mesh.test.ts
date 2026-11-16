@@ -60,6 +60,9 @@ it('validates a bounded shared route and authenticated delivery claims',()=>{
   const actor='a'.repeat(64);
   const route={kind:'route',origin,device:actor,day:1,revision:2,stops:[{building_id:'way/1',label:'Shared address',position:[1,0,2],completion:{device:actor,photo:true,score:100}}]};
   expect(validFact(route,origin,actor)).toBe(true);
+  expect(validFact({...route,resident_seed:123,stops:[{...route.stops[0],recipient:'Mila Weber'}]},origin,actor)).toBe(true);
+  expect(validFact({...route,resident_seed:-1},origin,actor)).toBe(false);
+  expect(validFact({...route,stops:[{...route.stops[0],recipient:'x'.repeat(129)}]},origin,actor)).toBe(false);
   expect(validFact({...route,stops:[...route.stops,...route.stops]},origin,actor)).toBe(false);
   expect(validFact({...route,stops:[{...route.stops[0],position:[NaN,0,0]}]},origin,actor)).toBe(false);
   expect(validFact({...route,stops:Array(13).fill(route.stops[0])},origin,actor)).toBe(false);

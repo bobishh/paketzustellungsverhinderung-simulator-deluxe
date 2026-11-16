@@ -10,6 +10,7 @@ use bevy::{
     render::view::screenshot::{Screenshot, ScreenshotCaptured},
 };
 use paket_session::{Avatar, Fact, StreetAction};
+use rand::{RngExt, SeedableRng, rngs::SmallRng, seq::SliceRandom};
 
 use crate::{
     BuildingLink, Mode, RemoteActor, Ride,
@@ -35,6 +36,7 @@ pub(crate) fn navigation_bearing(actor: &Transform, target: Vec3) -> (f32, f32) 
 #[derive(Resource, Default)]
 pub(crate) struct Jobs {
     day: u64,
+    pub(crate) resident_seed: u32,
     sharing: Option<shared::Sharing>,
     service: service::Service,
     parcels: Vec<Parcel>,
@@ -63,6 +65,7 @@ pub(crate) struct Jobs {
 struct Parcel {
     address: String,
     label: String,
+    recipient: Option<String>,
     point: Vec3,
     state: ParcelState,
     completion: Option<paket_session::DeliveryReceipt>,
@@ -158,6 +161,21 @@ impl Jobs {
             }
         );
     }
+    pub fn for_ride(guest: bool) -> Self {
+        let resident_seed = if guest
+            || crate::platform::arguments()
+                .iter()
+                .any(|a| a == "--press-shot")
+        {
+            0
+        } else {
+            rand::rng().random_range(1..=u32::MAX)
+        };
+        Self {
+            resident_seed,
+            ..Self::default()
+        }
+    }
     pub fn day(&self) -> u64 {
         self.day.max(1)
     }
@@ -215,7 +233,7 @@ impl Jobs {
         serde_json::json!({
             "selected":self.navigation,"active":self.selected,
             "routes":self.parcels.iter().enumerate().map(|(i,p)|serde_json::json!({
-                "index":i,"address":p.label,"name":service::citizen(&p.address).name,
+                "index":i,"address":p.label,"name":self.citizen(&p.address).name,
                 "point":[p.point.x,p.point.z],
                 "distance":actors::horizontal_distance(position,p.point),
                 "parcelDistance":match p.state { ParcelState::Flying{position:p}|ParcelState::Dropped{position:p,..}|ParcelState::SetAside{position:p}=>Some(actors::horizontal_distance(position,p)),_=>None },
@@ -270,6 +288,17 @@ impl Jobs {
                 direction: room_address.outward,
             });
         }
+        if authoritative && self.resident_seed != 0 {
+            let numbered = addresses.partition_point(|b| b.address.is_some());
+            let mut rng = SmallRng::seed_from_u64(u64::from(self.resident_seed));
+            // Vary nearby stops as tiles arrive while keeping numbered addresses first.
+            let (named, unnumbered) = addresses.split_at_mut(numbered);
+            for group in [named, unnumbered] {
+                for nearby in group.chunks_mut(8) {
+                    nearby.shuffle(&mut rng);
+                }
+            }
+        }
         for address in addresses {
             if !self.parcels.iter().any(|p| p.address == address.id) {
                 if !authoritative || self.parcels.len() >= DELIVERIES_PER_SHIFT {
@@ -284,6 +313,7 @@ impl Jobs {
                         .chars()
                         .take(256)
                         .collect(),
+                    recipient: self.route_recipient(&address.id),
                     point: self.doorstep(&address),
                     state: ParcelState::InVan,
                     completion: None,
@@ -587,11 +617,7 @@ impl Jobs {
             lines.push(format!(
                 "{cursor} {}  {}  ·  {state}",
                 index + 1,
-                format!(
-                    "{} · {}",
-                    parcel.label,
-                    service::citizen(&parcel.address).name
-                )
+                format!("{} · {}", parcel.label, self.citizen(&parcel.address).name)
             ));
         }
         lines.join("\n")
@@ -653,10 +679,11 @@ pub(crate) fn new_day(
     }
     if let Some(world) = shift.world {
         if (world.lat - ride.origin.lat).abs() + (world.lon - ride.origin.lon).abs() > 1e-8 {
+            let resident_seed = jobs.resident_seed;
             *jobs = Jobs::default();
             jobs.day = day;
             jobs.menu_open = true;
-            commands.insert_resource(crate::NextNeighbourhood(world.into()));
+            commands.insert_resource(crate::NextNeighbourhood(world.into(), resident_seed));
             crate::platform::ui_event(
                 if initial { "paket-travel" } else { "paket-day" },
                 &serde_json::json!({"day":day,"travel":true}).to_string(),
@@ -2343,24 +2370,33 @@ mod tests {
             .filter(|b| !b.accessory)
             .map(crate::building_link)
             .collect();
-        app.world_mut()
-            .run_system_once(
-                move |mut commands: Commands, mut jobs: ResMut<Jobs>, models: Res<Models>| {
-                    jobs.seed(addresses.clone(), &mut commands, &models, true);
-                    jobs.seed(addresses.clone(), &mut commands, &models, true);
-                },
-            )
-            .unwrap();
-        let jobs = app.world().resource::<Jobs>();
-        assert_eq!(jobs.parcels.len(), 12);
-        assert_eq!(
-            jobs.parcels
+        let mut route = |seed| {
+            let addresses = addresses.clone();
+            app.world_mut()
+                .run_system_once(
+                    move |mut commands: Commands, mut jobs: ResMut<Jobs>, models: Res<Models>| {
+                        *jobs = Jobs {
+                            resident_seed: seed,
+                            ..Jobs::default()
+                        };
+                        jobs.seed(addresses.clone(), &mut commands, &models, true);
+                        jobs.seed(addresses.clone(), &mut commands, &models, true);
+                    },
+                )
+                .unwrap();
+            let jobs = app.world().resource::<Jobs>();
+            let ids: Vec<_> = jobs.parcels.iter().map(|p| p.address.clone()).collect();
+            let names: HashSet<_> = jobs
+                .parcels
                 .iter()
-                .map(|p| &p.address)
-                .collect::<HashSet<_>>()
-                .len(),
-            12
-        );
+                .map(|p| p.recipient.as_deref().unwrap().split_once(' ').unwrap().1)
+                .collect();
+            assert_eq!(ids.len(), 12);
+            assert_eq!(ids.iter().collect::<HashSet<_>>().len(), 12);
+            assert_eq!(names.len(), 12);
+            ids
+        };
+        assert_ne!(route(7), route(801));
     }
 
     fn frame_dropped_parcel(app: &mut App, index: usize) {
