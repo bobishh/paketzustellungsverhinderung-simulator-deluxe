@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use paket_geo::{FIXTURE_LAT, FIXTURE_LON, TileId};
 
 // The west side of Chamissoplatz, facing the mapped playground.
-const CHAMISSOPLATZ: Vec3 = Vec3::new(-11., 0., 158.);
+const CHAMISSOPLATZ: Vec3 = Vec3::new(-9.2, 0., 158.);
 
 #[derive(Resource, Default)]
 struct Scene {
@@ -74,8 +74,8 @@ fn compose(
         let right = rotation * Vec3::X;
         let courier = commands
             .spawn((
-                Transform::from_translation(base)
-                    .with_rotation(rotation * Quat::from_rotation_z(-0.07)),
+                // The paved road is drawn above the heightfield the pose is placed on.
+                Transform::from_translation(base + Vec3::Y * 0.08).with_rotation(rotation),
                 Visibility::default(),
                 HoldingParcel,
                 DespawnOnExit(Mode::Ride),
