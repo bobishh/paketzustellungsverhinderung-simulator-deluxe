@@ -16,6 +16,8 @@ const ZOOM: u8 = 13;
 const TILE: i32 = 256;
 const RADIUS: f32 = 1600.;
 pub(crate) const STEP: f32 = 20.;
+pub(crate) const FLOOR_RECESS: f32 = 0.05;
+pub(crate) const DRAPE_CLEARANCE: f32 = 0.025;
 const SIDE: usize = (RADIUS as usize * 2 / STEP as usize) + 1;
 const FADE: f32 = 200.;
 type Tile = (i32, i32);
@@ -210,7 +212,7 @@ pub(crate) fn floor(heights: &Heights, center: Vec3, half: f32) -> (Mesh, Collid
     for z in 0..side {
         for x in 0..side {
             let p = Vec3::new(x as f32 * STEP - half, 0., z as f32 * STEP - half);
-            position.push(p.with_y(heights.at(p + center) - 0.05));
+            position.push(p.with_y(heights.at(p + center) - FLOOR_RECESS));
             uv.push((p + center).xz() / 3.);
             if z > 0 && x > 0 {
                 let d = (z * side + x) as u32;
@@ -281,7 +283,9 @@ pub(crate) fn drape(mesh: Mesh, heights: &Heights, origin: Vec3) -> Mesh {
                 pending.push(([mid, b, c], depth + 1));
             } else {
                 points.extend(
-                    triangle.map(|p| p + Vec3::Y * (heights.at(p + origin) - origin.y + 0.025)),
+                    triangle.map(|p| {
+                        p + Vec3::Y * (heights.at(p + origin) - origin.y + DRAPE_CLEARANCE)
+                    }),
                 );
             }
         }

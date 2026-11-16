@@ -1,7 +1,7 @@
 //! Reproducible in-engine press still, using the same meshes and materials as play.
 use crate::{
     Mode, Ride, StreetMaterials,
-    actors::{HoldingParcel, Models, ParkedVan, Player},
+    actors::{HoldingParcel, Models, PARCEL_GRIP, ParkedVan, Player},
     elevation::Elevation,
     traffic::TrafficWorld,
 };
@@ -74,24 +74,25 @@ fn compose(
         let right = rotation * Vec3::X;
         let courier = commands
             .spawn((
-                // The paved road is drawn above the heightfield the pose is placed on.
-                Transform::from_translation(base + Vec3::Y * 0.08).with_rotation(rotation),
+                Transform::from_translation(
+                    base + Vec3::Y * crate::roads::surface_rise(&elevation.heights),
+                )
+                .with_rotation(rotation),
                 Visibility::default(),
                 HoldingParcel,
                 DespawnOnExit(Mode::Ride),
             ))
             .id();
-        models.courier(&mut commands, courier);
-        models.grimace(&mut commands, courier);
+        models.citizens.courier.spawn(&mut commands, courier);
         let box_root = commands
             .spawn((
-                Transform::from_xyz(0., 1.04, -0.40),
+                Transform::from_translation(PARCEL_GRIP),
                 Visibility::default(),
                 ChildOf(courier),
             ))
             .id();
         models.parcel(&mut commands, box_root);
-        let dog_position = base + right * 0.65 + forward * 0.28 + Vec3::Y * 0.28;
+        let dog_position = ground(base + right * 0.64 + forward * 0.56) + Vec3::Y * 0.03;
         let dog = commands
             .spawn((
                 Transform::from_translation(dog_position).looking_to(-right, Vec3::Y),
@@ -147,11 +148,20 @@ fn dress_chamissoplatz(
     }
     let car = commands
         .spawn((
-            Transform::from_translation(ground(Vec3::new(-8.2, 0., 161.9)) + Vec3::Y * 0.8)
+            Transform::from_translation(ground(Vec3::new(-7.1, 0., 151.2)) + Vec3::Y * 0.8)
                 .looking_to(Vec3::new(-0.17, 0., 1.), Vec3::Y),
             Visibility::default(),
             DespawnOnExit(Mode::Ride),
         ))
         .id();
-    traffic.car(commands, car, 0);
+    traffic.car(commands, car, 3);
+    let van = commands
+        .spawn((
+            Transform::from_translation(ground(Vec3::new(-5.6, 0., 160.7)))
+                .looking_to(Vec3::new(-0.17, 0., 1.), Vec3::Y),
+            Visibility::default(),
+            DespawnOnExit(Mode::Ride),
+        ))
+        .id();
+    models.van(commands, van);
 }

@@ -15,7 +15,6 @@ pub(crate) enum Surface {
     Grass,
     Plaster,
     Fabric,
-    Fur,
 }
 
 pub(crate) fn matte(color: Color, roughness: f32) -> StandardMaterial {
@@ -69,7 +68,6 @@ pub(crate) fn material(images: &mut Assets<Image>, kind: Surface, tint: Color) -
                     let weave = if (x / 2 + y / 2) % 2 == 0 { 1.0 } else { -1.0 };
                     ([239., 239., 239.], weave * 5. + grain * 2., weave * 0.14)
                 }
-                Surface::Fur => ([244., 243., 240.], grain * 4., grain * 0.08),
             };
             for channel in base {
                 colors.push((channel + variation).clamp(0., 255.) as u8);

@@ -2,7 +2,7 @@ mod actors;
 mod bridges;
 mod browser_ui;
 mod buildings;
-mod citizens;
+mod characters;
 mod dogs;
 mod elevation;
 mod jobs;
@@ -124,6 +124,18 @@ fn main() {
     if platform::arguments().iter().any(|a| a == "--press-shot") {
         press_scene::install(&mut app);
     }
+    #[cfg(target_arch = "wasm32")]
+    if platform::arguments()
+        .iter()
+        .any(|a| a == "--inspect-courier")
+    {
+        app.add_systems(
+            PostUpdate,
+            characters::inspect_courier
+                .after(bevy::transform::TransformSystems::Propagate)
+                .run_if(in_state(Mode::Ride)),
+        );
+    }
     #[cfg(debug_assertions)]
     if let Ok(directory) = env::var("PAKET_VISUAL_CHECK") {
         visual_check::install(&mut app, directory.into());
@@ -200,9 +212,8 @@ fn install_ride(app: &mut App) {
                 invite_control,
                 return_to_map,
                 dogs::walk.after(jobs::courier),
-                dogs::animate_tails,
-                actors::animate_people,
-                citizens::animate,
+                characters::animate,
+                actors::ground_couriers,
                 actors::animate_vehicles,
                 terrain::finish,
                 roads::rebuild,
@@ -735,7 +746,8 @@ fn setup(
         &mut meshes,
         &mut materials,
         &mut images,
-        citizens::Kit::new(&assets, &mut graphs),
+        characters::Kit::new(&assets, &mut graphs),
+        &assets,
     ));
     let full_fidelity = !cfg!(target_arch = "wasm32")
         || platform::arguments()
@@ -766,7 +778,7 @@ fn setup(
             surfaces::Surface::Gravel,
             Color::WHITE,
         )),
-        dogs: dogs::DogKit::new(&mut meshes, &mut materials, &mut images),
+        dogs: dogs::DogKit::new(&assets, &mut graphs),
         places: places::Kit::new(&mut meshes, &mut materials),
     });
     commands.spawn((

@@ -15,6 +15,17 @@ use std::{
     thread,
 };
 
+const ROAD_LAYER: f32 = 0.026;
+
+pub(crate) fn surface_rise(heights: &crate::elevation::Heights) -> f32 {
+    ROAD_LAYER
+        + if heights.available() {
+            crate::elevation::DRAPE_CLEARANCE
+        } else {
+            0.0
+        }
+}
+
 #[derive(Resource, Default)]
 pub(crate) struct Roads {
     streets: BTreeMap<String, Street>,
@@ -26,6 +37,35 @@ pub(crate) struct Roads {
 }
 
 impl Roads {
+    pub(crate) fn pavement(&self, position: Vec3) -> f32 {
+        let point = position.xz();
+        let mut coverage = 0.0_f32;
+        for street in self.streets().filter(|street| street.bridge.is_none()) {
+            for pair in street.centerline.windows(2) {
+                let world = |p: paket_geo::EastNorth| Vec2::new(p.east as f32, -p.north as f32);
+                let start = world(pair[0]);
+                let delta = world(pair[1]) - start;
+                let length = delta.length();
+                if length < 0.01 {
+                    continue;
+                }
+                let direction = delta / length;
+                let offset = point - start;
+                let along = offset.dot(direction);
+                if along < -0.25 || along > length + 0.25 {
+                    continue;
+                }
+                let lateral = direction.perp_dot(offset);
+                let width = street.width_m * 0.5 + street.sidewalk_m[usize::from(lateral >= 0.0)];
+                coverage = coverage.max(((width - lateral.abs() + 0.3) / 0.6).clamp(0.0, 1.0));
+                if coverage >= 1.0 {
+                    return 1.0;
+                }
+            }
+        }
+        coverage
+    }
+
     pub fn streets(&self) -> impl Iterator<Item = &Street> {
         self.streets.values()
     }
@@ -224,7 +264,7 @@ fn build(streets: &[Street]) -> Vec<(usize, Mesh)> {
             let base = vertices[kind].len() as u32;
             let points: Vec<_> = coords
                 .chunks_exact(2)
-                .map(|p| Vec3::new(p[0] as f32, 0.026, p[1] as f32))
+                .map(|p| Vec3::new(p[0] as f32, ROAD_LAYER, p[1] as f32))
                 .collect();
             for t in triangles.chunks_exact(3) {
                 let [a, b, c] = [points[t[0]], points[t[1]], points[t[2]]];

@@ -2,6 +2,7 @@ use avian3d::prelude::*;
 use bevy::{
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
     prelude::*,
+    world_serialization::WorldInstanceReady,
 };
 use paket_session::{ActorPose, Avatar, VanPose};
 
@@ -61,46 +62,31 @@ pub(crate) struct VehicleVisual {
     heading: Option<f32>,
     roll: f32,
     steer: f32,
+    radius: f32,
 }
 
 #[derive(Component)]
-pub(crate) struct Wheel {
-    front: bool,
-}
-
-#[derive(Component, Default)]
-pub(crate) struct WalkCycle {
-    previous: Option<Vec3>,
-    phase: f32,
-}
-
-#[derive(Component)]
-pub(crate) struct Hip(pub f32);
+pub(crate) struct VehicleWheels(Vec<(Entity, bool)>);
 
 #[derive(Component)]
 pub(crate) struct HoldingParcel;
 
+#[derive(Component)]
+pub(crate) struct CourierGround(f32);
+
+pub(crate) const PARCEL_GRIP: Vec3 = Vec3::new(0., 1.055, -0.38);
+pub(crate) const PARCEL_HALF_SIZE: Vec3 = Vec3::new(0.24, 0.15, 0.185);
+
 #[derive(Resource)]
 pub(crate) struct Models {
     box_mesh: Handle<Mesh>,
-    torso: Handle<Mesh>,
     mark: Handle<Mesh>,
-    sphere: Handle<Mesh>,
-    capsule: Handle<Mesh>,
-    wheel: Handle<Mesh>,
-    hub: Handle<Mesh>,
-    coat: Handle<StandardMaterial>,
-    pub citizens: crate::citizens::Kit,
-    face: Handle<StandardMaterial>,
+    pub citizens: crate::characters::Kit,
+    delivery_van: Handle<WorldAsset>,
     fabric: Handle<StandardMaterial>,
-    reflective: Handle<StandardMaterial>,
     dark: Handle<StandardMaterial>,
-    van: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
-    lamp: Handle<StandardMaterial>,
-    tail_lamp: Handle<StandardMaterial>,
     metal: Handle<StandardMaterial>,
-    rubber: Handle<StandardMaterial>,
     cardboard: Handle<StandardMaterial>,
     tape: Handle<StandardMaterial>,
     label: Handle<StandardMaterial>,
@@ -111,62 +97,31 @@ impl Models {
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
         images: &mut Assets<Image>,
-        citizens: crate::citizens::Kit,
+        citizens: crate::characters::Kit,
+        assets: &AssetServer,
     ) -> Self {
         use crate::surfaces::{Surface, material, matte};
         Self {
             box_mesh: meshes.add(crate::shapes::rounded_box(Vec3::ONE, 0.065)),
-            torso: meshes.add(crate::shapes::rounded_box(Vec3::ONE, 0.20)),
             mark: meshes.add(crate::shapes::company_mark()),
-            sphere: meshes.add(crate::shapes::lit(Sphere::new(0.5).mesh().uv(24, 16))),
-            capsule: meshes.add(crate::shapes::lit(Mesh::from(Capsule3d::new(0.5, 0.5)))),
-            wheel: meshes.add(
-                Torus::new(0.19, 0.36)
-                    .mesh()
-                    .minor_resolution(10)
-                    .major_resolution(32),
-            ),
-            hub: meshes.add(Cylinder::new(0.215, 0.18).mesh().resolution(24)),
-            coat: materials.add(material(
-                images,
-                Surface::Fabric,
-                Color::srgb(0.80, 0.34, 0.095),
-            )),
             citizens,
-            face: materials.add(matte(Color::srgb(0.66, 0.45, 0.34), 0.64)),
+            delivery_van: assets
+                .load(GltfAssetLabel::Scene(0).from_asset("street/delivery-van.glb")),
             fabric: materials.add(material(
                 images,
                 Surface::Fabric,
                 Color::srgb(0.16, 0.20, 0.24),
             )),
-            reflective: materials.add(StandardMaterial {
-                metallic: 0.3,
-                ..matte(Color::srgb(0.79, 0.84, 0.79), 0.40)
-            }),
             dark: materials.add(matte(Color::srgb(0.055, 0.075, 0.085), 0.72)),
-            van: materials.add(StandardMaterial {
-                clearcoat: 0.30,
-                clearcoat_perceptual_roughness: 0.28,
-                ..matte(Color::srgb(0.82, 0.57, 0.25), 0.38)
-            }),
             glass: materials.add(StandardMaterial {
                 metallic: 0.25,
                 reflectance: 0.6,
                 ..matte(Color::srgb(0.10, 0.19, 0.23), 0.16)
             }),
-            lamp: materials.add(StandardMaterial {
-                emissive: LinearRgba::rgb(1.0, 0.82, 0.48),
-                ..matte(Color::srgb(0.97, 0.91, 0.73), 0.23)
-            }),
-            tail_lamp: materials.add(StandardMaterial {
-                emissive: LinearRgba::rgb(0.35, 0.008, 0.002),
-                ..matte(Color::srgb(0.67, 0.06, 0.025), 0.24)
-            }),
             metal: materials.add(StandardMaterial {
                 metallic: 0.72,
                 ..matte(Color::srgb(0.51, 0.55, 0.55), 0.34)
             }),
-            rubber: materials.add(matte(Color::srgb(0.045, 0.05, 0.055), 0.97)),
             cardboard: materials.add(matte(Color::srgb(0.54, 0.36, 0.18), 0.95)),
             tape: materials.add(matte(Color::srgb(0.68, 0.51, 0.29), 0.55)),
             label: materials.add(matte(Color::srgb(0.92, 0.90, 0.82), 0.85)),
@@ -189,7 +144,10 @@ impl Models {
             ))
             .id();
         match form {
-            Avatar::Courier => self.courier(commands, root),
+            Avatar::Courier => {
+                commands.entity(root).insert(CourierGround(y));
+                self.citizens.courier.spawn(commands, root);
+            }
             Avatar::Dog => dogs.model(commands, root),
             Avatar::Van => self.van(commands, root),
         }
@@ -214,7 +172,7 @@ impl Models {
 
     pub fn parcel(&self, commands: &mut Commands, parent: Entity) {
         for (point, size, material) in [
-            (Vec3::ZERO, Vec3::new(0.48, 0.30, 0.37), &self.cardboard),
+            (Vec3::ZERO, PARCEL_HALF_SIZE * 2.0, &self.cardboard),
             (
                 Vec3::new(0.0, 0.152, 0.0),
                 Vec3::new(0.065, 0.006, 0.37),
@@ -294,492 +252,120 @@ impl Models {
         }
     }
 
-    pub fn grimace(&self, commands: &mut Commands, parent: Entity) {
-        self.part(
+    pub(crate) fn van(&self, commands: &mut Commands, parent: Entity) {
+        spawn_vehicle(
             commands,
             parent,
-            &self.sphere,
-            &self.dark,
-            Transform::from_xyz(0., 1.52, -0.117).with_scale(Vec3::new(0.056, 0.04, 0.012)),
+            self.delivery_van.clone(),
+            Vec3::Y * 0.04,
+            0.21,
         );
         for side in [-1., 1.] {
             self.part(
                 commands,
                 parent,
-                &self.box_mesh,
-                &self.dark,
-                Transform::from_xyz(side * 0.04, 1.637, -0.112)
-                    .with_scale(Vec3::new(0.037, 0.007, 0.01))
-                    .with_rotation(Quat::from_rotation_z(side * 0.28)),
-            );
-        }
-    }
-
-    pub fn courier(&self, commands: &mut Commands, parent: Entity) {
-        let jacket = &self.coat;
-        let mut part = |point, size, material, shape: &Handle<Mesh>| {
-            self.part(
-                commands,
-                parent,
-                shape,
-                material,
-                Transform::from_translation(point).with_scale(size),
-            );
-        };
-
-        // The torso, hips and neck remain separate volumes through the walk cycle.
-        part(
-            Vec3::new(0., 1.18, 0.015),
-            Vec3::new(0.42, 0.51, 0.255),
-            jacket,
-            &self.torso,
-        );
-        part(
-            Vec3::new(0., 0.91, 0.0),
-            Vec3::new(0.34, 0.27, 0.26),
-            &self.fabric,
-            &self.sphere,
-        );
-        part(
-            Vec3::new(0., 1.46, -0.009),
-            Vec3::new(0.10, 0.10, 0.11),
-            &self.face,
-            &self.sphere,
-        );
-        part(
-            Vec3::new(0., 1.59, -0.015),
-            Vec3::new(0.195, 0.235, 0.195),
-            &self.face,
-            &self.torso,
-        );
-        part(
-            Vec3::new(0., 1.565, -0.103),
-            Vec3::new(0.039, 0.052, 0.064),
-            &self.face,
-            &self.sphere,
-        );
-        part(
-            Vec3::new(0., 1.690, 0.005),
-            Vec3::new(0.224, 0.121, 0.226),
-            &self.dark,
-            &self.sphere,
-        );
-        for side in [-1.0, 1.0] {
-            part(
-                Vec3::new(side * 0.104, 1.59, -0.004),
-                Vec3::new(0.038, 0.055, 0.044),
-                &self.face,
-                &self.sphere,
-            );
-            part(
-                Vec3::new(side * 0.040, 1.612, -0.111),
-                Vec3::new(0.021, 0.014, 0.010),
-                &self.dark,
-                &self.sphere,
-            );
-        }
-        part(
-            Vec3::new(0., 1.673, -0.092),
-            Vec3::new(0.213, 0.023, 0.133),
-            &self.dark,
-            &self.sphere,
-        );
-        part(
-            Vec3::new(0., 1.18, -0.118),
-            Vec3::new(0.30, 0.028, 0.029),
-            &self.reflective,
-            &self.box_mesh,
-        );
-        part(
-            Vec3::new(0., 1.18, 0.142),
-            Vec3::new(0.34, 0.40, 0.19),
-            &self.dark,
-            &self.box_mesh,
-        );
-        part(
-            Vec3::new(0., 1.22, 0.237),
-            Vec3::new(0.255, 0.245, 0.022),
-            jacket,
-            &self.box_mesh,
-        );
-        // Tailored vest panels, zip, webbing and a clipped delivery scanner.
-        for side in [-1.0, 1.0] {
-            part(
-                Vec3::new(side * 0.14, 1.24, -0.122),
-                Vec3::new(0.035, 0.31, 0.023),
-                &self.dark,
-                &self.box_mesh,
-            );
-            part(
-                Vec3::new(side * 0.14, 1.22, 0.146),
-                Vec3::new(0.038, 0.35, 0.022),
-                &self.dark,
-                &self.box_mesh,
-            );
-            part(
-                Vec3::new(side * 0.125, 1.05, -0.131),
-                Vec3::new(0.11, 0.095, 0.026),
-                &self.fabric,
-                &self.box_mesh,
-            );
-        }
-        part(
-            Vec3::new(0., 1.20, -0.12),
-            Vec3::new(0.012, 0.40, 0.025),
-            &self.metal,
-            &self.box_mesh,
-        );
-        part(
-            Vec3::new(0.12, 1.32, -0.14),
-            Vec3::new(0.07, 0.04, 0.016),
-            &self.reflective,
-            &self.box_mesh,
-        );
-        self.part(
-            commands,
-            parent,
-            &self.mark,
-            &self.reflective,
-            Transform::from_xyz(0., 1.23, 0.252).with_scale(Vec3::splat(0.14)),
-        );
-        commands.entity(parent).insert(WalkCycle::default());
-        for side in [-1.0, 1.0] {
-            let leg = commands
-                .spawn((
-                    Hip(side),
-                    Transform::from_xyz(0.096 * side, 0.85, 0.0),
-                    Visibility::default(),
-                    ChildOf(parent),
-                ))
-                .id();
-            for (point, size, material, mesh) in [
-                (
-                    Vec3::new(0., -0.20, 0.0),
-                    Vec3::new(0.151, 0.31, 0.171),
-                    &self.fabric,
-                    &self.capsule,
-                ),
-                (
-                    Vec3::new(0., -0.57, 0.013),
-                    Vec3::new(0.108, 0.29, 0.122),
-                    &self.fabric,
-                    &self.capsule,
-                ),
-                (
-                    Vec3::new(0., -0.80, -0.055),
-                    Vec3::new(0.132, 0.102, 0.243),
-                    &self.dark,
-                    &self.sphere,
-                ),
-            ] {
-                self.part(
-                    commands,
-                    leg,
-                    mesh,
-                    material,
-                    Transform::from_translation(point).with_scale(size),
-                );
-            }
-            let arm = commands
-                .spawn((
-                    Hip(-side * 0.68),
-                    Transform::from_xyz(side * 0.205, 1.37, 0.0),
-                    Visibility::default(),
-                    ChildOf(parent),
-                ))
-                .id();
-            for (point, size, material) in [
-                (
-                    Vec3::new(side * 0.035, -0.13, 0.0),
-                    Vec3::new(0.124, 0.195, 0.130),
-                    jacket,
-                ),
-                (
-                    Vec3::new(side * 0.061, -0.35, -0.035),
-                    Vec3::new(0.100, 0.162, 0.111),
-                    jacket,
-                ),
-                (
-                    Vec3::new(side * 0.064, -0.48, -0.055),
-                    Vec3::new(0.082, 0.089, 0.081),
-                    &self.face,
-                ),
-            ] {
-                self.part(
-                    commands,
-                    arm,
-                    &self.capsule,
-                    material,
-                    Transform::from_translation(point).with_scale(size),
-                );
-            }
-        }
-    }
-
-    fn van(&self, commands: &mut Commands, parent: Entity) {
-        commands.entity(parent).insert(VehicleVisual::default());
-        let mut part = |point, size, material| {
-            self.part(
-                commands,
-                parent,
-                &self.box_mesh,
-                material,
-                Transform::from_translation(point).with_scale(size),
-            )
-        };
-        // High roof, separate cab, lower sills and inset panels give the van a readable silhouette.
-        for (point, size, material) in [
-            (
-                Vec3::new(0., 1.36, 0.65),
-                Vec3::new(1.82, 1.18, 2.65),
-                &self.van,
-            ),
-            (
-                Vec3::new(0., 0.69, -1.36),
-                Vec3::new(1.80, 0.40, 1.38),
-                &self.van,
-            ),
-            (
-                Vec3::new(0., 1.16, -1.02),
-                Vec3::new(1.74, 0.73, 1.37),
-                &self.van,
-            ),
-            (
-                Vec3::new(0., 1.59, -1.00),
-                Vec3::new(1.75, 0.14, 1.38),
-                &self.van,
-            ),
-            (
-                Vec3::new(0., 0.47, 0.02),
-                Vec3::new(1.53, 0.20, 3.90),
-                &self.dark,
-            ),
-            (
-                Vec3::new(0., 0.64, 0.0),
-                Vec3::new(1.81, 0.28, 1.68),
-                &self.van,
-            ),
-            (
-                Vec3::new(0., 0.44, -2.04),
-                Vec3::new(1.84, 0.21, 0.18),
-                &self.dark,
-            ),
-            (
-                Vec3::new(0., 0.47, 2.0),
-                Vec3::new(1.84, 0.18, 0.20),
-                &self.dark,
-            ),
-            (
-                Vec3::new(0., 0.72, -2.055),
-                Vec3::new(0.91, 0.22, 0.045),
-                &self.dark,
-            ),
-            (
-                Vec3::new(0., 0.49, -2.145),
-                Vec3::new(0.43, 0.105, 0.018),
-                &self.reflective,
-            ),
-            (
-                Vec3::new(0., 0.61, 2.104),
-                Vec3::new(0.43, 0.105, 0.018),
-                &self.reflective,
-            ),
-            (
-                Vec3::new(0., 1.37, -1.714),
-                Vec3::new(1.53, 0.38, 0.04),
-                &self.glass,
-            ),
-            (
-                Vec3::new(0., 1.26, 1.981),
-                Vec3::new(0.018, 1.12, 0.024),
-                &self.dark,
-            ),
-        ] {
-            part(point, size, material);
-        }
-        for side in [-1.0, 1.0] {
-            part(
-                Vec3::new(side * 0.881, 1.36, -1.07),
-                Vec3::new(0.025, 0.37, 0.94),
-                &self.glass,
-            );
-            part(
-                Vec3::new(side * 1.0, 1.33, -1.45),
-                Vec3::new(0.23, 0.08, 0.08),
-                &self.dark,
-            );
-            part(
-                Vec3::new(side * 1.10, 1.40, -1.45),
-                Vec3::new(0.12, 0.22, 0.19),
-                &self.dark,
-            );
-            part(
-                Vec3::new(side * 0.918, 1.36, 0.65),
-                Vec3::new(0.018, 0.51, 2.12),
-                &self.dark,
-            );
-            part(
-                Vec3::new(side * 0.922, 0.89, 0.53),
-                Vec3::new(0.025, 0.075, 2.32),
-                &self.reflective,
-            );
-            part(
-                Vec3::new(side * 0.91, 1.03, -0.64),
-                Vec3::new(0.048, 0.052, 0.23),
-                &self.dark,
-            );
-            part(
-                Vec3::new(side * 0.92, 1.08, -0.18),
-                Vec3::new(0.045, 0.054, 0.28),
-                &self.dark,
-            );
-            part(
-                Vec3::new(side * 0.66, 0.89, -2.052),
-                Vec3::new(0.32, 0.15, 0.055),
-                &self.lamp,
-            );
-            part(
-                Vec3::new(side * 0.80, 1.04, 2.00),
-                Vec3::new(0.13, 0.37, 0.065),
-                &self.tail_lamp,
-            );
-            part(
-                Vec3::new(side * 0.30, 1.03, 2.00),
-                Vec3::new(0.20, 0.055, 0.04),
-                &self.dark,
-            );
-        }
-        for side in [-1.0, 1.0] {
-            self.part(
-                commands,
-                parent,
                 &self.mark,
-                &self.reflective,
-                Transform::from_xyz(side * 0.933, 1.36, 0.65)
-                    .with_rotation(Quat::from_rotation_y(side * std::f32::consts::FRAC_PI_2)),
+                &self.dark,
+                Transform::from_xyz(side * 0.929, 1.17, 0.82)
+                    .with_rotation(Quat::from_rotation_y(side * std::f32::consts::FRAC_PI_2))
+                    .with_scale(Vec3::splat(0.53)),
             );
-        }
-        for side in [-1.0, 1.0] {
-            for (front, z) in [(true, -1.25), (false, 1.30)] {
-                let wheel = commands
-                    .spawn((
-                        Wheel { front },
-                        Transform::from_xyz(side * 0.86, 0.36, z),
-                        Visibility::default(),
-                        ChildOf(parent),
-                    ))
-                    .id();
-                let axle = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-                self.part(
-                    commands,
-                    wheel,
-                    &self.wheel,
-                    &self.rubber,
-                    Transform::from_rotation(axle).with_scale(Vec3::new(1., 1.35, 1.)),
-                );
-                self.part(
-                    commands,
-                    wheel,
-                    &self.hub,
-                    &self.metal,
-                    Transform::from_rotation(axle),
-                );
-                for i in 0..5 {
-                    let angle = i as f32 * std::f32::consts::TAU / 5.;
-                    self.part(
-                        commands,
-                        wheel,
-                        &self.box_mesh,
-                        &self.dark,
-                        Transform::from_xyz(side * 0.095, angle.cos() * 0.12, angle.sin() * 0.12)
-                            .with_rotation(Quat::from_rotation_x(angle))
-                            .with_scale(Vec3::new(0.015, 0.056, 0.028)),
-                    );
-                }
-            }
         }
     }
 }
 
+pub(crate) fn ground_couriers(
+    roads: Res<crate::roads::Roads>,
+    bridges: Res<crate::bridges::Bridges>,
+    elevation: Res<crate::elevation::Elevation>,
+    actors: Query<&Transform, Without<CourierGround>>,
+    mut visuals: Query<(&ChildOf, &CourierGround, &mut Transform)>,
+) {
+    for (parent, ground, mut visual) in &mut visuals {
+        let Ok(actor) = actors.get(parent.parent()) else {
+            continue;
+        };
+        let point = actor.translation;
+        let lift = if bridges.height_at(point).is_some() {
+            0.0
+        } else {
+            roads.pavement(point)
+                * (crate::elevation::FLOOR_RECESS + crate::roads::surface_rise(&elevation.heights))
+        };
+        visual.translation.y = ground.0 + lift + 0.009;
+    }
+}
+
+pub(crate) fn spawn_vehicle(
+    commands: &mut Commands,
+    parent: Entity,
+    scene: Handle<WorldAsset>,
+    offset: Vec3,
+    radius: f32,
+) {
+    commands
+        .spawn((
+            ChildOf(parent),
+            WorldAssetRoot(scene),
+            Transform::from_translation(offset),
+            VehicleVisual {
+                radius,
+                ..default()
+            },
+        ))
+        .observe(find_wheels);
+}
+
+fn find_wheels(
+    ready: On<WorldInstanceReady>,
+    mut commands: Commands,
+    children: Query<&Children>,
+    names: Query<&Name>,
+) {
+    let wheels = children
+        .iter_descendants(ready.entity)
+        .filter_map(|entity| {
+            let name = names.get(entity).ok()?.as_str();
+            match name {
+                "WheelFrontLeft" | "WheelFrontRight" => Some((entity, true)),
+                "WheelRear" => Some((entity, false)),
+                _ => None,
+            }
+        })
+        .collect();
+    commands.entity(ready.entity).insert(VehicleWheels(wheels));
+}
+
 pub(crate) fn animate_vehicles(
     time: Res<Time>,
-    mut vans: Query<(&mut VehicleVisual, &GlobalTransform, &Children)>,
-    mut wheels: Query<(&Wheel, &mut Transform)>,
+    mut vehicles: Query<(&mut VehicleVisual, &GlobalTransform, &VehicleWheels)>,
+    mut wheels: Query<&mut Transform>,
 ) {
-    for (mut van, transform, children) in &mut vans {
+    for (mut vehicle, transform, parts) in &mut vehicles {
         let here = transform.translation();
         let forward = transform.forward().as_vec3();
-        let distance = van
+        let distance = vehicle
             .previous
             .replace(here)
-            .map_or(0.0, |p| (here - p).dot(forward));
+            .map_or(0., |p| (here - p).dot(forward));
         let yaw = transform.rotation().to_euler(EulerRot::YXZ).0;
-        let turn = van
+        let turn = vehicle
             .heading
             .replace(yaw)
-            .map_or(0.0, |p| (yaw - p).sin().atan2((yaw - p).cos()));
+            .map_or(0., |p| (yaw - p).sin().atan2((yaw - p).cos()));
         if distance.abs() < 2.0 {
-            van.roll = (van.roll - distance / 0.36) % std::f32::consts::TAU;
+            vehicle.roll = (vehicle.roll - distance / vehicle.radius) % std::f32::consts::TAU;
         }
         let target = if distance.abs() > 0.002 {
             (turn * 2.55 / distance).atan().clamp(-0.55, 0.55)
         } else {
             0.0
         };
-        van.steer += (target - van.steer) * blend(14.0, time.delta_secs());
-        for entity in children.iter() {
-            if let Ok((wheel, mut transform)) = wheels.get_mut(entity) {
-                transform.rotation =
-                    Quat::from_rotation_y(if wheel.front { van.steer } else { 0.0 })
-                        * Quat::from_rotation_x(van.roll);
-            }
-        }
-    }
-}
-
-pub(crate) fn animate_people(
-    time: Res<Time>,
-    clock: Res<Time<Virtual>>,
-    players: Query<&Player>,
-    mut walkers: Query<(
-        Entity,
-        &mut WalkCycle,
-        &GlobalTransform,
-        &Children,
-        Has<HoldingParcel>,
-    )>,
-    mut hips: Query<(&Hip, &mut Transform)>,
-) {
-    for (entity, mut walk, transform, children, holding) in &mut walkers {
-        let shocked = players
-            .iter()
-            .any(|p| p.visual == entity && p.stunned_until > clock.elapsed_secs());
-        let here = transform.translation();
-        let distance = walk
-            .previous
-            .replace(here)
-            .map_or(0.0, |previous| horizontal_distance(here, previous));
-        let moving = (0.001..0.3).contains(&distance);
-        if moving {
-            walk.phase += distance * 9.0;
-        }
-        let blend = blend(14.0, time.delta_secs());
-        for entity in children.iter() {
-            if let Ok((hip, mut leg)) = hips.get_mut(entity) {
-                let swing = if shocked {
-                    if hip.0.abs() < 0.9 {
-                        1.7 + (clock.elapsed_secs() * 35.0).sin() * 0.22
-                    } else {
-                        (clock.elapsed_secs() * 28.0).sin() * hip.0 * 0.35
-                    }
-                } else if holding && hip.0.abs() < 0.9 {
-                    1.05
-                } else if moving {
-                    walk.phase.sin() * hip.0 * 0.42
-                } else {
-                    0.0
-                };
-                leg.rotation = leg.rotation.slerp(Quat::from_rotation_x(swing), blend);
+        vehicle.steer += (target - vehicle.steer) * blend(14.0, time.delta_secs());
+        for &(entity, front) in &parts.0 {
+            if let Ok(mut wheel) = wheels.get_mut(entity) {
+                wheel.rotation = Quat::from_rotation_y(if front { vehicle.steer } else { 0.0 })
+                    * Quat::from_rotation_x(vehicle.roll);
             }
         }
     }

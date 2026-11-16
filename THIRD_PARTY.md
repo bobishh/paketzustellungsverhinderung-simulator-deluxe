@@ -6,6 +6,10 @@ The four animated characters in `assets/street/` come from Quaternius's [Ultimat
 
 The compact car, sedan, and SUV in `assets/street/` were converted from `NormalCar2.blend`, `NormalCar1.blend`, and `SUV.blend` in the [Quaternius Cars Pack](https://quaternius.com/packs/cars.html) (CC0). The GLB exports are aligned with the game's traffic orientation and scale.
 
+The courier is the Worker from [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) (CC0), with an orange uniform and game-specific parcel poses. The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
+
+The delivery van is an adapted ambulance from the [Public Transport Pack](https://quaternius.com/packs/publictransport.html) (CC0). The taxi and sports car are from the Cars Pack above. The gameplay exports use names and pivots for the turning wheels.
+
 Fira Mono Medium (`assets/fonts/FiraMono-Medium.ttf`) is the complete font distributed with Bevy Feathers 0.20.1, used for browser instruments.
 Digitized data copyright (c) 2012–2015, The Mozilla Foundation and Telefonica S.A.
 Licensed under the SIL Open Font License 1.1; see `assets/fonts/FiraMono-LICENSE`.

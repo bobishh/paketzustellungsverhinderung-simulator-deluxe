@@ -74,6 +74,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     if(join)openInvitation(`${location.origin}/#join=${join}`);
     globalThis.paketArgs = !join && query.has('lat') && query.has('lon') && Number.isFinite(lat) && Math.abs(lat) <= 85 && Number.isFinite(lon) && Math.abs(lon) <= 180 ? ['--lat', String(lat), '--lon', String(lon)] : [];
     if (query.has('press-shot')) { globalThis.paketArgs.push('--press-shot'); document.body.classList.add('press-shot'); }
+    if (query.has('inspect-courier')) globalThis.paketArgs.push('--inspect-courier');
     status.textContent = 'Loading the neighbourhood simulator…';
     const url = '/game/paket_game.js';
     const { default: init } = await import(/* @vite-ignore */ url);

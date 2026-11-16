@@ -1688,7 +1688,7 @@ pub(crate) fn carry_visual(
             .spawn((
                 ParcelInHands,
                 ChildOf(player.visual),
-                Transform::from_xyz(0.0, 1.04, -0.39),
+                Transform::from_translation(actors::PARCEL_GRIP),
                 Visibility::default(),
             ))
             .id();

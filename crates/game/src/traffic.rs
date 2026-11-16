@@ -1,7 +1,7 @@
 //! Small neighbourhood traffic: vehicles yield to obstacles and pedestrians use the edges.
 use crate::{
     Mode,
-    actors::{Models, ParkedVan, Player},
+    actors::{Models, ParkedVan, Player, spawn_vehicle},
     jobs::Jobs,
     roads::Roads,
     shift::Shift,
@@ -28,7 +28,7 @@ pub(crate) struct TrafficWorld {
     seen: HashSet<String>,
     cars: usize,
     people: usize,
-    car_models: [Handle<WorldAsset>; 3],
+    car_models: [Handle<WorldAsset>; 5],
 }
 impl TrafficWorld {
     pub fn new(assets: &AssetServer) -> Self {
@@ -36,6 +36,8 @@ impl TrafficWorld {
             "street/car-sedan.glb",
             "street/car-compact.glb",
             "street/car-suv.glb",
+            "street/car-taxi.glb",
+            "street/car-sport.glb",
         ]
         .map(|path| assets.load(GltfAssetLabel::Scene(0).from_asset(path)));
         Self {
@@ -47,11 +49,13 @@ impl TrafficWorld {
     }
 
     pub(crate) fn car(&self, commands: &mut Commands, root: Entity, index: usize) {
-        commands.spawn((
-            ChildOf(root),
-            WorldAssetRoot(self.car_models[index % self.car_models.len()].clone()),
-            Transform::from_xyz(0., -0.75, 0.),
-        ));
+        spawn_vehicle(
+            commands,
+            root,
+            self.car_models[index % self.car_models.len()].clone(),
+            Vec3::Y * -0.75,
+            0.25,
+        );
     }
 }
 fn path(points: &[paket_geo::EastNorth], offset: f32, y: f32) -> Vec<Vec3> {
