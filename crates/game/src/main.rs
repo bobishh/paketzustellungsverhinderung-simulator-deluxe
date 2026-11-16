@@ -1833,10 +1833,11 @@ fn spawn_tile(
             *references += 1;
             continue;
         }
-        let mesh = meshes.add(shapes::lit(buildings::mesh(building)));
-        let collider = building_collider(building);
         let link = raised_building(building, heights);
         let height = link.threshold.y - building_link(building).threshold.y;
+        let foundation = buildings::foundation_bottom(building, |point| heights.at(point), height);
+        let mesh = meshes.add(shapes::lit(buildings::mesh(building, foundation)));
+        let collider = building_collider(building, foundation);
         let mut entity = commands.spawn((
             DespawnOnExit(Mode::Ride),
             Transform::from_xyz(0., height, 0.),
@@ -1908,7 +1909,7 @@ fn street_start(scene: &MapScene, origin: LatLon, guest: bool) -> Option<(Vec3, 
     Some((point, facing))
 }
 
-fn building_collider(building: &paket_geo::Building) -> Option<Collider> {
+fn building_collider(building: &paket_geo::Building, foundation: f32) -> Option<Collider> {
     if building.open_sided {
         return None;
     }
@@ -1934,7 +1935,7 @@ fn building_collider(building: &paket_geo::Building) -> Option<Collider> {
                 ));
             }
         };
-        for (start, width, bottom, top) in buildings::wall_sections(building, index) {
+        for (start, width, bottom, top) in buildings::wall_sections(building, index, foundation) {
             wall(start, width, bottom, top);
         }
     }
@@ -2125,7 +2126,7 @@ mod ride_tests {
             20,
         )));
         for b in &scene.buildings {
-            if let Some(collider) = building_collider(b) {
+            if let Some(collider) = building_collider(b, 0.) {
                 app.world_mut()
                     .spawn((RigidBody::Static, Transform::IDENTITY, collider));
             }

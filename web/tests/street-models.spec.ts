@@ -23,6 +23,13 @@ test('a real shift loads the Quaternius pedestrians and traffic models', async (
     'shiba.glb', 'woman-casual.glb', 'woman-formal.glb',
   ]);
   expect(errors).toEqual([]);
+  const courier = await page.request.get('/assets/street/courier.glb');
+  expect(courier.ok()).toBeTruthy();
+  const glb = await courier.body();
+  const model = JSON.parse(glb.toString('utf8', 20, 20 + glb.readUInt32LE(12)));
+  expect(model.nodes.some((node: {name: string}) => node.name === 'CourierHead')).toBeTruthy();
+  expect(model.nodes.some((node: {name: string}) => node.name === 'Worker_Head')).toBeFalsy();
+
   await page.locator('#game').screenshot({path: test.info().outputPath('street-models.png')});
   await page.keyboard.press('v');
   await expect(page.locator('#speedometer')).toBeVisible();
@@ -36,7 +43,7 @@ test('a real shift loads the Quaternius pedestrians and traffic models', async (
 
 test('the courier walks with both hands on the parcel and both soles clear of the road', async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU build.');
-  type Sample = {position: number[]; grip: number[]; soles: number[]; carrying: boolean};
+  type Sample = {seconds: number; position: number[]; grip: number[]; soles: number[]; carrying: boolean};
   await page.addInitScript(() => {
     const state = window as unknown as Window & {courierSamples: Sample[]};
     state.courierSamples = [];
@@ -63,7 +70,15 @@ test('the courier walks with both hands on the parcel and both soles clear of th
   } finally {
     await page.keyboard.up('w');
   }
-  const carrying = (await samples()).filter(sample => sample.carrying).slice(-16);
+  const moving = (await samples()).filter(sample => sample.carrying);
+  const end = moving.at(-1)!.seconds;
+  const stride = moving.filter(sample => sample.seconds > end - 2);
+  const swings = stride.flatMap(({soles}) =>
+    Math.max(...soles) > 0.045 && Math.abs(soles[0] - soles[1]) > 0.035
+      ? [Number(soles[1] > soles[0])] : []);
+  const steps = swings.filter((foot, i) => i > 0 && foot !== swings[i - 1]).length;
+  expect(steps).toBeGreaterThanOrEqual(3);
+  const carrying = moving.slice(-16);
   expect(carrying).toHaveLength(16);
   expect(Math.max(...carrying.flatMap(sample => sample.grip))).toBeLessThan(0.06);
   for (const foot of [0, 1]) {

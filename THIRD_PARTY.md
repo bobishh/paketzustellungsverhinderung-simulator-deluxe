@@ -6,7 +6,7 @@ The four animated characters in `assets/street/` come from Quaternius's [Ultimat
 
 The compact car, sedan, and SUV in `assets/street/` were converted from `NormalCar2.blend`, `NormalCar1.blend`, and `SUV.blend` in the [Quaternius Cars Pack](https://quaternius.com/packs/cars.html) (CC0). The GLB exports are aligned with the game's traffic orientation and scale.
 
-The courier is the Worker from [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) (CC0), with an orange uniform and game-specific parcel poses. The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
+The courier combines the Worker body and Casual head from [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) (CC0), with an orange shirt and game-specific parcel poses. The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
 
 The delivery van is an adapted ambulance from the [Public Transport Pack](https://quaternius.com/packs/publictransport.html) (CC0). The taxi and sports car are from the Cars Pack above. The gameplay exports use names and pivots for the turning wheels.
 
@@ -23,6 +23,6 @@ Map fixtures (`fixtures/kreuzberg.json`, `fixtures/koertestrasse.json`) and bund
 Copyright and license: https://www.openstreetmap.org/copyright
 The Körtestraße fixture records public map geometry used to regress courtyard passage access.
 
-The Humboldtstraße bridge fixture is © OpenStreetMap contributors under the ODbL.
+The Humboldtstraße and Jasperallee bridge fixtures are © OpenStreetMap contributors under the ODbL.
 Elevation tiles come from the [Mapzen Terrain Tiles open dataset](https://registry.opendata.aws/terrain-tiles/).
 The dataset combines multiple regional and global elevation sources. See [Mapzen's data attribution and licenses](https://github.com/tilezen/joerd/blob/master/docs/attribution.md) for the source notices, including Copernicus EU-DEM.

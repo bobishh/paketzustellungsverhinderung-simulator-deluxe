@@ -6,18 +6,53 @@
 <div class="game-viewport"><canvas id="game" tabindex="0" aria-label="Courier game"></canvas></div>
 <section id="start" aria-labelledby="game-title"><img class="hero-image" src="/assets/delivery-day.webp" alt="A courier carries a parcel as a dog lunges from behind, beside an orange van on a Berlin street"><div class="hero-copy"><span class="eyebrow">A very unprofessional delivery simulator</span><h1 id="game-title">Paketzustellungs<wbr>verhinderung<span>Simulator Deluxe</span></h1><p class="intro">Deliver nothing.<br>Document everything.</p><button id="play" class="primary">Play <span aria-hidden="true">↗</span></button><span id="start-spinner" class="spinner" hidden aria-hidden="true"></span><p id="loading" role="status">Keyboard + mouse · WebGPU</p></div><div class="stamp"><span>ON TIME?</span><strong>0 POINTS.</strong></div><div class="hero-footer"><span>DREHLSS · PAKETE. IRGENDWANN.</span><a href="https://github.com/bobishh/paketzustellungsverhinderung-simulator-deluxe" target="_blank" rel="noopener">Source code ↗</a></div></section>
 <section id="lobby" hidden aria-label="Choose a shift">
-<div id="lobby-map" aria-hidden="true"></div>
-<div class="map-tools"><button data-command="zoom-out" aria-label="Zoom out">−</button><button data-command="zoom-in" aria-label="Zoom in">+</button><span>Drag the map to fine-tune your start</span></div>
-<aside class="lobby-panel">
-<button id="resume-mesh" type="button" hidden>Return to your mesh</button>
-<form id="join-form"><label for="invite">Join with an invitation link</label><div class="join-fields"><input id="invite" type="url" placeholder="https://…/#join=…" aria-describedby="join-status" required><button type="submit">Join shift</button></div><p id="join-status" role="status"></p></form>
-<section class="mesh-browser" aria-labelledby="mesh-list-title"><div><h3 id="mesh-list-title">Public meshes</h3><button id="refresh-meshes" type="button">Refresh</button></div><p class="mesh-list-progress" role="status"><span id="mesh-list-spinner" class="spinner" aria-hidden="true"></span><span id="mesh-list-status">Loading public meshes…</span></p><div id="mesh-list"></div><p id="mesh-join-status" role="status"></p></section><p class="eyebrow">01 / YOUR PATCH</p><h2>Where do we<br>cause trouble?</h2>
-<div class="location-picker"><button id="my-location" type="button" aria-describedby="location-privacy"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg><span>My location</span></button><p id="location-privacy">We don’t save your precise location or send it to analytics. Only a rounded neighbourhood is used for maps and shared with invited players.</p><p id="location-status" role="status" hidden></p></div>
-<form id="address-form"><label for="address">Street address or place</label><div class="search-field"><input id="address" type="search" autocomplete="off" placeholder="Oranienstraße 1, Berlin" required minlength="3" maxlength="180"><button aria-label="Find address">→</button></div></form><div id="address-results" role="list"></div>
-<div class="city-grid" aria-label="Choose a city"></div><div class="selected-place"><span class="dot"></span><span id="selected-place">Berlin · Kreuzberg</span></div>
-<p class="eyebrow">02 / YOUR ROLE</p><div class="role-picker" role="group" aria-label="Choose a role"><button data-role="courier" aria-pressed="true"><b>Courier</b><small>Lose the parcel.</small></button><button data-role="dog" aria-pressed="false"><b>Dog</b><small>Find the courier.</small></button></div>
-<label class="public-mesh-option"><input id="public-mesh" type="checkbox"> List my mesh publicly</label><p class="mesh-privacy">Anyone can join a listed mesh and see its neighbourhood. Leave unchecked to invite friends only.</p><div class="start-actions"><button id="solo" class="primary">Play solo <span>→</span></button><button id="friends">Play with friends ↗</button></div><p id="lobby-status" role="status">A shift lasts 48 minutes. Drop in whenever.</p>
-<small class="attribution"><span id="lobby-map-credit" hidden><a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">© OpenMapTiles</a> · </span><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Search by Photon</small></aside></section>
+  <div id="lobby-map" aria-hidden="true"></div>
+  <div class="map-tools">
+    <button data-command="zoom-out" aria-label="Zoom out">−</button>
+    <button data-command="zoom-in" aria-label="Zoom in">+</button>
+    <span>Drag to choose a start</span>
+  </div>
+  <small class="lobby-attribution"><span id="lobby-map-credit" hidden><a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">© OpenMapTiles</a> · </span><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · Search by Photon</small>
+  <aside class="lobby-panel">
+    <div class="lobby-setup">
+      <form id="join-form">
+        <div class="lobby-row">
+          <label for="invite">Join with an invitation link</label>
+          <button id="resume-mesh" type="button" hidden>Return to your mesh</button>
+        </div>
+        <div class="lobby-field"><input id="invite" type="url" placeholder="https://…/#join=…" aria-describedby="join-status" required><button type="submit">Join shift</button></div>
+        <p id="join-status" class="lobby-feedback" role="status"></p>
+      </form>
+      <section class="mesh-browser" aria-labelledby="mesh-list-title">
+        <div class="lobby-row"><h2 id="mesh-list-title">Public meshes<span id="mesh-count"></span></h2><button id="refresh-meshes" type="button">Refresh</button></div>
+        <div class="mesh-list-slot">
+          <p class="mesh-list-progress" role="status"><span id="mesh-list-spinner" class="spinner" aria-hidden="true"></span><span id="mesh-list-status">Loading public meshes…</span></p>
+          <div id="mesh-list" aria-label="Available public meshes"></div>
+        </div>
+      </section>
+      <section aria-labelledby="neighbourhood-title" class="lobby-location">
+        <div class="lobby-row">
+          <div class="lobby-place"><h2 id="neighbourhood-title">Neighbourhood</h2><span id="selected-place">Berlin · Kreuzberg</span></div>
+          <button id="my-location" type="button" aria-describedby="location-privacy"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg><span>My location</span></button>
+        </div>
+        <p id="location-privacy">Only your rounded neighbourhood is used and shared.</p>
+        <p id="location-status" role="status" hidden></p>
+        <div class="lobby-search">
+          <form id="address-form"><div class="lobby-field"><input id="address" type="search" aria-label="Street address or place" autocomplete="off" placeholder="Street address or place" required minlength="3" maxlength="180"><button aria-label="Find address">→</button></div></form>
+          <div id="address-results" role="list"></div>
+        </div>
+        <div class="city-grid" aria-label="Choose a city"></div>
+      </section>
+      <div class="role-picker" role="group" aria-labelledby="role-title"><h2 id="role-title">Role</h2><button data-role="courier" aria-pressed="true">Courier</button><button data-role="dog" aria-pressed="false">Dog</button></div>
+    </div>
+    <div class="lobby-actions">
+      <label class="public-mesh-option"><input id="public-mesh" type="checkbox" aria-describedby="mesh-privacy"> List my mesh publicly</label>
+      <span id="mesh-privacy" class="mesh-privacy">Anyone can join and see the neighbourhood.</span>
+      <div class="start-actions"><button id="solo" class="primary">Play solo <span aria-hidden="true">→</span></button><button id="friends">Play with friends</button></div>
+      <p id="lobby-status" class="lobby-feedback" role="status"></p>
+    </div>
+  </aside>
+</section>
 <aside id="minimap" hidden><section class="radar-frame"><canvas id="radar" width="480" height="480" aria-label="Nearby roads, player, van, delivery and dogs"></canvas><svg id="radar-markers" viewBox="0 0 480 480" aria-label="Directions to players and delivery"><circle cx="240" cy="240" r="208" fill="none" stroke="#fff7" stroke-width="2"/></svg></section><div><b>N ↑</b><span>You ▲ · Delivery <i>◆</i> · Van ▪</span><span id="map-range">160 m</span></div><section id="mesh-players" aria-labelledby="peer-title"><h3 id="peer-title">Players in mesh <span id="peer-count">0</span></h3><ul id="peer-list"></ul><p id="peer-empty">No other players in this mesh.</p></section></aside>
 <section id="ride-hud" hidden aria-label="Shift dashboard">
 <div class="hud-top"><div class="shift-clock"><small id="shift-label">SHIFT ENDS 17:00</small><time id="shift-time">09:00</time><div class="shift-track"><i id="shift-progress"></i></div></div><div class="score-box"><strong id="hud-score">0</strong><small>KPI</small></div><button id="hud-map">Map ↗</button></div>

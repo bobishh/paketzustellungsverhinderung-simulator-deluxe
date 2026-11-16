@@ -1,5 +1,6 @@
 //! Resolve separately mapped sidewalks into the vehicle crossing they describe.
 use bevy::prelude::*;
+use geo::{LineString, SimplifyIdx};
 use paket_geo::{EastNorth, Street, places::Place};
 use std::collections::HashSet;
 
@@ -52,12 +53,15 @@ fn crossing(
             std::mem::swap(&mut start, &mut end);
             std::mem::swap(&mut u, &mut v);
         }
-        if start < -2.
-            || end > length + 2.
-            || end - start < 5.
+        let overlap = end.min(length) - start.max(0.);
+        let approach_tolerance = if road.bridge.is_some() { 8. } else { 4. };
+        if start < -approach_tolerance
+            || end > length + approach_tolerance
+            || overlap < 5.
+            || overlap < (end - start) * 0.7
             || u * v <= 0.
             || u.abs().min(v.abs()) < (half - 1.).max(1.5)
-            || u.abs().max(v.abs()) > 20.
+            || u.abs().max(v.abs()) > (half + 8.).min(20.)
             || (u - v).abs() > (end - start) * 0.25
         {
             continue;
@@ -65,6 +69,21 @@ fn crossing(
         let width = ((u.abs() + v.abs() + path.width_m) * 0.5 - half).max(1.1);
         sides[usize::from(u > 0.)].push((start, end, width, layer, index));
     }
+
+    let tagged = road
+        .bridge
+        .filter(|_| sides.iter().any(|side| !side.is_empty()))
+        .map(|layer| Crossing {
+            start: 0.,
+            end: length,
+            sidewalks: sides.each_ref().map(|side| {
+                side.iter()
+                    .map(|&(_, _, width, _, _)| width)
+                    .fold(0., f32::max)
+            }),
+            layer,
+            paths: sides.iter().flatten().map(|&(.., index)| index).collect(),
+        });
 
     let mut best = None;
     // A parallel pair flanking a vehicle way is one crossing even when only
@@ -134,7 +153,17 @@ fn crossing(
             });
         }
     }
-    best
+    if let Some(mut tagged) = tagged {
+        if let Some(best) = best {
+            for (width, explicit) in tagged.sidewalks.iter_mut().zip(best.sidewalks) {
+                *width = width.max(explicit);
+            }
+            tagged.paths.extend(best.paths);
+        }
+        Some(tagged)
+    } else {
+        best
+    }
 }
 
 pub(crate) fn resolve(streets: &[Street], outlines: &[Place]) -> Vec<Street> {
@@ -148,10 +177,21 @@ pub(crate) fn resolve(streets: &[Street], outlines: &[Place]) -> Vec<Street> {
     let mut removed = HashSet::new();
     let mut result = Vec::new();
     for road in streets.iter().filter(|s| s.motor_road) {
-        let crossings = road
-            .centerline
+        // OSM often inserts extra nodes in the road while mapping the side
+        // paths from bank to bank. Match against whole nearly straight runs.
+        let line = LineString::from_iter(road.centerline.iter().map(|p| (p.east, p.north)));
+        let runs = line.simplify_idx(&0.75);
+        let crossings = runs
             .windows(2)
-            .map(|p| crossing(xy(p[0]), xy(p[1]), road, &paths, outlines))
+            .map(|run| {
+                crossing(
+                    xy(road.centerline[run[0]]),
+                    xy(road.centerline[run[1]]),
+                    road,
+                    &paths,
+                    outlines,
+                )
+            })
             .collect::<Vec<_>>();
         if road.bridge.is_some() || crossings.iter().all(Option::is_none) {
             let mut street = road.clone();
@@ -165,7 +205,9 @@ pub(crate) fn resolve(streets: &[Street], outlines: &[Place]) -> Vec<Street> {
             continue;
         }
         let mut pieces: Vec<Street> = Vec::new();
-        for (p, c) in road.centerline.windows(2).zip(crossings) {
+        for (run, c) in runs.windows(2).zip(crossings) {
+            let start = road.centerline[run[0]];
+            let end = road.centerline[run[1]];
             let mut append = |a, b, bridge, sidewalk_m| {
                 if xy(a).distance_squared(xy(b)) < 0.0001 {
                     return;
@@ -185,16 +227,18 @@ pub(crate) fn resolve(streets: &[Street], outlines: &[Place]) -> Vec<Street> {
                 }
             };
             if let Some(c) = c {
-                let a = xy(p[0]);
-                let d = (xy(p[1]) - a).normalize_or_zero();
+                let a = xy(start);
+                let d = (xy(end) - a).normalize_or_zero();
                 let lo = point(a + d * c.start);
                 let hi = point(a + d * c.end);
                 removed.extend(c.paths);
-                append(p[0], lo, None, road.sidewalk_m);
+                append(start, lo, None, road.sidewalk_m);
                 append(lo, hi, Some(c.layer), c.sidewalks);
-                append(hi, p[1], None, road.sidewalk_m);
+                append(hi, end, None, road.sidewalk_m);
             } else {
-                append(p[0], p[1], None, road.sidewalk_m);
+                for pair in road.centerline[run[0]..=run[1]].windows(2) {
+                    append(pair[0], pair[1], None, road.sidewalk_m);
+                }
             }
         }
         result.extend(pieces);
@@ -244,6 +288,22 @@ mod tests {
             .filter(|s| !s.motor_road)
             .collect::<Vec<_>>();
         assert_eq!(resolve(&footways, &[]).len(), 2);
+    }
+
+    #[test]
+    fn jasperallee_attaches_its_single_mapped_sidewalk_to_the_road_bridge() {
+        let scene = paket_geo::parse_overpass(
+            include_bytes!("../../../../fixtures/jasperallee-bridge.json"),
+            paket_geo::LatLon {
+                lat: 52.266,
+                lon: 10.534,
+            },
+        )
+        .unwrap();
+        let layout = resolve(&scene.streets, &[]);
+        assert_eq!(layout.len(), 1);
+        assert!(layout[0].motor_road && layout[0].bridge.is_some());
+        assert!(layout[0].sidewalk_m.iter().any(|&width| width > 1.6));
     }
 
     #[test]

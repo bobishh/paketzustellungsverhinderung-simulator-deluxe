@@ -26,6 +26,21 @@ pub fn load_scene(
 }
 
 #[cfg(target_arch = "wasm32")]
+pub fn lobby_map_size() -> Option<bevy::math::Vec2> {
+    #[wasm_bindgen::prelude::wasm_bindgen(
+        inline_js = "export function lobbyMapSize(){return globalThis.paketLobbyMapSize?.() ?? [];}"
+    )]
+    extern "C" {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_name = lobbyMapSize)]
+        fn size() -> js_sys::Array;
+    }
+    let size = size();
+    let width = size.get(0).as_f64()? as f32;
+    let height = size.get(1).as_f64()? as f32;
+    (width > 0. && height > 0.).then_some(bevy::math::Vec2::new(width, height))
+}
+
+#[cfg(target_arch = "wasm32")]
 mod browser {
     use super::*;
     use wasm_bindgen::prelude::*;

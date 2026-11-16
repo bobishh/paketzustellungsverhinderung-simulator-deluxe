@@ -1,0 +1,67 @@
+{
+  "elements": [
+    {
+      "type": "way",
+      "id": 23095964,
+      "tags": {
+        "bridge": "yes",
+        "cycleway:both": "no",
+        "foot": "use_sidepath",
+        "highway": "tertiary",
+        "lanes": "2",
+        "lanes:backward": "1",
+        "lanes:forward": "1",
+        "layer": "1",
+        "lit": "yes",
+        "maxspeed": "30",
+        "maxweight:signed": "no",
+        "name": "Jasperallee",
+        "name:etymology:wikidata": "Q103542",
+        "parking:both": "no",
+        "shoulder": "no",
+        "sidewalk:both": "separate",
+        "smoothness": "excellent",
+        "source:width": "bing",
+        "surface": "asphalt",
+        "turn:lanes:backward": "slight_right",
+        "width": "9.0",
+        "wikidata": "Q1329326",
+        "wikimedia_commons": "Category:Jasperallee",
+        "wikipedia": "de:Jasperallee"
+      },
+      "geometry": [
+        {
+          "lat": 52.26621,
+          "lon": 10.5335153
+        },
+        {
+          "lat": 52.2663136,
+          "lon": 10.5339135
+        }
+      ]
+    },
+    {
+      "type": "way",
+      "id": 354647710,
+      "tags": {
+        "bridge": "yes",
+        "foot": "designated",
+        "highway": "footway",
+        "layer": "1",
+        "lit": "yes",
+        "smoothness": "excellent",
+        "surface": "paving_stones"
+      },
+      "geometry": [
+        {
+          "lat": 52.2663667,
+          "lon": 10.5338766
+        },
+        {
+          "lat": 52.2662631,
+          "lon": 10.5334784
+        }
+      ]
+    }
+  ]
+}

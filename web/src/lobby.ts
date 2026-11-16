@@ -18,16 +18,14 @@ const cities = [
 const status = document.querySelector<HTMLElement>('#lobby-status')!;
 const lobby = document.querySelector<HTMLElement>('#lobby')!;
 const joinStatus = document.querySelector<HTMLElement>('#join-status')!;
-const meshJoinStatus = document.querySelector<HTMLElement>('#mesh-join-status')!;
 const resumeMesh = document.querySelector<HTMLButtonElement>('#resume-mesh')!;
 const inviteInput = document.querySelector<HTMLInputElement>('#invite')!;
 let initialInvitation = '';
-let joinFeedback: HTMLElement|undefined;
+let joining = false;
 export function openInvitation(link: string) { initialInvitation = link; }
 function clearJoinStatus() {
-  joinFeedback = undefined;
+  joining = false;
   joinStatus.textContent = '';
-  meshJoinStatus.textContent = '';
 }
 const results = document.querySelector('#address-results')!;
 const selected = document.querySelector('#selected-place')!;
@@ -54,8 +52,6 @@ locationButton.addEventListener('click', async () => {
     if (request !== locationRequest || lobby.hidden) return;
     select(point.lat, point.lon, 'Your neighbourhood');
     results.replaceChildren();
-    locationStatus.textContent = 'Neighbourhood selected. Drag the map to fine-tune your start.';
-    locationStatus.hidden = false;
   } catch (error) {
     if (request !== locationRequest || lobby.hidden) return;
     cancelLocation();
@@ -86,19 +82,19 @@ document.querySelectorAll<HTMLButtonElement>('[data-role]').forEach(button => bu
 document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach(b => b.onclick = () => send({ action: b.dataset.command! }));
 document.querySelector('#solo')!.addEventListener('click', () => { clearJoinStatus(); cancelLocation(); send({ action: 'solo' }); });
 document.querySelector('#friends')!.addEventListener('click', () => { clearJoinStatus(); cancelLocation(); globalThis.paketPublicMesh = document.querySelector<HTMLInputElement>('#public-mesh')!.checked; autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
-function join(link: string, feedback: HTMLElement) {
+function join(link: string) {
   clearJoinStatus(); cancelLocation(); autoStart = true; sawPending = false;
-  joinFeedback = feedback;
-  feedback.textContent = 'Joining shift…';
+  joining = true;
+  joinStatus.textContent = 'Joining shift…';
   send({ action: 'join', link });
 }
 document.querySelector('#join-form')!.addEventListener('submit', e => {
   e.preventDefault();
-  join(inviteInput.value.trim(), joinStatus);
+  join(inviteInput.value.trim());
 });
 resumeMesh.onclick = () => {
   const link=savedInvitation();
-  if(link){ inviteInput.value=link; join(link,joinStatus); }
+  if(link){ inviteInput.value=link; join(link); }
 };
 const share = document.querySelector<HTMLButtonElement>('#share')!;
 const shareDialog = document.querySelector<HTMLDialogElement>('#share-dialog')!;
@@ -135,7 +131,7 @@ window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
       const link=initialInvitation;
       initialInvitation='';
       inviteInput.value=link;
-      join(link,joinStatus);
+      join(link);
     }
   }
   document.querySelector<HTMLElement>('#minimap')!.hidden = event.detail !== 'ride';
@@ -152,7 +148,7 @@ window.addEventListener('paket-lobby', ((event: CustomEvent<any>) => {
     button.setAttribute('aria-pressed', String(Math.abs(city[2] - s.lat) < 1e-5 && Math.abs(city[3] - s.lon) < 1e-5));
   });
   if (s.status) {
-    const feedback = joinFeedback ?? status;
+    const feedback = joining ? joinStatus : status;
     if (feedback.textContent !== s.status) feedback.textContent = s.status;
   }
   if (s.pending) sawPending = true;
@@ -190,13 +186,15 @@ export {};
 
 const meshList = document.querySelector<HTMLElement>('#mesh-list')!;
 const meshStatus = document.querySelector<HTMLElement>('#mesh-list-status')!;
+const meshCount = document.querySelector<HTMLElement>('#mesh-count')!;
 const refreshMeshes = document.querySelector<HTMLButtonElement>('#refresh-meshes')!;
 async function refresh() {
   if (refreshMeshes.disabled) return;
   refreshMeshes.disabled = true; document.querySelector<HTMLElement>('#mesh-list-spinner')!.hidden=false; meshList.setAttribute('aria-busy','true'); meshStatus.textContent = 'Looking for public meshes…';
   try {
     const meshes = await availableMeshes(); meshList.replaceChildren();
-    meshStatus.textContent = meshes.length ? `${meshes.length} public meshes. Choose one to join.` : 'No public meshes yet. Create one or paste a friend’s invitation.';
+    meshCount.textContent = meshes.length ? ` · ${meshes.length}` : '';
+    meshStatus.textContent = meshes.length ? `${meshes.length} public meshes. Choose one to join.` : 'No public meshes yet.';
     for (const invite of meshes) {
       const button = document.createElement('button');
       const city = cities.find(c => Math.abs(c[2]-invite.origin.lat)<0.03 && Math.abs(c[3]-invite.origin.lon)<0.03);
@@ -204,11 +202,11 @@ async function refresh() {
       button.disabled = lobbyPending;
       button.onclick = () => {
         if (lobbyPending) return;
-        join(JSON.stringify(invite), meshJoinStatus);
+        join(JSON.stringify(invite));
       };
       meshList.append(button);
     }
-  } catch (error) { meshList.replaceChildren(); meshStatus.textContent = error instanceof Error ? error.message : 'Mesh list unavailable.'; }
+  } catch (error) { meshList.replaceChildren(); meshCount.textContent = ''; meshStatus.textContent = error instanceof Error ? error.message : 'Mesh list unavailable.'; }
   finally { refreshMeshes.disabled = false; document.querySelector<HTMLElement>('#mesh-list-spinner')!.hidden=true; meshList.setAttribute('aria-busy','false'); }
 }
 refreshMeshes.onclick = () => { void refresh(); };

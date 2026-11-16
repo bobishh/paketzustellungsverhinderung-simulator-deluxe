@@ -8,6 +8,8 @@ test('the real game walks uphill, shows the stadium and joins both sidewalks to 
   await page.setViewportSize({width:640,height:480});
   await page.addInitScript(()=>{
     const w = globalThis as any;
+    w.terrainPositions = [];
+    addEventListener('paket-radar', e => w.terrainPositions.push((e as CustomEvent).detail.position[0]));
     for (const [name,key] of [['paket-radar','terrainRadar'],['paket-map-roads','terrainRoads'],['paket-map-sports','terrainSports']]) {
       addEventListener(name, e => w[key] = (e as CustomEvent).detail);
     }
@@ -17,11 +19,12 @@ test('the real game walks uphill, shows the stadium and joins both sidewalks to 
   const line=(id:number,tags:Record<string,string>,points:number[][])=>({type:'way',id,tags,geometry:points.map(([x,y])=>ll(x,y))});
   const box=(id:number,tags:Record<string,string>,x:number,y:number,w:number,h:number)=>line(id,tags,[[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]]);
   const ways={elements:[
-    line(1,{highway:'residential',name:'Canal Road',width:'8',sidewalk:'separate'},[[-100,0],[120,0]]),
+    line(1,{highway:'residential',name:'Canal Road',width:'8',sidewalk:'separate'},[[-100,0],[40,0],[120,0]]),
     ...[-7,7].map((y,i)=>line(2+i,{highway:'path',footway:'sidewalk',bridge:'yes',layer:'1'},[[20,y],[66,y]])),
     box(4,{leisure:'stadium'},-62,17,65,60),
     box(5,{leisure:'pitch',sport:'soccer'},-55,25,49,43),
     box(6,{building:'yes','addr:housenumber':'6','addr:street':'Canal Road'},5,12,7,8),
+    box(8,{building:'yes'},17,-11,70,22),
   ]};
   const water={elements:[box(7,{natural:'water'},29,-40,26,80)]};
   await page.route('**/elevation/**/*.png', r=>r.fulfill({path:new URL('../../fixtures/elevation-slope.png',import.meta.url).pathname,contentType:'image/png'}));
@@ -49,6 +52,8 @@ test('the real game walks uphill, shows the stadium and joins both sidewalks to 
   await page.keyboard.down(advance);
   try {
     await expect.poll(async()=>(await radar()).position[0]-start.position[0],{timeout:35_000}).toBeGreaterThan(11);
+    await expect.poll(() => page.evaluate(() => (globalThis as any).terrainPositions.slice(-8)
+      .filter((x: number) => x > 15.5 && x < 16.9).length), {timeout: 15_000}).toBe(8);
   } finally {
     await page.keyboard.up(advance);
   }

@@ -110,7 +110,7 @@ impl Model {
         });
         let (scale, lift, stride_speed, run_threshold) = match rig {
             Rig::Resident => (0.95, 0., 1.4, f32::INFINITY),
-            Rig::Courier => (0.95, 0., 3.3, 4.2),
+            Rig::Courier => (0.95, 0., 2.15, 4.2),
             Rig::Dog => (0.22, 0.03, 1.5, 3.1),
         };
         Self {
@@ -296,6 +296,7 @@ pub(crate) fn inspect_courier(
     });
     let p = transform.translation();
     let data = serde_json::json!({
+        "seconds": time.elapsed_secs_f64(),
         "position": [p.x, p.z], "soles": soles, "grip": grip, "carrying": parcel.is_some(),
     });
     crate::platform::ui_event("paket-courier-pose", &data.to_string());

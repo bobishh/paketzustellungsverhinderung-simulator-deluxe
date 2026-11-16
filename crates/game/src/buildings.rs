@@ -103,7 +103,33 @@ fn openings(building: &Building, edge: usize) -> Vec<(f32, f32, f32)> {
     }
     gaps
 }
-pub(crate) fn wall_sections(building: &Building, edge: usize) -> Vec<(f32, f32, f32, f32)> {
+pub(crate) fn foundation_bottom(
+    building: &Building,
+    ground: impl Fn(Vec3) -> f32,
+    datum: f32,
+) -> f32 {
+    let mut lowest = datum;
+    for (a, b) in building
+        .footprint
+        .iter()
+        .zip(building.footprint.iter().cycle().skip(1))
+    {
+        let a = to_world(*a, 0.);
+        let b = to_world(*b, 0.);
+        let steps = (a.distance(b) / 4.).ceil().max(1.) as u32;
+        for step in 0..steps {
+            lowest = lowest.min(ground(a.lerp(b, step as f32 / steps as f32)));
+        }
+    }
+    // Bury the footing below the cut between the terrain and road render meshes.
+    lowest - datum - crate::elevation::FLOOR_RECESS - 0.08
+}
+
+pub(crate) fn wall_sections(
+    building: &Building,
+    edge: usize,
+    foundation: f32,
+) -> Vec<(f32, f32, f32, f32)> {
     let a = building.footprint[edge];
     let b = building.footprint[(edge + 1) % building.footprint.len()];
     let width = (b.east - a.east).hypot(b.north - a.north) as f32;
@@ -122,13 +148,14 @@ pub(crate) fn wall_sections(building: &Building, edge: usize) -> Vec<(f32, f32, 
                 .filter(|&&(a, b, _)| mid >= a && mid <= b)
                 .map(|p| p.2)
                 .fold(0.0, f32::max);
+            let bottom = if bottom == 0. { foundation } else { bottom };
             let top = building.height as f32;
             (s[1] - s[0] > 0.001 && top > bottom).then_some((s[0], s[1] - s[0], bottom, top))
         })
         .collect()
 }
 
-pub(crate) fn mesh(building: &Building) -> Mesh {
+pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
     let mut mesh = BuildingMesh::default();
     let points: Vec<_> = building
         .footprint
@@ -165,15 +192,15 @@ pub(crate) fn mesh(building: &Building) -> Mesh {
             let base = a + offset;
             for side in [along, outward, -along, -outward] {
                 let width = Vec3::Y.cross(side) * size;
-                let start = base + side * size * 0.5 - width * 0.5;
-                mesh.wall_panel(start, width, eave, side, wall);
+                let start = base + side * size * 0.5 - width * 0.5 + Vec3::Y * foundation;
+                mesh.wall_panel(start, width, eave - foundation, side, wall);
             }
             mesh.wall_panel(a + Vec3::Y * (eave - 0.16), b - a, 0.16, outward, roof);
         } else {
             let width = a.distance(b);
             let door = !building.accessory && index == door_edge && width > DOOR_WIDTH + 0.2;
             let interior = linear([214, 210, 196]);
-            let sections = wall_sections(building, index);
+            let sections = wall_sections(building, index, foundation);
             let back = |distance: f32| {
                 if distance < 0.001 {
                     inside[index]
@@ -567,7 +594,7 @@ mod tests {
             (0., 10.),
         ];
         for _ in 0..2 {
-            let mesh = mesh(&building(&outline));
+            let mesh = mesh(&building(&outline), 0.);
             for dx in [-0.02, 0., 0.02] {
                 let distance = visible_hit(
                     &mesh,
@@ -584,6 +611,42 @@ mod tests {
     }
 
     #[test]
+    fn foundations_reach_downhill_and_leave_arches_open() {
+        let mut building = building(&[(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
+        building.passages.push(Passage {
+            edge: 0,
+            start: 4.,
+            end: 6.,
+            height: 3.,
+        });
+        let foundation = foundation_bottom(&building, |point| -0.2 * point.x, 0.);
+        assert!(foundation < -2.);
+        let mesh = mesh(&building, foundation);
+        assert!(visible_hit(&mesh, Vec3::new(8., -1.4, 2.), Vec3::NEG_Z).is_some());
+        assert!(
+            visible_hit(&mesh, Vec3::new(5., -0.8, 2.), Vec3::NEG_Z).is_none_or(|hit| hit > 2.1)
+        );
+        let collider = crate::building_collider(&building, foundation).unwrap();
+        let hits = |x, y| {
+            collider
+                .cast_ray(
+                    Vec3::ZERO,
+                    Quat::IDENTITY,
+                    Vec3::new(x, y, 2.),
+                    Vec3::NEG_Z,
+                    3.,
+                    true,
+                )
+                .is_some()
+        };
+        assert!(
+            hits(8., -1.4),
+            "the player can enter beneath a downhill wall"
+        );
+        assert!(!hits(5., -0.8), "the mapped passage is blocked");
+    }
+
+    #[test]
     fn passage_has_visible_jambs_and_soffit_but_stays_open() {
         let mut building = building(&[(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
         building.passages.push(Passage {
@@ -592,7 +655,7 @@ mod tests {
             end: 6.,
             height: 3.,
         });
-        let mesh = mesh(&building);
+        let mesh = mesh(&building, 0.);
         let inside_opening = Vec3::new(5., 1., -0.065);
         for direction in [Vec3::X, Vec3::NEG_X] {
             let hit = visible_hit(&mesh, inside_opening, direction);
@@ -636,7 +699,7 @@ mod tests {
                 .map(|(a, b)| a.x * b.z - a.z * b.x)
                 .sum::<f32>()
                 .signum();
-            let mesh = mesh(building);
+            let mesh = mesh(building, 0.);
             for (i, &corner) in points.iter().enumerate() {
                 let incoming =
                     (corner - points[(i + points.len() - 1) % points.len()]).normalize_or_zero();

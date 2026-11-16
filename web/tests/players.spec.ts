@@ -187,3 +187,65 @@ test('the dashboard leaves room for the street on short viewports at every rende
   expect(await map.boundingBox()).toEqual(mapBounds);
   expect(await direction.boundingBox()).toEqual(arrow);
 });
+
+test('shift setup fits without scrolling while the public directory loads and fills', async ({page}, info) => {
+  const invitation = {
+    protocol: 'paket-web/3', origin: {lat: 52.4895, lon: 13.3908},
+    room: 'a'.repeat(64), host: 'b'.repeat(64), relay: 'https://relay.example.test/',
+  };
+  await page.addInitScript(invite => {
+    Object.defineProperty(navigator, 'gpu', {value: {requestAdapter: async () => ({})}});
+    localStorage.setItem('paket.mesh.host.v1', JSON.stringify({
+      invite, seed: 'c'.repeat(64), token: 'd'.repeat(64), listed: true,
+    }));
+  }, invitation);
+  await page.route('**/game/paket_game.js', route => route.fulfill({contentType: 'text/javascript', body:
+    "export default async () => dispatchEvent(new CustomEvent('paket-mode', {detail:'map'}))",
+  }));
+  let release!: () => void;
+  let requests = 0;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/meshes', async route => {
+    if (++requests === 1) {
+      await pending;
+      await route.fulfill({json: []});
+    } else {
+      await route.fulfill({json: [invitation, {...invitation, room: 'e'.repeat(64)}]});
+    }
+  });
+  await page.setViewportSize({width: 390, height: 700});
+  await page.goto('/');
+  await page.getByRole('button', {name:'Play', exact:true}).click();
+  const panel = page.locator('.lobby-panel');
+  const controls = [
+    page.locator('#resume-mesh'), page.locator('#invite'), page.locator('#refresh-meshes'),
+    page.locator('#my-location'), page.getByRole('button', {name:'Sydney', exact:true}),
+    page.getByRole('button', {name:'Dog', exact:true}), page.locator('#solo'), page.locator('#friends'),
+  ];
+  const checkFits = async () => {
+    for (const control of controls) await expect(control).toBeInViewport({ratio: 1});
+    expect(await panel.locator('.lobby-setup').evaluate(node => node.scrollHeight - node.clientHeight)).toBe(0);
+  };
+  const positions = () => Promise.all(controls.map(control => control.boundingBox()));
+  let loading;
+  try {
+    await expect(page.locator('#mesh-list-spinner')).toBeVisible();
+    await checkFits();
+    loading = await positions();
+  } finally {
+    release();
+  }
+  await expect(page.locator('#mesh-list-status')).toContainText('No public meshes yet');
+  expect(await positions()).toEqual(loading);
+  await page.locator('#refresh-meshes').click();
+  await expect(page.locator('#mesh-list button')).toHaveCount(2);
+  expect(await positions()).toEqual(loading);
+  await checkFits();
+  await panel.screenshot({path: info.outputPath('lobby-390x700.png')});
+  await page.setViewportSize({width: 1366, height: 768});
+  await checkFits();
+  await panel.screenshot({path: info.outputPath('lobby-1366x768.png')});
+  await page.locator('#mesh-list button').first().click();
+  await expect(page.locator('#join-status')).toContainText('Joining shift');
+  expect(await page.evaluate(() => globalThis.paketCommands.at(-1)?.action)).toBe('join');
+});

@@ -489,8 +489,9 @@ pub fn setup(mut commands: Commands) {
 }
 
 fn viewport_size(window: &Window) -> Vec2 {
-    if cfg!(target_arch = "wasm32") && window.width() <= 600. {
-        return Vec2::new(window.width(), window.height() * 0.35);
+    #[cfg(target_arch = "wasm32")]
+    if let Some(size) = crate::platform::lobby_map_size() {
+        return size;
     }
     Vec2::new(
         (window.width() - SIDEBAR).max(0.0),

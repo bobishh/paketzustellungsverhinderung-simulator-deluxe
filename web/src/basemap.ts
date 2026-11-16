@@ -5,6 +5,9 @@ type Camera = {lat: number; lon: number; zoom: number};
 
 const container = document.querySelector<HTMLElement>('#lobby-map')!;
 const credit = document.querySelector<HTMLElement>('#lobby-map-credit')!;
+declare global { var paketLobbyMapSize: () => [number, number]; }
+globalThis.paketLobbyMapSize = () => [container.clientWidth, container.clientHeight];
+
 let view: {camera: Camera; map?: VectorMap; timeout?: number; raster?: boolean} | undefined;
 
 function mapCamera({lat, lon, zoom}: Camera) {
