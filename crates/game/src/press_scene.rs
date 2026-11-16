@@ -72,12 +72,14 @@ fn compose(
         };
         let forward = rotation * Vec3::NEG_Z;
         let right = rotation * Vec3::X;
+        let courier_heading = rotation * Quat::from_rotation_y(1.23);
+        let running = courier_heading * Vec3::NEG_Z;
         let courier = commands
             .spawn((
                 Transform::from_translation(
                     base + Vec3::Y * crate::roads::surface_rise(&elevation.heights),
                 )
-                .with_rotation(rotation),
+                .with_rotation(courier_heading * Quat::from_rotation_x(-0.14)),
                 Visibility::default(),
                 HoldingParcel,
                 DespawnOnExit(Mode::Ride),
@@ -92,13 +94,12 @@ fn compose(
             ))
             .id();
         models.parcel(&mut commands, box_root);
-        let dog_position = ground(base + right * 0.64 + forward * 0.56) + Vec3::Y * 0.03;
+        // Stage the muzzle against the back of the courier's hip.
+        let hip = base - running * 0.04 + forward * 0.11 + Vec3::Y * 0.85;
+        let mut jump = Transform::IDENTITY.looking_to(running + Vec3::Y * 0.24, Vec3::Y);
+        jump.translation = hip - jump.rotation * Vec3::new(0., 0.54, -0.41);
         let dog = commands
-            .spawn((
-                Transform::from_translation(dog_position).looking_to(-right, Vec3::Y),
-                Visibility::default(),
-                DespawnOnExit(Mode::Ride),
-            ))
+            .spawn((jump, Visibility::default(), DespawnOnExit(Mode::Ride)))
             .id();
         materials.dogs.model(&mut commands, dog);
         commands.spawn((
@@ -116,7 +117,7 @@ fn compose(
     let right = rotation * Vec3::X;
     if let Ok((mut camera, mut projection)) = cameras.single_mut() {
         let focus = base - forward * 1.5 + right * 0.92 + Vec3::Y * 0.85;
-        *camera = Transform::from_translation(base + forward * 4.8 - right * 0.9 + Vec3::Y * 1.32)
+        *camera = Transform::from_translation(base + forward * 4.8 + right * 0.3 + Vec3::Y * 1.62)
             .looking_at(focus, Vec3::Y);
         if let Projection::Perspective(lens) = &mut *projection {
             lens.fov = 46_f32.to_radians();
@@ -157,8 +158,8 @@ fn dress_chamissoplatz(
     traffic.car(commands, car, 3);
     let van = commands
         .spawn((
-            Transform::from_translation(ground(Vec3::new(-5.6, 0., 160.7)))
-                .looking_to(Vec3::new(-0.17, 0., 1.), Vec3::Y),
+            Transform::from_translation(ground(Vec3::new(-6.6, 0., 160.7)))
+                .looking_to(Vec3::new(-0.58, 0., 0.81), Vec3::Y),
             Visibility::default(),
             DespawnOnExit(Mode::Ride),
         ))

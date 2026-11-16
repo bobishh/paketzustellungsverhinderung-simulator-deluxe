@@ -213,7 +213,7 @@ fn install_ride(app: &mut App) {
                 return_to_map,
                 dogs::walk.after(jobs::courier),
                 characters::animate,
-                actors::ground_couriers,
+                (actors::ground_couriers, actors::ground_vans),
                 actors::animate_vehicles,
                 terrain::finish,
                 roads::rebuild,
@@ -893,59 +893,61 @@ fn setup(
             ],
         ));
     }
-    let panel_color = BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.93));
-    commands.spawn((
-        bevy::ui_widgets::Button,
-        ShareToggle,
-        DespawnOnExit(Mode::Ride),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            right: Val::Px(12.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            ..default()
-        },
-        panel_color,
-        children![Text::new("Share")],
-    ));
-    commands.spawn((
-        SharePanel,
-        DespawnOnExit(Mode::Ride),
-        Node {
-            display: Display::None,
-            position_type: PositionType::Absolute,
-            top: Val::Px(58.0),
-            right: Val::Px(12.0),
-            width: Val::Px(380.0),
-            max_width: Val::Percent(90.0),
-            padding: UiRect::all(Val::Px(12.0)),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(8.0),
-            ..default()
-        },
-        panel_color,
-        children![
-            (
-                Text::new(""),
-                ShareLink,
-                TextFont {
-                    font_size: FontSize::Px(13.0),
-                    ..default()
-                },
-                TextLayout::linebreak(bevy::text::LineBreak::AnyCharacter),
-            ),
-            (
-                bevy::ui_widgets::Button,
-                InviteButton,
-                Node {
-                    padding: UiRect::all(Val::Px(8.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.24, 0.34, 0.35)),
-                children![(Text::new("Preparing invite…"), InviteLabel)],
-            )
-        ],
-    ));
+    if !cfg!(target_arch = "wasm32") {
+        let panel_color = BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.93));
+        commands.spawn((
+            bevy::ui_widgets::Button,
+            ShareToggle,
+            DespawnOnExit(Mode::Ride),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(12.0),
+                right: Val::Px(12.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                ..default()
+            },
+            panel_color,
+            children![Text::new("Share")],
+        ));
+        commands.spawn((
+            SharePanel,
+            DespawnOnExit(Mode::Ride),
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                top: Val::Px(58.0),
+                right: Val::Px(12.0),
+                width: Val::Px(380.0),
+                max_width: Val::Percent(90.0),
+                padding: UiRect::all(Val::Px(12.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(8.0),
+                ..default()
+            },
+            panel_color,
+            children![
+                (
+                    Text::new(""),
+                    ShareLink,
+                    TextFont {
+                        font_size: FontSize::Px(13.0),
+                        ..default()
+                    },
+                    TextLayout::linebreak(bevy::text::LineBreak::AnyCharacter),
+                ),
+                (
+                    bevy::ui_widgets::Button,
+                    InviteButton,
+                    Node {
+                        padding: UiRect::all(Val::Px(8.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.24, 0.34, 0.35)),
+                    children![(Text::new("Preparing invite…"), InviteLabel)],
+                )
+            ],
+        ));
+    }
     commands.spawn((
         bevy::ui_widgets::Button,
         MapButton,

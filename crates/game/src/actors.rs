@@ -74,6 +74,9 @@ pub(crate) struct HoldingParcel;
 #[derive(Component)]
 pub(crate) struct CourierGround(f32);
 
+#[derive(Component)]
+pub(crate) struct VanGround;
+
 pub(crate) const PARCEL_GRIP: Vec3 = Vec3::new(0., 1.055, -0.38);
 pub(crate) const PARCEL_HALF_SIZE: Vec3 = Vec3::new(0.24, 0.15, 0.185);
 
@@ -253,20 +256,22 @@ impl Models {
     }
 
     pub(crate) fn van(&self, commands: &mut Commands, parent: Entity) {
-        spawn_vehicle(
-            commands,
-            parent,
-            self.delivery_van.clone(),
-            Vec3::Y * 0.04,
-            0.21,
-        );
+        let body = commands
+            .spawn((
+                Transform::default(),
+                Visibility::default(),
+                ChildOf(parent),
+                VanGround,
+            ))
+            .id();
+        spawn_vehicle(commands, body, self.delivery_van.clone(), Vec3::ZERO, 0.32);
         for side in [-1., 1.] {
             self.part(
                 commands,
-                parent,
+                body,
                 &self.mark,
                 &self.dark,
-                Transform::from_xyz(side * 0.929, 1.17, 0.82)
+                Transform::from_xyz(side * 0.934, 1.17, 0.82)
                     .with_rotation(Quat::from_rotation_y(side * std::f32::consts::FRAC_PI_2))
                     .with_scale(Vec3::splat(0.53)),
             );
@@ -293,6 +298,45 @@ pub(crate) fn ground_couriers(
                 * (crate::elevation::FLOOR_RECESS + crate::roads::surface_rise(&elevation.heights))
         };
         visual.translation.y = ground.0 + lift + 0.009;
+    }
+}
+
+pub(crate) fn ground_vans(
+    roads: Res<crate::roads::Roads>,
+    bridges: Res<crate::bridges::Bridges>,
+    elevation: Res<crate::elevation::Elevation>,
+    parents: Query<&GlobalTransform>,
+    mut vans: Query<(&ChildOf, &mut Transform, &InheritedVisibility), With<VanGround>>,
+) {
+    for (parent, mut van, visibility) in &mut vans {
+        if !visibility.get() {
+            continue;
+        }
+        let Ok(parent) = parents.get(parent.parent()) else {
+            continue;
+        };
+        let point = parent.translation();
+        let heights = &elevation.heights;
+        let pavement = roads.pavement(point);
+        let road_lift =
+            pavement * (crate::elevation::FLOOR_RECESS + crate::roads::surface_rise(heights));
+        let surface = |point| {
+            bridges
+                .height_at(point)
+                .unwrap_or_else(|| heights.at(point) - crate::elevation::FLOOR_RECESS + road_lift)
+        };
+        let rotation = parent.rotation();
+        let right = rotation * Vec3::X * 0.80;
+        let rear = rotation * Vec3::Z * 1.35;
+        let cross_slope = (surface(point + right) - surface(point - right)) / 1.60;
+        let grade = (surface(point + rear) - surface(point - rear)) / 2.70;
+        let up = Vec3::new(
+            -cross_slope.clamp(-0.18, 0.18),
+            1.,
+            -grade.clamp(-0.24, 0.24),
+        );
+        van.rotation = Quat::from_rotation_arc(Vec3::Y, up.normalize());
+        van.translation.y = (surface(point) - point.y).clamp(-0.18, 0.18) + 0.008;
     }
 }
 
@@ -328,7 +372,7 @@ fn find_wheels(
             let name = names.get(entity).ok()?.as_str();
             match name {
                 "WheelFrontLeft" | "WheelFrontRight" => Some((entity, true)),
-                "WheelRear" => Some((entity, false)),
+                "WheelRear" | "WheelRearLeft" | "WheelRearRight" => Some((entity, false)),
                 _ => None,
             }
         })
