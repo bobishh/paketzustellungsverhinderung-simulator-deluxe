@@ -26,22 +26,10 @@ mod service;
 mod shared;
 pub(crate) use service::{service_ui, service_update};
 
-pub(crate) fn navigation_instruction(actor: &Transform, target: Vec3) -> (&'static str, f32) {
+pub(crate) fn navigation_bearing(actor: &Transform, target: Vec3) -> (f32, f32) {
     let delta = (target - actor.translation).with_y(0.);
-    let distance = delta.length();
-    let heading = actor.right().dot(delta).atan2(actor.forward().dot(delta));
-    let turn = if distance <= 2. {
-        "arrive"
-    } else if heading.abs() < 0.25 {
-        "straight"
-    } else if heading.abs() > 2.9 {
-        "reverse"
-    } else if heading > 0. {
-        "right"
-    } else {
-        "left"
-    };
-    (turn, distance)
+    let bearing = actor.right().dot(delta).atan2(actor.forward().dot(delta));
+    (bearing, delta.length())
 }
 
 #[derive(Resource, Default)]
@@ -1789,33 +1777,18 @@ mod tests {
     use crate::ride_tests::{headless_ride, press};
 
     #[test]
-    fn directions_use_the_couriers_heading_and_give_one_instruction() {
+    fn bearing_tracks_the_target_at_any_angle_relative_to_the_courier() {
         let actor = Transform::IDENTITY;
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(0., 0., -20.)).0,
-            "straight"
-        );
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(20., 0., -20.)).0,
-            "right"
-        );
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(-20., 0., -20.)).0,
-            "left"
-        );
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(0., 0., 20.)).0,
-            "reverse"
-        );
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(0., 8., 1.)).0,
-            "arrive"
-        );
+        let (bearing, distance) = navigation_bearing(&actor, Vec3::new(3., 8., -7.));
+        assert!((bearing.to_degrees() - 23.2).abs() < 0.1);
+        assert!((distance - 58_f32.sqrt()).abs() < 0.01);
+
+        let (bearing, _) = navigation_bearing(&actor, Vec3::new(-7., 0., 3.));
+        assert!((bearing.to_degrees() + 113.2).abs() < 0.1);
+
         let actor = Transform::IDENTITY.looking_to(Vec3::X, Vec3::Y);
-        assert_eq!(
-            navigation_instruction(&actor, Vec3::new(0., 0., -20.)).0,
-            "left"
-        );
+        let (bearing, _) = navigation_bearing(&actor, Vec3::new(3., 0., -7.));
+        assert!((bearing.to_degrees() + 66.8).abs() < 0.1);
     }
 
     #[test]

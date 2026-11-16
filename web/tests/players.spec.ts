@@ -23,18 +23,25 @@ test('Given delayed map and mesh requests, loading stays visible; peers and targ
   await page.evaluate(()=>{
     dispatchEvent(new CustomEvent('paket-map-loading',{detail:{pending:false,ready:true,failed:false}}));
     dispatchEvent(new CustomEvent('paket-mode',{detail:'ride'}));
-    dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction:false,minute:540,day:1,form:'courier',navigation:{turn:'left',distance:24}}}));
+    dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction:false,minute:540,day:1,form:'courier',navigation:{bearing:37,distance:24}}}));
     dispatchEvent(new CustomEvent('paket-members',{detail:[{id:'a'.repeat(64),name:'Alice',slot:0},{id:'b'.repeat(64),name:'Bob',slot:1}]}));
     dispatchEvent(new CustomEvent('paket-radar',{detail:{position:[0,0],heading:0,target:[0,-200],dogs:[],people:[],peers:[{id:'a'.repeat(64),position:[500,0],form:'courier',age:0},{id:'b'.repeat(64),position:[-500,0],form:'dog',age:0}]}}));
   });
   await expect(page.locator('#world-loading')).toBeHidden();
-  const direction=page.getByRole('img',{name:'Turn left · 24 m'});
+  const direction=page.getByRole('img',{name:'Direction to destination · 24 m'});
+  const arrow=direction.locator('svg');
   await expect(direction).toHaveText('24 m');
   await expect(direction).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
-  const left=await direction.locator('path').getAttribute('d');
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction:false,minute:540,day:1,form:'courier',navigation:{turn:'right',distance:24}}})));
-  await expect(page.getByRole('img',{name:'Turn right · 24 m'}).locator('path')).not.toHaveAttribute('d',left!);
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction:true,minute:540,day:1,form:'courier',navigation:{turn:'right',distance:24}}})));
+  await expect(arrow).toHaveCSS('rotate','37deg');
+  const path=await arrow.locator('path').getAttribute('d');
+  const aim=async (bearing:number, interaction=false)=>page.evaluate(({bearing,interaction})=>
+    dispatchEvent(new CustomEvent('paket-hud',{detail:{ready:true,routes:[],selected:0,interaction,minute:540,day:1,form:'courier',navigation:{bearing,distance:24}}})),{bearing,interaction});
+  await aim(179);
+  await expect(arrow).toHaveCSS('rotate','179deg');
+  await aim(-179);
+  await expect(arrow).toHaveCSS('rotate','181deg');
+  await expect(arrow.locator('path')).toHaveAttribute('d',path!);
+  await aim(-179,true);
   await expect(page.locator('#route-direction')).toBeHidden();
   await expect(page.locator('#peer-list li')).toHaveCount(2);
   await expect(page.locator('#peer-list')).toContainText('Alice');
@@ -153,7 +160,7 @@ test('the dashboard leaves room for the street on short viewports at every rende
     export default async () => {
       dispatchEvent(new CustomEvent('paket-mode',{detail:'ride'}));
       dispatchEvent(new CustomEvent('paket-hud',{detail:{
-        ready:true,interaction:false,form:'courier',selected:0,active:0,day:1,minute:540,vanDistance:12,navigation:{turn:'left',distance:42},
+        ready:true,interaction:false,form:'courier',selected:0,active:0,day:1,minute:540,vanDistance:12,navigation:{bearing:-33,distance:42},
         routes:[{index:0,state:'in-van',address:'42 Canal Road',name:'Alex',distance:42}]
       }}));
     }

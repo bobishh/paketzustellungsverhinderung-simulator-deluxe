@@ -58,8 +58,8 @@ pub(crate) fn update(
     hud["navigation"] = serde_json::json!(
         jobs.navigation_target(p, p.parked.and_then(|id| vans.get(id).ok()))
             .map(|target| {
-                let (turn, distance) = crate::jobs::navigation_instruction(t, target);
-                serde_json::json!({"turn": turn, "distance": distance})
+                let (bearing, distance) = crate::jobs::navigation_bearing(t, target);
+                serde_json::json!({"bearing": bearing.to_degrees(), "distance": distance})
             })
     );
     hud["dispatcher"] = jobs.dispatcher(clock.elapsed_secs());

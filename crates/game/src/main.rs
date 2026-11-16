@@ -847,6 +847,7 @@ fn setup(
                         ..default()
                     },
                     TextColor(Color::srgb(1., 0.55, 0.08)),
+                    UiTransform::default(),
                     CompassNeedle,
                 ),
                 (
@@ -1545,7 +1546,7 @@ fn follow_floor(
 fn guide(
     jobs: Res<Jobs>,
     actors: Query<(&Player, &Transform)>,
-    mut needle: Query<&mut Text, With<CompassNeedle>>,
+    mut needle: Query<(&mut Text, &mut UiTransform), With<CompassNeedle>>,
     mut label: Query<&mut Text, (With<CompassDistance>, Without<CompassNeedle>)>,
     mut crosshair: Query<(&mut Node, &mut TextColor), With<PhotoReticle>>,
     vans: Query<&Transform, With<ParkedVan>>,
@@ -1565,22 +1566,17 @@ fn guide(
             Color::WHITE
         };
     }
-    let (Ok(mut needle), Ok(mut label)) = (needle.single_mut(), label.single_mut()) else {
+    let (Ok((mut needle, mut spin)), Ok(mut label)) = (needle.single_mut(), label.single_mut())
+    else {
         return;
     };
     if let Some(target) = jobs.navigation_target(
         player,
         player.parked.and_then(|entity| vans.get(entity).ok()),
     ) {
-        let (turn, distance) = jobs::navigation_instruction(actor, target);
-        needle.0 = match turn {
-            "straight" => "↑",
-            "left" => "←",
-            "right" => "→",
-            "reverse" => "↶",
-            _ => "●",
-        }
-        .into();
+        let (bearing, distance) = jobs::navigation_bearing(actor, target);
+        needle.0 = "↑".into();
+        spin.rotation = Rot2::radians(bearing);
         label.0 = format!("{distance:.0} m");
     } else {
         needle.0.clear();
