@@ -145,3 +145,36 @@ test('a failed invite opens the lobby with the same address ready to retry', asy
   await page.getByRole('button',{name:'Join shift',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>globalThis.paketCommands.map(c=>c.action))).toEqual(['join','join','start']);
 });
+
+test('the dashboard leaves room for the street on short viewports at every render scale', async ({page}) => {
+  await page.setViewportSize({width:640,height:480});
+  await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:{requestAdapter:async()=>({})}}));
+  await page.route('**/game/paket_game.js',r=>r.fulfill({contentType:'text/javascript',body:`
+    export default async () => {
+      dispatchEvent(new CustomEvent('paket-mode',{detail:'ride'}));
+      dispatchEvent(new CustomEvent('paket-hud',{detail:{
+        ready:true,interaction:false,form:'courier',selected:0,active:0,day:1,minute:540,vanDistance:12,navigation:{turn:'left',distance:42},
+        routes:[{index:0,state:'in-van',address:'42 Canal Road',name:'Alex',distance:42}]
+      }}));
+    }
+  `}));
+  await page.goto('/');
+  await page.locator('#play').click();
+  await expect(page.locator('#stop-address')).toHaveText('42 Canal Road');
+  await page.evaluate(()=>document.fonts.ready);
+  const route=page.locator('#delivery-card'), map=page.locator('#minimap'), direction=page.locator('#route-direction');
+  const bounds=await route.boundingBox(), mapBounds=await map.boundingBox(), arrow=await direction.boundingBox();
+  expect(bounds!.width).toBeLessThanOrEqual(228);
+  expect(bounds!.height).toBeLessThan(166);
+  expect(mapBounds!.width).toBeLessThanOrEqual(144);
+  expect(arrow!.y+arrow!.height).toBeLessThan(bounds!.y);
+  await expect(page.locator('#route-toggle')).toBeVisible();
+  await page.locator('#route-toggle').click();
+  await expect(page.locator('#route-list .route-stop')).toBeInViewport();
+  await page.locator('#route-toggle').click();
+  await page.evaluate(()=>{for(let i=0;i<130;i++)globalThis.paketFrame(40);});
+  await expect.poll(()=>page.locator('#game').getAttribute('data-render-scale')).not.toBe('1');
+  expect(await route.boundingBox()).toEqual(bounds);
+  expect(await map.boundingBox()).toEqual(mapBounds);
+  expect(await direction.boundingBox()).toEqual(arrow);
+});

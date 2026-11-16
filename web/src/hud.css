@@ -4,17 +4,17 @@
 .hud-top { position:absolute; top:18px; left:18px; display:flex; align-items:stretch; gap:8px }
 .shift-clock { position:relative; min-width:146px; background:#14251ff0; padding:12px 16px 10px }
 .shift-clock small { display:block; font-size:9px; letter-spacing:.12em; color:#b5c0ae }
-.shift-clock time { display:block; font:600 30px Fira,monospace; line-height:1.4 }
+.shift-clock time { display:block; font:600 26px Fira,monospace; line-height:1.4 }
 .shift-track { position:absolute; bottom:0; left:0; right:0; height:3px; background:#ffffff20 }
 .shift-track i { display:block; background:#f58b43; height:100%; width:0 }
 .score-box { display:flex; gap:7px; align-items:baseline; align-self:flex-start; padding:13px 16px; background:#14251ff0 }
-.score-box strong { font-size:24px }
+.score-box strong { font-size:20px }
 .score-box small { font-size:10px; color:#b5c0ae }
 .hud-top>button { align-self:flex-start; background:#14251ff0; border-color:#ffffff25; font-size:12px; padding:14px }
 #hud-loading { position:absolute; top:110px; left:18px; background:#14251fe6; padding:8px 12px; font-size:11px }
 #delivery-card { position:absolute; bottom:38px; left:18px; width:302px; padding:16px 18px 12px; background:#14251ff5; border-top:3px solid #f58b43; box-shadow:0 8px 28px #0003 }
 .stop-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; font:10px Fira,monospace; color:#bbc5b2; letter-spacing:.06em }
-#delivery-card h2 { font-size:22px; margin:12px 0 5px; line-height:1.15; letter-spacing:-.025em }
+#delivery-card h2 { font-size:20px; margin:12px 0 5px; line-height:1.15; letter-spacing:-.025em }
 #stop-recipient { margin:0; color:#c6cbbb; font-size:13px }
 .stop-meta { display:flex; justify-content:space-between; gap:12px; margin:16px 0 14px; font-size:11px }
 .stop-meta>span { color:#f6ad77 }
@@ -31,9 +31,10 @@
 .route-distance { font:10px Fira,monospace; white-space:nowrap }
 #route-list { position:absolute; bottom:calc(100% + 8px); left:0; right:0; max-height:32vh; overflow-y:auto; background:#14251ff7; border:1px solid #8c9a8055; pointer-events:auto }
 #hud-action { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); max-width:calc(100% - 710px); text-align:center; padding:11px 15px; background:#14251fe8; font-size:12px; line-height:1.5 }
+#hud-action:empty { display:none }
 .photo-ready { color:#a5e7ae!important }
 #speedometer { position:absolute; bottom:38px; right:22px; display:flex; align-items:baseline; gap:7px; background:#14251fe6; padding:13px 18px }
-#speedometer strong { font:32px Fira,monospace }
+#speedometer strong { font:26px Fira,monospace }
 #speedometer span { font-size:11px; color:#bbc5b2 }
 .ride-attribution { position:absolute; bottom:11px; left:18px; font-size:9px; text-decoration:none; color:#f1f0df; text-shadow:0 1px 2px #000 }
 .interacting #delivery-card, .interacting #hud-action { visibility:hidden }
@@ -53,17 +54,29 @@ select { display:block; margin-top:10px; width:100%; font:inherit; background:#1
   #hud-action { left:auto; right:18px; transform:none; bottom:122px; max-width:calc(100% - 360px) }
   .hud-top>button { display:none }
 }
-@media(max-width:650px) {
-  #delivery-card { width:250px; left:10px; bottom:30px; padding:12px }
+@media(max-width:850px), (max-height:650px) {
   .hud-top { left:10px; top:10px; gap:5px }
-  .shift-clock { min-width:120px; padding:10px }
-  .score-box { padding:10px }
-  .shift-clock time { font-size:24px }
-  #hud-action { bottom:275px; left:10px; right:auto; max-width:250px; text-align:left }
-  #speedometer { padding:8px; right:10px }
+  .shift-clock { min-width:88px; padding:6px 9px }
+  .shift-clock time { font-size:20px }
+  .score-box { padding:7px 9px; gap:5px }
+  .score-box strong { font-size:16px }
+  #delivery-card { width:min(228px,54vw); left:10px; bottom:26px; padding:8px 10px 5px }
+  #delivery-card h2 { font-size:16px; margin:6px 0 3px; overflow-wrap:anywhere }
+  #stop-recipient { font-size:11px }
+  .stop-meta { margin:7px 0 }
+  #delivery-card .delivery-guide { padding-top:5px; margin-bottom:5px }
+  #delivery-card .delivery-guide p, .route-hint, .stop-heading span:nth-child(2) { display:none }
+  #route-toggle { font-size:11px; padding:7px 0 }
+  #route-list { max-height:min(36vh, 150px) }
+  #hud-action { inset:auto 10px 26px auto; transform:none; width:max-content; max-width:min(218px, calc(46vw - 28px)); padding:6px 9px; text-align:left }
+  #speedometer { right:10px; bottom:92px; padding:5px 8px }
+  #speedometer strong { font-size:20px }
+  #hud-loading { left:10px; top:91px; padding:5px 8px }
+  .ride-attribution { left:10px; bottom:7px }
+}
+@media(max-width:650px) {
   .settings-fields { grid-template-columns:1fr; gap:12px }
   .control-list { grid-template-columns:110px 1fr }
-  #route-list { max-height:26vh }
 }
 
 @font-face { font-family:PaketJP; src:url("/assets/fonts/NotoSansJP-Variable.ttf") format("truetype"); font-display:swap; unicode-range:U+2E80-9FFF,U+F900-FAFF,U+FF00-FFEF,U+20000-2FFFF }
@@ -106,4 +119,15 @@ kbd { font:11px Fira,monospace; color:#ffe0bd; border:1px solid #8d9c8255; paddi
 
 #route-direction { position:absolute; top:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:7px; white-space:nowrap; font-weight:750; text-shadow:0 1px 3px #000 }
 #route-direction svg { fill:none; stroke:#ff9b35; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1px 2px #412200a0) }
-@media(max-width:850px){#route-direction{top:78px;left:18px;transform:none}}
+@media(max-width:850px), (max-height:650px) {
+  #route-direction { top:61px; left:10px; transform:none; gap:5px; font-size:12px }
+  #route-direction svg { width:22px; height:22px }
+  #dispatcher { top:92px; left:10px; width:min(220px,48vw); padding:6px 9px; font-size:11px }
+}
+
+@media(max-width:850px), (max-height:650px) {
+  body:has(#ride-hud:not([hidden])) header { height:46px; gap:8px }
+}
+@media(max-width:560px) {
+  body:has(#ride-hud:not([hidden])) .brand-title { display:none }
+}
