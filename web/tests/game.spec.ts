@@ -78,3 +78,51 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
     expect(errors).toEqual([]);
   }finally{await guestContext.close();await hostContext.close();}
 });
+
+test('a host can reopen the same mesh with the same invitation and completed stops',async({browser})=>{
+  test.skip(!process.env.PAKET_REAL_GAME,'Requires Iroh relay access and WebGPU.');
+  const hostContext=await browser.newContext(),guestContext=await browser.newContext();
+  try{
+    const origin={lat:52.4895,lon:13.3908};
+    const road={type:'way',id:1,tags:{highway:'residential',name:'Test Street'},geometry:[origin,{...origin,lon:origin.lon+0.001}]};
+    for(const context of [hostContext,guestContext]){
+      await context.route('**/api/osm?*',r=>r.fulfill({json:{elements:[road]}}));
+      await context.route('**/elevation/**',r=>r.fulfill({status:503}));
+    }
+    const host=await hostContext.newPage();
+    await host.goto('/');
+    await host.waitForFunction(()=>localStorage.getItem('paket.identity'));
+    const session=await host.evaluate(async()=>{
+      const origin={lat:52.4895,lon:13.3908};
+      const room=JSON.parse(await globalThis.paketMesh.connect(origin));
+      const shared={origin,device:room.device,day:1};
+      globalThis.paketMesh.publish(room.device,{...shared,kind:'shift',elapsed_ms:90000,difficulty:1});
+      globalThis.paketMesh.publish(room.device,{...shared,kind:'route',revision:7,stops:[
+        {building_id:'way/10',label:'Resumed stop A',position:[-40,0,-10],completion:{device:room.device,photo:false,score:335}},
+        {building_id:'way/11',label:'Resumed stop B',position:[0,0,-10],completion:null},
+      ]});
+      return room;
+    });
+    const link='/#join='+Buffer.from(session.invitation).toString('base64url');
+    await host.close();
+    const reopened=await hostContext.newPage();
+    await reopened.goto('/');
+    await reopened.locator('#play').click();
+    await expect(reopened.getByRole('button',{name:'Return to your mesh'})).toBeVisible();
+    await reopened.getByRole('button',{name:'Return to your mesh'}).click();
+    await expect(reopened.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
+    await expect(reopened.locator('#hud-score')).toHaveText('335');
+    await expect(reopened.locator('#route-direction')).toBeVisible();
+    await reopened.getByRole('button',{name:'Settings',exact:true}).click();
+    await reopened.getByRole('button',{name:'Change neighbourhood'}).click();
+    await reopened.getByRole('button',{name:'Return to your mesh'}).click();
+    await expect(reopened.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
+    await expect(reopened.locator('#hud-score')).toHaveText('335');
+    const guest=await guestContext.newPage();
+    await guest.goto(link);
+    await guest.locator('#play').click();
+    await expect(guest.locator('#route-list')).toBeHidden();
+    await expect(guest.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
+    await expect(guest.locator('#hud-score')).toHaveText('0');
+  }finally{await guestContext.close();await hostContext.close();}
+});

@@ -207,7 +207,7 @@ fn install_ride(app: &mut App) {
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
                 capture_frame,
-                browser_ui::update.after(sync_peers),
+                (browser_ui::frame, browser_ui::update.after(sync_peers)),
             )
                 .run_if(in_state(Mode::Ride)),
         );
@@ -310,10 +310,64 @@ fn start_ride(
         .as_ref()
         .map_or(invite.is_some(), |session| !session.is_host);
     platform::ui_event("paket-mode", "\"ride\"");
-    commands.init_resource::<Jobs>();
-    commands.insert_resource(shift::Shift::new(guest));
+    #[cfg(not(target_arch = "wasm32"))]
+    let ride_origin = origin;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        commands.init_resource::<Jobs>();
+        commands.insert_resource(shift::Shift::new(guest));
+    }
+    #[cfg(target_arch = "wasm32")]
+    let ride_origin = {
+        let mut ride_origin = origin;
+        let mut jobs = Jobs::default();
+        let mut shift = shift::Shift::new(guest);
+        if let Some(host) = session.as_ref().filter(|s| s.is_host) {
+            for fact in &host.snapshot {
+                if let Fact::Shift {
+                    day,
+                    elapsed_ms,
+                    difficulty,
+                    world,
+                    choices,
+                    remaining_ms,
+                    ..
+                } = fact
+                {
+                    shift.receive_snapshot(
+                        *day,
+                        *elapsed_ms,
+                        *difficulty,
+                        *world,
+                        choices.clone(),
+                        *remaining_ms,
+                    );
+                    shift.restore_host_timer();
+                }
+            }
+            ride_origin = shift.world.map_or(origin, Into::into);
+            jobs.configure_shared(&host.device, true);
+            for fact in &host.snapshot {
+                if let Fact::Route {
+                    day,
+                    revision,
+                    stops,
+                    ..
+                } = fact
+                {
+                    if *day == shift.day() {
+                        jobs.restore_route(*day, *revision, stops.clone(), commands);
+                        shift.locked = stops.iter().any(|stop| stop.completion.is_some());
+                    }
+                }
+            }
+        }
+        commands.insert_resource(jobs);
+        commands.insert_resource(shift);
+        ride_origin
+    };
     commands.insert_resource(Ride {
-        origin,
+        origin: ride_origin,
         role,
         guest,
         session,
@@ -773,47 +827,39 @@ fn setup(
         },
         DespawnOnExit(Mode::Ride),
     ));
-    commands.spawn((
-        DespawnOnExit(Mode::Ride),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            width: Val::Percent(100.0),
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        children![(
+    if !cfg!(target_arch = "wasm32") {
+        commands.spawn((
+            DespawnOnExit(Mode::Ride),
             Node {
-                width: Val::Px(150.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                flex_direction: FlexDirection::Column,
+                position_type: PositionType::Absolute,
+                top: Val::Px(12.),
+                width: Val::Percent(100.),
+                justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                column_gap: Val::Px(8.),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 0.72)),
             children![
                 (
-                    Text::new("▲"),
+                    Text::default(),
                     TextFont {
-                        font_size: FontSize::Px(52.0),
+                        font_size: FontSize::Px(26.),
                         ..default()
                     },
-                    TextColor(Color::srgb(1.0, 0.55, 0.08)),
-                    UiTransform::default(),
+                    TextColor(Color::srgb(1., 0.55, 0.08)),
                     CompassNeedle,
                 ),
                 (
-                    Text::new("—"),
+                    Text::default(),
                     TextFont {
-                        font_size: FontSize::Px(22.0),
+                        font_size: FontSize::Px(15.),
                         ..default()
                     },
-                    TextColor(Color::srgb(0.98, 0.96, 0.9)),
                     CompassDistance,
                 ),
             ],
-        )],
-    ));
+        ));
+    }
     let panel_color = BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.93));
     commands.spawn((
         bevy::ui_widgets::Button,
@@ -1499,7 +1545,7 @@ fn follow_floor(
 fn guide(
     jobs: Res<Jobs>,
     actors: Query<(&Player, &Transform)>,
-    mut needle: Query<(&mut Text, &mut UiTransform), With<CompassNeedle>>,
+    mut needle: Query<&mut Text, With<CompassNeedle>>,
     mut label: Query<&mut Text, (With<CompassDistance>, Without<CompassNeedle>)>,
     mut crosshair: Query<(&mut Node, &mut TextColor), With<PhotoReticle>>,
     vans: Query<&Transform, With<ParkedVan>>,
@@ -1519,23 +1565,23 @@ fn guide(
             Color::WHITE
         };
     }
-    let (Ok((mut needle, mut spin)), Ok(mut label)) = (needle.single_mut(), label.single_mut())
-    else {
+    let (Ok(mut needle), Ok(mut label)) = (needle.single_mut(), label.single_mut()) else {
         return;
     };
-    let target = match player.form {
-        Avatar::Dog => None,
-        Avatar::Courier if jobs.needs_van() => player
-            .parked
-            .and_then(|entity| vans.get(entity).ok())
-            .map(|van| van.translation),
-        _ => jobs.current_target(),
-    };
-    if let Some(target) = target {
-        let delta = (target - actor.translation).with_y(0.0);
-        spin.rotation = Rot2::radians(actor.right().dot(delta).atan2(actor.forward().dot(delta)));
-        needle.0 = "▲".into();
-        label.0 = format!("{:.0} m", delta.length());
+    if let Some(target) = jobs.navigation_target(
+        player,
+        player.parked.and_then(|entity| vans.get(entity).ok()),
+    ) {
+        let (turn, distance) = jobs::navigation_instruction(actor, target);
+        needle.0 = match turn {
+            "straight" => "↑",
+            "left" => "←",
+            "right" => "→",
+            "reverse" => "↶",
+            _ => "●",
+        }
+        .into();
+        label.0 = format!("{distance:.0} m");
     } else {
         needle.0.clear();
         label.0.clear();

@@ -8,6 +8,10 @@ use crate::{
     shift::Shift,
 };
 use bevy::prelude::*;
+pub(crate) fn frame(time: Res<Time<Real>>) {
+    crate::platform::render_frame(time.delta_secs() * 1000.);
+}
+
 pub(crate) fn update(
     time: Res<Time>,
     clock: Res<Time<Virtual>>,
@@ -51,6 +55,13 @@ pub(crate) fn update(
     let data = serde_json::json!({"position":xy(t.translation),"altitude":t.translation.y,"terrain":elevation.heights.available(),"heading":t.rotation.to_euler(EulerRot::YXZ).0,"target":jobs.current_target().map(xy),"van":p.parked.and_then(|e|vans.get(e).ok()).map(|v|xy(v.translation)),"dogs":dogs.iter().map(|t|xy(t.translation)).collect::<Vec<_>>(),"people":jobs.radar_people(&people),"peers":peers.iter().map(|(p,t)|serde_json::json!({"id":p.device,"position":xy(t.translation),"form":p.form,"age":(clock.elapsed_secs()-p.received).max(0.)})).collect::<Vec<_>>()});
     crate::platform::ui_event("paket-radar", &data.to_string());
     let mut hud = jobs.hud_data(t.translation);
+    hud["navigation"] = serde_json::json!(
+        jobs.navigation_target(p, p.parked.and_then(|id| vans.get(id).ok()))
+            .map(|target| {
+                let (turn, distance) = crate::jobs::navigation_instruction(t, target);
+                serde_json::json!({"turn": turn, "distance": distance})
+            })
+    );
     hud["dispatcher"] = jobs.dispatcher(clock.elapsed_secs());
     hud["intercom"] = jobs.browser_intercom(clock.elapsed_secs());
     hud["minute"] = serde_json::json!(shift.minute());

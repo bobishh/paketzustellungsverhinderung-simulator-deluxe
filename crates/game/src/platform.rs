@@ -107,3 +107,15 @@ extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameCommands)]
     pub fn ui_commands() -> String;
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn render_frame(_: f32) {}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(
+    inline_js = "export function renderFrame(ms){globalThis.paketFrame?.(ms);}"
+)]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderFrame)]
+    pub fn render_frame(ms: f32);
+}

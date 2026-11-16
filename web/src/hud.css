@@ -103,3 +103,7 @@ kbd { font:11px Fira,monospace; color:#ffe0bd; border:1px solid #8d9c8255; paddi
   #dispatcher { top:80px; left:10px; width:min(250px, 36vw); }
   #intercom-panel { left:auto; right:12px; transform:translateY(-50%); }
 }
+
+#route-direction { position:absolute; top:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:7px; white-space:nowrap; font-weight:750; text-shadow:0 1px 3px #000 }
+#route-direction svg { fill:none; stroke:#ff9b35; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 1px 2px #412200a0) }
+@media(max-width:850px){#route-direction{top:78px;left:18px;transform:none}}

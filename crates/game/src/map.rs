@@ -509,6 +509,11 @@ pub fn input(
     let over_map = cursor
         .zip(window)
         .is_some_and(|(cursor, window)| cursor.cmplt(viewport_size(window)).all());
+    let connecting = matches!(map.connection, Connection::Pending { .. });
+    let over_map = over_map && !connecting;
+    if connecting {
+        map.drag_start = None;
+    }
     let initial_point = map.point();
     if buttons.just_pressed(MouseButton::Left) && over_map {
         map.drag_start = cursor;
@@ -574,6 +579,9 @@ pub fn input(
         }
     }
     for action in &requested {
+        if connecting && !matches!(action, Action::Role(_)) {
+            continue;
+        }
         match *action {
             Action::ZoomIn => map.zoom(1),
             Action::ZoomOut => map.zoom(-1),
@@ -706,7 +714,11 @@ pub fn update_lobby(
             Err(error) => {
                 eprintln!("session: {error}");
                 map.connection = Connection::Idle;
-                map.status = "Could not connect. Check the invite or try again.";
+                map.status = if link.is_some() {
+                    "Could not join. Check that the host is online and try again."
+                } else {
+                    "Could not create a mesh. Try again."
+                };
             }
         }
     }
@@ -1112,6 +1124,11 @@ mod tests {
             receiver: Mutex::new(rx),
         };
         press(&mut app, |action| matches!(action, Action::Start));
+        press(
+            &mut app,
+            |action| matches!(action, Action::Select(point) if *point == CITIES[2].1),
+        );
+        assert_eq!(app.world().resource::<Map>().point(), CITIES[1].1);
         assert!(matches!(
             app.world().resource::<Map>().connection,
             Connection::Pending { .. }
@@ -1120,7 +1137,7 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().resource::<Map>().status,
-            "Could not connect. Check the invite or try again."
+            "Could not create a mesh. Try again."
         );
         press(&mut app, |action| matches!(action, Action::Role(Role::Dog)));
         press(&mut app, |action| matches!(action, Action::Solo));

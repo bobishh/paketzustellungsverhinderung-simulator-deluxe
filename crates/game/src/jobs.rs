@@ -26,6 +26,24 @@ mod service;
 mod shared;
 pub(crate) use service::{service_ui, service_update};
 
+pub(crate) fn navigation_instruction(actor: &Transform, target: Vec3) -> (&'static str, f32) {
+    let delta = (target - actor.translation).with_y(0.);
+    let distance = delta.length();
+    let heading = actor.right().dot(delta).atan2(actor.forward().dot(delta));
+    let turn = if distance <= 2. {
+        "arrive"
+    } else if heading.abs() < 0.25 {
+        "straight"
+    } else if heading.abs() > 2.9 {
+        "reverse"
+    } else if heading > 0. {
+        "right"
+    } else {
+        "left"
+    };
+    (turn, distance)
+}
+
 #[derive(Resource, Default)]
 pub(crate) struct Jobs {
     day: u64,
@@ -395,6 +413,14 @@ impl Jobs {
             && self.parcels.iter().all(|parcel| {
                 matches!(parcel.state, ParcelState::Filed(_) | ParcelState::Handed(_))
             })
+    }
+
+    pub fn navigation_target(&self, player: &Player, van: Option<&Transform>) -> Option<Vec3> {
+        match player.form {
+            Avatar::Dog => None,
+            Avatar::Courier if self.needs_van() => van.map(|t| t.translation),
+            _ => self.current_target(),
+        }
     }
 
     pub fn current_target(&self) -> Option<Vec3> {
@@ -1761,6 +1787,36 @@ mod tests {
     use super::*;
 
     use crate::ride_tests::{headless_ride, press};
+
+    #[test]
+    fn directions_use_the_couriers_heading_and_give_one_instruction() {
+        let actor = Transform::IDENTITY;
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(0., 0., -20.)).0,
+            "straight"
+        );
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(20., 0., -20.)).0,
+            "right"
+        );
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(-20., 0., -20.)).0,
+            "left"
+        );
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(0., 0., 20.)).0,
+            "reverse"
+        );
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(0., 8., 1.)).0,
+            "arrive"
+        );
+        let actor = Transform::IDENTITY.looking_to(Vec3::X, Vec3::Y);
+        assert_eq!(
+            navigation_instruction(&actor, Vec3::new(0., 0., -20.)).0,
+            "left"
+        );
+    }
 
     #[test]
     fn next_day_refills_parcels_without_restarting_the_world_or_skipping_a_day() {

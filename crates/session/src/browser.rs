@@ -23,6 +23,8 @@ pub struct SharedStreet {
     pub device: String,
     pub invitation: String,
     pub is_host: bool,
+    #[serde(default)]
+    pub snapshot: Vec<Fact>,
 }
 pub async fn connect_browser(
     origin: Origin,

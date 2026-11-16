@@ -1,3 +1,4 @@
+import { savedInvitation, ownsInvitation } from './mesh';
 import { availableMeshes } from './mesh-directory';
 import { requestNeighbourhood } from './geolocation';
 
@@ -16,6 +17,18 @@ const cities = [
 ] as const;
 const status = document.querySelector<HTMLElement>('#lobby-status')!;
 const lobby = document.querySelector<HTMLElement>('#lobby')!;
+const joinStatus = document.querySelector<HTMLElement>('#join-status')!;
+const meshJoinStatus = document.querySelector<HTMLElement>('#mesh-join-status')!;
+const resumeMesh = document.querySelector<HTMLButtonElement>('#resume-mesh')!;
+const inviteInput = document.querySelector<HTMLInputElement>('#invite')!;
+let initialInvitation = '';
+let joinFeedback: HTMLElement|undefined;
+export function openInvitation(link: string) { initialInvitation = link; }
+function clearJoinStatus() {
+  joinFeedback = undefined;
+  joinStatus.textContent = '';
+  meshJoinStatus.textContent = '';
+}
 const results = document.querySelector('#address-results')!;
 const selected = document.querySelector('#selected-place')!;
 const locationButton = document.querySelector<HTMLButtonElement>('#my-location')!;
@@ -71,12 +84,22 @@ document.querySelectorAll<HTMLButtonElement>('[data-role]').forEach(button => bu
   document.querySelectorAll('[data-role]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
 });
 document.querySelectorAll<HTMLButtonElement>('[data-command]').forEach(b => b.onclick = () => send({ action: b.dataset.command! }));
-document.querySelector('#solo')!.addEventListener('click', () => { cancelLocation(); send({ action: 'solo' }); });
-document.querySelector('#friends')!.addEventListener('click', () => { cancelLocation(); globalThis.paketPublicMesh = document.querySelector<HTMLInputElement>('#public-mesh')!.checked; autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
+document.querySelector('#solo')!.addEventListener('click', () => { clearJoinStatus(); cancelLocation(); send({ action: 'solo' }); });
+document.querySelector('#friends')!.addEventListener('click', () => { clearJoinStatus(); cancelLocation(); globalThis.paketPublicMesh = document.querySelector<HTMLInputElement>('#public-mesh')!.checked; autoStart = true; sawPending = false; send({ action: 'new' }); status.textContent = 'Opening your shift…'; });
+function join(link: string, feedback: HTMLElement) {
+  clearJoinStatus(); cancelLocation(); autoStart = true; sawPending = false;
+  joinFeedback = feedback;
+  feedback.textContent = 'Joining shift…';
+  send({ action: 'join', link });
+}
 document.querySelector('#join-form')!.addEventListener('submit', e => {
-  e.preventDefault(); cancelLocation(); autoStart = true; sawPending = false;
-  send({ action: 'join', link: document.querySelector<HTMLInputElement>('#invite')!.value.trim() });
+  e.preventDefault();
+  join(inviteInput.value.trim(), joinStatus);
 });
+resumeMesh.onclick = () => {
+  const link=savedInvitation();
+  if(link){ inviteInput.value=link; join(link,joinStatus); }
+};
 const share = document.querySelector<HTMLButtonElement>('#share')!;
 const shareDialog = document.querySelector<HTMLDialogElement>('#share-dialog')!;
 const shareLink = document.querySelector<HTMLInputElement>('#share-link')!;
@@ -103,7 +126,18 @@ window.addEventListener('paket-session', ((event: CustomEvent<{link: string} | n
 }) as EventListener);
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
   lobby.hidden = event.detail !== 'map';
-  if (lobby.hidden) cancelLocation();
+  if (lobby.hidden) { clearJoinStatus(); cancelLocation(); }
+  else {
+    const saved=savedInvitation();
+    resumeMesh.hidden=!saved;
+    resumeMesh.textContent=saved && ownsInvitation(saved) ? 'Return to your mesh' : 'Return to mesh';
+    if(initialInvitation){
+      const link=initialInvitation;
+      initialInvitation='';
+      inviteInput.value=link;
+      join(link,joinStatus);
+    }
+  }
   document.querySelector<HTMLElement>('#minimap')!.hidden = event.detail !== 'ride';
   if (event.detail === 'ride') { document.querySelector<HTMLCanvasElement>('#game')!.focus(); }
 }) as EventListener);
@@ -117,9 +151,12 @@ window.addEventListener('paket-lobby', ((event: CustomEvent<any>) => {
     const city = cities[index];
     button.setAttribute('aria-pressed', String(Math.abs(city[2] - s.lat) < 1e-5 && Math.abs(city[3] - s.lon) < 1e-5));
   });
-  if (s.status) status.textContent = s.status;
+  if (s.status) {
+    const feedback = joinFeedback ?? status;
+    if (feedback.textContent !== s.status) feedback.textContent = s.status;
+  }
   if (s.pending) sawPending = true;
-  document.querySelectorAll<HTMLButtonElement>('#solo,#friends,#join-form button,#mesh-list button').forEach(b => b.disabled = s.pending);
+  document.querySelectorAll<HTMLButtonElement>('#solo,#friends,#resume-mesh,#join-form button,#mesh-list button').forEach(b => b.disabled = s.pending);
   if (autoStart && sawPending && s.ready) { autoStart = false; send({ action: 'start' }); }
   if (autoStart && sawPending && !s.pending && !s.ready) autoStart = false;
 }) as EventListener);
@@ -167,8 +204,7 @@ async function refresh() {
       button.disabled = lobbyPending;
       button.onclick = () => {
         if (lobbyPending) return;
-        cancelLocation(); autoStart = true; sawPending = false;
-        send({action:'join',link:JSON.stringify(invite)});
+        join(JSON.stringify(invite), meshJoinStatus);
       };
       meshList.append(button);
     }

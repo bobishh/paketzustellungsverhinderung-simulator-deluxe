@@ -4,7 +4,14 @@ type Stop = DeliveryStop;
 type IntercomOption = {kind:string; choice?:number; label:string; pressed?:boolean};
 type Intercom = {revision:number; message:string; status:string; options:IntercomOption[]};
 type Dispatcher = {message:string; timer:string; action:string};
-type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; day:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number; dispatcher?:Dispatcher|null; intercom?:Intercom|null };
+const directions = {
+  straight: ['Straight', 'M12 21V4 M6 10l6-6 6 6'],
+  left: ['Turn left', 'M19 21v-7a5 5 0 0 0-5-5H4 M10 3l-6 6 6 6'],
+  right: ['Turn right', 'M5 21v-7a5 5 0 0 1 5-5h10 M14 3l6 6-6 6'],
+  reverse: ['Turn around', 'M19 21V9a6 6 0 0 0-12 0v8 M3 13l4 4 4-4'],
+  arrive: ['At the destination', 'M12 6a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z'],
+} as const;
+type Hud = { selected:number; active:number; routes:Stop[]; score:number; delivered:number; day:number; minute:number; ready:boolean; ended:boolean; form:string; speed:number; difficulty:number; canChangeDifficulty:boolean; status:string; interaction:boolean; photo:boolean; photoReady:boolean; loading:boolean; bulk:boolean|null; vanDistance:number|null; stunSeconds:number; navigation?:{turn:keyof typeof directions;distance:number}|null; dispatcher?:Dispatcher|null; intercom?:Intercom|null };
 const root=document.querySelector<HTMLElement>('#ride-hud')!;
 const dialog=document.querySelector<HTMLDialogElement>('#settings-dialog')!;
 const settings=document.querySelector<HTMLButtonElement>('#settings')!;
@@ -98,7 +105,7 @@ document.addEventListener('pointerlockchange',()=>{
 window.addEventListener('paket-mode',((e:CustomEvent<string>)=>{
   ride=e.detail==='ride';root.hidden=!ride;settings.hidden=!ride;showStops(false);lastStatus='';buttons.clear();el('route-list').replaceChildren();
   if(dialog.open)dialog.close();
-  showIntercom();el('dispatcher').hidden=true;
+  showIntercom();el('dispatcher').hidden=true;el('route-direction').hidden=true;
   if(ride)send({action:'sensitivity',value:sensitivity});
 }) as EventListener);
 window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
@@ -109,6 +116,20 @@ window.addEventListener('paket-hud',((event:CustomEvent<Hud>)=>{
   put('hud-score',String(s.score));put('route-total',`${s.delivered} / ${s.routes.length}`);
   put('speed-value',String(Math.round(s.speed)).padStart(2,'0'));el('speedometer').hidden=s.form!=='van';
   el('delivery-card').hidden=s.form==='dog';el('hud-loading').hidden=!s.loading;
+  const nav=s.ready&&!s.loading&&!s.ended&&!s.interaction&&!s.photo?s.navigation:null;
+  const direction=el('route-direction');
+  direction.hidden=!nav;
+  if(nav){
+    const [label,path]=directions[nav.turn];
+    const distance=meters(nav.distance);
+    if(direction.dataset.turn!==nav.turn){
+      direction.dataset.turn=nav.turn;
+      direction.querySelector('path')!.setAttribute('d',path);
+    }
+    const accessible=`${label} · ${distance}`;
+    if(direction.getAttribute('aria-label')!==accessible)direction.setAttribute('aria-label',accessible);
+    put('route-direction-distance',distance);
+  }
   const selected=s.routes[s.selected],active=s.routes[s.active];
   if(selected){
     put('stop-number',`STOP ${String(s.selected+1).padStart(2,'0')} / ${s.routes.length}`);

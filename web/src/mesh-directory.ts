@@ -14,11 +14,15 @@ export function publishMesh(invite: unknown, token: string) {
       if (!closed && !notified) paketNotify('Could not list your mesh. Share its invitation directly; listing will retry.');
       notified = true;
     }
-    if (!closed) timer = setTimeout(renew,30_000);
-    else { try { await send('DELETE'); } catch { /* The lease expires without renewal. */ } }
+    if (!closed) timer = setTimeout(() => { renewal = renew(); },30_000);
   };
-  void renew();
-  return () => { closed = true; clearTimeout(timer); void send('DELETE').catch(()=>undefined); };
+  let renewal = renew();
+  return async () => {
+    closed = true;
+    clearTimeout(timer);
+    await renewal;
+    try { await send('DELETE'); } catch { /* The lease expires without renewal. */ }
+  };
 }
 
 export async function availableMeshes() {

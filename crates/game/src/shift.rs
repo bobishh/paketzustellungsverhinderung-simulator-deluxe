@@ -119,6 +119,12 @@ impl Shift {
         self.choices = choices;
         self.remote_remaining = remaining.min(VOTE_MS);
     }
+    #[cfg(target_arch = "wasm32")]
+    pub fn restore_host_timer(&mut self) {
+        if self.ended() {
+            self.elapsed = DURATION_MS + (VOTE_MS - self.remote_remaining);
+        }
+    }
     pub fn vote(&mut self, choice: u8) {
         if self.ended() && usize::from(choice) < self.choices.len() {
             self.choice = Some(choice);

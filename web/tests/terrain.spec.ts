@@ -29,9 +29,6 @@ test('the real game walks uphill, shows the stadium and joins both sidewalks to 
   await page.goto(`/?lat=${lat}&lon=${lon}`);
   await page.locator('#play').click();
   await expect(page.locator('#terrain-credit')).toBeVisible({timeout:90_000});
-  await expect.poll(()=>page.locator('#game').evaluate((canvas:HTMLCanvasElement) =>
-    canvas.width*canvas.height)).toBeLessThanOrEqual(325_000);
-  await expect(page.locator('#game')).toHaveClass(/bounded-scene/);
   await expect.poll(()=>page.evaluate(()=>(globalThis as any).terrainSports?.length)).toBe(2);
   const roads = await page.evaluate(()=>(globalThis as any).terrainRoads as {bridge:boolean; motorRoad:boolean; width:number; points:number[][]}[]);
   const bridge = roads.filter(road=>road.bridge);

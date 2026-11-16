@@ -1,5 +1,6 @@
 import './style.css';
-import './lobby';
+import {openInvitation} from './lobby';
+import {setSoftwareRendering} from './render-quality';
 import {showStartup} from './loading';
 import './minimap';
 import './hud';
@@ -29,41 +30,8 @@ document.querySelector('#photo')!.addEventListener('click', () => {
   download.href = photoUrl; download.download = photoName; download.click();
 });
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
-const gameArea = canvas.parentElement!;
-const scenePixelBudget = 320_000;
-let pixelBudget = scenePixelBudget;
-let riding = false;
-let lastPose = 0;
-let slowPoses = 0;
-
-function resizeScene() {
-  if (!riding || document.body.classList.contains('press-shot')) return;
-  const area = gameArea.clientWidth * gameArea.clientHeight;
-  const scale = Math.min(1, Math.sqrt(pixelBudget / (area * devicePixelRatio ** 2)));
-  // Resize the canvas content box for the GPU and scale its presentation back
-  // to the full game area. The HTML HUD uses the browser's normal resolution.
-  canvas.style.setProperty('--scene-size', `${scale * 100}%`);
-  canvas.style.setProperty('--scene-upscale', String(1 / scale));
-}
-new ResizeObserver(resizeScene).observe(gameArea);
-window.addEventListener('resize', resizeScene);
-window.addEventListener('paket-radar', () => {
-  if (!riding || pixelBudget < scenePixelBudget || document.hidden) return;
-  const now = performance.now();
-  slowPoses = lastPose && now - lastPose > 170 ? slowPoses + 1 : 0;
-  lastPose = now;
-  if (slowPoses === 4) {
-    pixelBudget = 160_000;
-    resizeScene();
-  }
-});
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
-  riding = event.detail === 'ride';
-  lastPose = 0;
-  slowPoses = 0;
-  document.querySelector<HTMLElement>('#signin')!.hidden = riding;
-  canvas.classList.toggle('bounded-scene', riding && !document.body.classList.contains('press-shot'));
-  resizeScene();
+  document.querySelector<HTMLElement>('#signin')!.hidden = event.detail === 'ride';
 }) as EventListener);
 globalThis.paketPhoto = (bytes, index) => {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
@@ -89,14 +57,16 @@ document.querySelector('#play')!.addEventListener('click', async () => {
   button.disabled = true;
   document.querySelector<HTMLElement>('#start-spinner')!.hidden=false;
   try {
-    const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-    if (!gpu || !await gpu.requestAdapter()) throw new Error('WebGPU is unavailable. Open this game in a current Chrome, Edge or Safari with graphics acceleration enabled.');
+    const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{info?:{isFallbackAdapter?:boolean}}|null> } }).gpu;
+    const adapter = await gpu?.requestAdapter();
+    if (!adapter) throw new Error('WebGPU is unavailable. Open this game in a current Chrome, Edge or Safari with graphics acceleration enabled.');
+    setSoftwareRendering(Boolean(adapter.info?.isFallbackAdapter));
     await ready;
     const join = new URLSearchParams(location.hash.slice(1)).get('join');
     const query = new URLSearchParams(location.search);
     const lat = Number(query.get('lat')), lon = Number(query.get('lon'));
-    globalThis.paketArgs = join ? ['--join', `${location.origin}/#join=${join}`] :
-      query.has('lat') && query.has('lon') && Number.isFinite(lat) && Math.abs(lat) <= 85 && Number.isFinite(lon) && Math.abs(lon) <= 180 ? ['--lat', String(lat), '--lon', String(lon)] : [];
+    if(join)openInvitation(`${location.origin}/#join=${join}`);
+    globalThis.paketArgs = !join && query.has('lat') && query.has('lon') && Number.isFinite(lat) && Math.abs(lat) <= 85 && Number.isFinite(lon) && Math.abs(lon) <= 180 ? ['--lat', String(lat), '--lon', String(lon)] : [];
     if (query.has('press-shot')) { globalThis.paketArgs.push('--press-shot'); document.body.classList.add('press-shot'); }
     status.textContent = 'Loading the neighbourhood simulator…';
     const url = '/game/paket_game.js';

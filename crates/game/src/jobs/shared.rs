@@ -87,6 +87,30 @@ impl Jobs {
         {
             return false;
         }
+        self.apply_route(stops, commands);
+        self.sharing.as_mut().unwrap().received = Some((day, revision));
+        true
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn restore_route(
+        &mut self,
+        day: u64,
+        revision: u64,
+        stops: Vec<RouteStop>,
+        commands: &mut Commands,
+    ) {
+        if stops.len() > DELIVERIES_PER_SHIFT || !valid_stops(&stops) {
+            return;
+        }
+        self.day = day;
+        self.apply_route(stops, commands);
+        if let Some(sharing) = &mut self.sharing {
+            sharing.revision = revision;
+        }
+    }
+
+    fn apply_route(&mut self, stops: Vec<RouteStop>, commands: &mut Commands) {
         let mut previous: HashMap<_, _> = std::mem::take(&mut self.parcels)
             .into_iter()
             .map(|p| (p.address.clone(), p))
@@ -113,11 +137,9 @@ impl Jobs {
                 commands.entity(prop).try_despawn();
             }
         }
-        self.sharing.as_mut().unwrap().received = Some((day, revision));
         self.selected = self.selected.min(self.parcels.len().saturating_sub(1));
         self.navigation = self.navigation.min(self.parcels.len().saturating_sub(1));
         self.advance_shared_selection();
-        true
     }
     pub fn confirm_delivery(
         &mut self,

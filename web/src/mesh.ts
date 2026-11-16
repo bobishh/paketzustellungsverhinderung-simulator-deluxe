@@ -9,8 +9,9 @@ type Origin = { lat: number; lon: number };
 type Fact = { kind: string; origin: Origin; device?: string; sequence?: number; [key: string]: unknown };
 type Invite = { protocol: 'paket-web/3'; origin: Origin; host: string; relay: string; room: string };
 type Presence = Member & {seen:number;until:number};
-type State = { poses:Map<string,PoseReceipt>; members:Map<string,Presence>; memberVersion?:string; node: IrohMeshNode; invite: Invite; host: boolean; closed: boolean; inbox: Fact[]; latest: Map<string, Fact>; pending: Fact[]; unlist?: () => void; timer?: ReturnType<typeof setTimeout> };
+type State = { seed:string; epoch:number; release:()=>void; poses:Map<string,PoseReceipt>; members:Map<string,Presence>; memberVersion?:string; node: IrohMeshNode; invite: Invite; host: boolean; closed: boolean; inbox: Fact[]; latest: Map<string, Fact>; pending: Fact[]; unlist?: () => Promise<void>; timer?: ReturnType<typeof setTimeout> };
 const sessions = new Map<string, State>();
+const closing = new Map<string, Promise<void>>();
 export function decodeInvite(value: string): Invite {
   const encoded = value.includes('#join=') ? value.split('#join=')[1] : null;
   const invite = JSON.parse(encoded ? new TextDecoder().decode(Uint8Array.from(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))) : value);
@@ -25,6 +26,42 @@ export function inviteLink(invite: Invite, base: string): string {
   const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(canonical))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   return `${base}/#join=${encoded}`;
 }
+const previousHostKey='paket.mesh.host.v1';
+const previousGuestKey='paket.mesh.guest.v1';
+type HostResume={invite:Invite; seed:string; token:string; listed:boolean; shift?:Fact; route?:Fact};
+type GuestResume={invite:Invite; seed:string};
+const hex=(bytes:Uint8Array)=>[...bytes].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+const isKey=(value:unknown):value is string=>typeof value==='string' && /^[a-f0-9]{64}$/.test(value);
+function loadResume<T extends GuestResume>(key:string):T|undefined {
+  try{
+    const saved=JSON.parse(localStorage.getItem(key)??'null');
+    if(isKey(saved?.seed))return {...saved,invite:decodeInvite(JSON.stringify(saved.invite))};
+  }catch{}
+}
+function saveResume(key:string,value:GuestResume){
+  try{localStorage.setItem(key,JSON.stringify(value));}catch{}
+}
+function matches(a:Invite,b:Invite){
+  return a.host===b.host && a.room===b.room && a.origin.lat===b.origin.lat && a.origin.lon===b.origin.lon;
+}
+export function savedInvitation(){
+  const invite=(loadResume(previousHostKey)??loadResume(previousGuestKey))?.invite;
+  return invite ? inviteLink(invite,location.origin) : undefined;
+}
+export function ownsInvitation(link:string){
+  const saved=loadResume<HostResume>(previousHostKey);
+  return Boolean(saved && isKey(saved.token) && matches(saved.invite,decodeInvite(link)));
+}
+async function acquireEndpoint(seed:string){
+  if(!navigator.locks)return ()=>{};
+  return new Promise<()=>void>((resolve,reject)=>{
+    void navigator.locks.request(`paket.mesh.${seed}`, {ifAvailable:true}, lock=>{
+      if(!lock){reject(new Error('This mesh is already open in another tab.'));return;}
+      return new Promise<void>(release=>resolve(release));
+    }).catch(reject);
+  });
+}
+
 export function validFact(fact: Fact, origin: Origin, device?: string): boolean {
   if (!fact || !fact.origin || Math.abs(fact.origin.lat - origin.lat) > 1e-9 || Math.abs(fact.origin.lon - origin.lon) > 1e-9 ||
       !Number.isFinite(fact.origin.lat) || !Number.isFinite(fact.origin.lon) || JSON.stringify(fact).length > (fact.kind==='route'?16384:4096)) return false;
@@ -97,90 +134,124 @@ export const mesh = {
   async connect(origin: Origin, invitation?: string) {
     if (!profile) throw new Error('Identity is not ready');
     const bootstrap = invitation ? decodeInvite(invitation) : null;
-    // Use the existing MetaMesh browser runtime; endpoint and private identity keys remain local.
-    const moduleUrl = '/mesh/meta_mesh.js';
-    const transport = await IrohMeshNode.loadModule(moduleUrl);
-    const raw = await transport.BrowserNode.start(crypto.getRandomValues(new Uint8Array(32)));
-    const routed = { endpointId: raw.endpointId, relayUrl: raw.relayUrl,
-      waitForRelayUrl: () => raw.waitForRelayUrl(), accept: () => raw.accept(), close: (reason?: string) => raw.close(reason),
-      dialRelay: (endpoint: string, relayUrl?: string) => raw.dialRelay(endpoint, relayUrl ?? (endpoint === bootstrap?.host ? bootstrap.relay : undefined)),
-    };
-    const node = new IrohMeshNode(routed, undefined, transport);
-    let relay: string;
-    try { relay = await waitForRelayUrl(raw); } catch (error) { await node.close(); throw error; }
-    const host = !invitation;
-    const ownerToken = [...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join('');
-    const room = [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ownerToken)))].map(x=>x.toString(16).padStart(2,'0')).join('');
-    const invite: Invite = bootstrap ?? { protocol: 'paket-web/3', origin, host: node.endpointId, relay,
-      room };
-    const s: State = { poses:new Map(),members:new Map(), node, invite, host, closed: false, inbox: [], latest: new Map(), pending: [] };
-    const name=String(profile.identity.displayName||'Courier').trim().slice(0,48)||'Courier';
-    if(host)s.members.set(node.endpointId,{id:node.endpointId,name,slot:0,seen:Date.now(),until:Infinity});
-    const proof = await signEnvelope(profile.privateKeys.devicePrivateKey, { kind: 'paket-player', endpoint: node.endpointId, name,
-      room: invite.room, expiresAt: Date.now() + 6 * 3600_000 }, profile.device.deviceId, 'PAKET/1');
-    const auth = { identity: profile.identity, certificates, proof };
-    let profileCursor = 0;
-    if (host) {
-      await node.listen(async (input: any) => {
-        if (input?.protocol !== 'paket-web/3' || input.room !== invite.room || !Array.isArray(input.facts) || input.facts.length > 32) throw new Error('Invalid ride message');
-        const endpoint = input.auth?.proof?.payload?.endpoint;
-        if (typeof endpoint !== 'string' || !/^[a-f0-9]{64}$/.test(endpoint)) throw new Error('Invalid peer');
-        prune(s);
-        const member=s.members.get(endpoint);
-        if ((member?.until ?? 0) < Date.now()) {
-          if (s.members.size >= 17 && !member) throw new Error('Ride is full');
-          const a = input.auth;
-          const key = await verifyDeviceCertificateChain(a.identity, a.proof.signerKeyId, a.certificates);
-          if (a.proof.payload.kind !== 'paket-player' || a.proof.payload.room !== invite.room || a.proof.payload.expiresAt <= Date.now() ||
-              a.proof.payload.expiresAt > Date.now() + 6 * 3600_000 || !await verifyEnvelope(a.proof, key, 'PAKET/1')) throw new Error('Invalid rider identity');
-          const used=new Set([...s.members.values()].map(m=>m.slot));
-          const slot=member?.slot??Array.from({length:16},(_,i)=>i+1).find(i=>!used.has(i))!;
-          const name=String(a.proof.payload.name||a.identity.displayName||'Courier').trim().slice(0,48)||'Courier';
-          s.members.set(endpoint,{id:endpoint,name,slot,seen:Date.now(),until:Math.min(Date.now()+60_000,a.proof.payload.expiresAt)});
-        }
-        s.members.get(endpoint)!.seen=Date.now();
-        emitMembers(s);
-        for (const fact of input.facts) { if ((fact.kind === 'shift'||fact.kind==='route') || !validFact(fact, invite.origin, endpoint)) throw new Error('Invalid game fact'); incoming(s, fact); }
-        if (Array.isArray(input.profiles) && input.profiles.length <= 2) for (const record of input.profiles) { try { await acceptProfile(record); } catch { /* Reject unsigned or foreign application data. */ } }
-        return { members:roster(s), profiles: profileBatch(profileCursor++), protocol: 'paket-web/3', facts: [...s.latest.values()].filter(fact => fact.device !== endpoint).slice(-128) };
-      });
-    } else {
-      // Do not enter a shift until the host has accepted the invitation.
-      try {
-        const hello: any = await node.request(invite.host, {protocol:'paket-web/3',room:invite.room,auth,facts:[],profiles:[]}, 8000);
-        if (hello?.protocol !== 'paket-web/3') throw new Error('Invalid host reply');
-        acceptMembers(s,hello.members);
-      } catch (error) { await node.close(); throw error; }
-      const tick = async () => {
-        if (s.closed) return;
-        const started=performance.now();
-        const batch = s.pending.splice(0, 32);
-        try {
-          const reply: any = await node.request(invite.host, { protocol: 'paket-web/3', room: invite.room, auth, facts: batch, profiles: profileBatch(profileCursor++) }, 4000);
-          if (reply?.protocol !== 'paket-web/3' || !Array.isArray(reply.facts) || reply.facts.length > 128) throw new Error('Invalid host reply');
-          acceptMembers(s,reply.members);emitMembers(s);
-          if (Array.isArray(reply.profiles) && reply.profiles.length <= 2) for (const record of reply.profiles) { try { await acceptProfile(record); } catch { /* Verify each profile independently of the host. */ } }
-          for (const fact of reply.facts) if (validFact(fact, invite.origin)) incoming(s, fact);
-          globalThis.dispatchEvent(new CustomEvent('paket-network', { detail: 'Connected' }));
-        } catch {
-          // Keep one-shot actions during a brief relay outage. Pose updates are replaceable.
-          s.pending = [...batch.filter(f => f.kind !== 'actor' && f.kind !== 'pose'), ...s.pending].slice(-64);
-          globalThis.dispatchEvent(new CustomEvent('paket-network', { detail: 'Reconnecting…' }));
-        }
-        if (!s.closed) s.timer = setTimeout(tick, pollDelay(started,performance.now()));
+    const previousHost=bootstrap?loadResume<HostResume>(previousHostKey):undefined;
+    const resume=bootstrap && previousHost && isKey(previousHost.token) && matches(previousHost.invite,bootstrap)
+      ? previousHost : undefined;
+    const previousGuest=bootstrap && !resume ? loadResume(previousGuestKey) : undefined;
+    const guestSeed=bootstrap && previousGuest && matches(previousGuest.invite,bootstrap) ? previousGuest.seed : undefined;
+    const seed=resume?.seed ?? guestSeed ?? hex(crypto.getRandomValues(new Uint8Array(32)));
+    await closing.get(seed);
+    const release=await acquireEndpoint(seed);
+    const host=!bootstrap || Boolean(resume);
+    let node: IrohMeshNode|undefined;
+    try {
+      const moduleUrl = '/mesh/meta_mesh.js';
+      const transport = await IrohMeshNode.loadModule(moduleUrl);
+      const raw = await transport.BrowserNode.start(Uint8Array.from(seed.match(/../g)!, byte=>parseInt(byte,16)));
+      const routed = { endpointId: raw.endpointId, relayUrl: raw.relayUrl,
+        waitForRelayUrl: () => raw.waitForRelayUrl(), accept: () => raw.accept(), close: (reason?: string) => raw.close(reason),
+        dialRelay: (endpoint: string, relayUrl?: string) => raw.dialRelay(endpoint, relayUrl ?? (endpoint === bootstrap?.host ? bootstrap.relay : undefined)),
       };
-      s.timer = setTimeout(tick, 0);
+      node = new IrohMeshNode(routed, undefined, transport);
+      const relay=await waitForRelayUrl(raw);
+      if(resume && node.endpointId!==resume.invite.host)throw new Error('Could not reopen the host endpoint.');
+      const ownerToken=resume?.token ?? hex(crypto.getRandomValues(new Uint8Array(32)));
+      const invite: Invite = bootstrap ? {...bootstrap,relay:host?relay:bootstrap.relay} : {
+        protocol:'paket-web/3',origin,host:node.endpointId,relay,
+        room:hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(ownerToken)))),
+      };
+      const s: State = { seed,epoch:Date.now()*1024,release,poses:new Map(),members:new Map(), node, invite, host, closed:false, inbox:[], latest:new Map(), pending:[] };
+      const snapshot=[resume?.shift,resume?.route].filter((fact):fact is Fact=>
+        Boolean(fact && validFact(fact,invite.origin,invite.host)));
+      for(const fact of snapshot)retain(s,fact);
+      const name=String(profile.identity.displayName||'Courier').trim().slice(0,48)||'Courier';
+      if(host)s.members.set(node.endpointId,{id:node.endpointId,name,slot:0,seen:Date.now(),until:Infinity});
+      const proof = await signEnvelope(profile.privateKeys.devicePrivateKey, { kind: 'paket-player', endpoint: node.endpointId, name,
+        room: invite.room, expiresAt: Date.now() + 6 * 3600_000 }, profile.device.deviceId, 'PAKET/1');
+      const auth = { identity: profile.identity, certificates, proof };
+      let profileCursor = 0;
+      if (host) {
+        await node.listen(async (input: any) => {
+          if (input?.protocol !== 'paket-web/3' || input.room !== invite.room || !Array.isArray(input.facts) || input.facts.length > 32) throw new Error('Invalid ride message');
+          const endpoint = input.auth?.proof?.payload?.endpoint;
+          if (typeof endpoint !== 'string' || !/^[a-f0-9]{64}$/.test(endpoint)) throw new Error('Invalid peer');
+          prune(s);
+          const member=s.members.get(endpoint);
+          if ((member?.until ?? 0) < Date.now()) {
+            if (s.members.size >= 17 && !member) throw new Error('Ride is full');
+            const a = input.auth;
+            const key = await verifyDeviceCertificateChain(a.identity, a.proof.signerKeyId, a.certificates);
+            if (a.proof.payload.kind !== 'paket-player' || a.proof.payload.room !== invite.room || a.proof.payload.expiresAt <= Date.now() ||
+                a.proof.payload.expiresAt > Date.now() + 6 * 3600_000 || !await verifyEnvelope(a.proof, key, 'PAKET/1')) throw new Error('Invalid rider identity');
+            const used=new Set([...s.members.values()].map(m=>m.slot));
+            const slot=member?.slot??Array.from({length:16},(_,i)=>i+1).find(i=>!used.has(i))!;
+            const name=String(a.proof.payload.name||a.identity.displayName||'Courier').trim().slice(0,48)||'Courier';
+            s.members.set(endpoint,{id:endpoint,name,slot,seen:Date.now(),until:Math.min(Date.now()+60_000,a.proof.payload.expiresAt)});
+          }
+          s.members.get(endpoint)!.seen=Date.now();
+          emitMembers(s);
+          for (const fact of input.facts) { if ((fact.kind === 'shift'||fact.kind==='route') || !validFact(fact, invite.origin, endpoint)) throw new Error('Invalid game fact'); incoming(s, fact); }
+          if (Array.isArray(input.profiles) && input.profiles.length <= 2) for (const record of input.profiles) { try { await acceptProfile(record); } catch { /* Reject unsigned or foreign application data. */ } }
+          return { members:roster(s), profiles: profileBatch(profileCursor++), protocol: 'paket-web/3', facts: [...s.latest.values()].filter(fact => fact.device !== endpoint).slice(-128) };
+        });
+      } else {
+        // Do not enter a shift until the host has accepted the invitation.
+        try {
+          const hello: any = await node.request(invite.host, {protocol:'paket-web/3',room:invite.room,auth,facts:[],profiles:[]}, 8000);
+          if (hello?.protocol !== 'paket-web/3') throw new Error('Invalid host reply');
+          acceptMembers(s,hello.members);
+        } catch { throw new Error('Could not reach the host. Keep the host’s game open, then try again.'); }
+        const tick = async () => {
+          if (s.closed) return;
+          const started=performance.now();
+          const batch = s.pending.splice(0, 32);
+          try {
+            const reply: any = await s.node.request(invite.host, { protocol: 'paket-web/3', room: invite.room, auth, facts: batch, profiles: profileBatch(profileCursor++) }, 4000);
+            if (reply?.protocol !== 'paket-web/3' || !Array.isArray(reply.facts) || reply.facts.length > 128) throw new Error('Invalid host reply');
+            acceptMembers(s,reply.members);emitMembers(s);
+            if (Array.isArray(reply.profiles) && reply.profiles.length <= 2) for (const record of reply.profiles) { try { await acceptProfile(record); } catch { /* Verify each profile independently of the host. */ } }
+            for (const fact of reply.facts) if (validFact(fact, invite.origin)) incoming(s, fact);
+            globalThis.dispatchEvent(new CustomEvent('paket-network', { detail: 'Connected' }));
+          } catch {
+            // Keep one-shot actions during a brief relay outage. Pose updates are replaceable.
+            s.pending = [...batch.filter(f => f.kind !== 'actor' && f.kind !== 'pose'), ...s.pending].slice(-64);
+            globalThis.dispatchEvent(new CustomEvent('paket-network', { detail: 'Reconnecting…' }));
+          }
+          if (!s.closed) s.timer = setTimeout(tick, pollDelay(started,performance.now()));
+        };
+        s.timer = setTimeout(tick, 0);
+      }
+      if(host){
+        const listed=resume?.listed ?? Boolean(globalThis.paketPublicMesh);
+        const record:HostResume={...resume,invite,seed,token:ownerToken,listed};
+        saveResume(previousHostKey,record);
+        if(listed)s.unlist=publishMesh(invite,ownerToken);
+      }else saveResume(previousGuestKey,{invite,seed});
+      sessions.set(node.endpointId, s);
+      const json = JSON.stringify(invite);
+      const link = inviteLink(invite, location.origin);
+      globalThis.dispatchEvent(new CustomEvent('paket-session', {detail: {link, host,device:node.endpointId}}));
+      emitMembers(s);
+      return JSON.stringify({ origin: invite.origin, device: node.endpointId, invitation: json, is_host: host, snapshot });
+    }catch(error){
+      try { await node?.close(); } finally { release(); }
+      throw error;
     }
-    if (host && globalThis.paketPublicMesh) s.unlist = publishMesh(invite, ownerToken);
-    sessions.set(node.endpointId, s);
-    const json = JSON.stringify(invite);
-    const link = inviteLink(invite, location.origin);
-    globalThis.dispatchEvent(new CustomEvent('paket-session', {detail: {link, host,device:node.endpointId}}));
-    emitMembers(s);
-    return JSON.stringify({ origin: invite.origin, device: node.endpointId, invitation: json, is_host: host });
   },
   publish(id: string, fact: Fact) {
     const s = sessions.get(id); if (!s || !validFact(fact, s.invite.origin, id)) return;
+    if(fact.sequence!==undefined)fact={...fact,sequence:fact.sequence+s.epoch};
+    if(s.host && (fact.kind==='route' || fact.kind==='shift')){
+      const saved=loadResume<HostResume>(previousHostKey);
+      if(saved && matches(saved.invite,s.invite)){
+        const last=saved[fact.kind];
+        const changedRoute=fact.kind==='route' && (last?.day!==fact.day || last?.revision!==fact.revision);
+        if(fact.kind==='shift' || changedRoute){
+          saved[fact.kind]=fact;
+          saveResume(previousHostKey,saved);
+        }
+      }
+    }
     prune(s);
     if(!retain(s, fact))return;
     if (!s.host) {
@@ -189,5 +260,17 @@ export const mesh = {
     }
   },
   poll(id: string) { return sessions.get(id)?.inbox.splice(0) ?? []; },
-  close(id: string) { const s = sessions.get(id); if (!s) return; s.closed = true; s.unlist?.(); clearTimeout(s.timer); sessions.delete(id); if (!sessions.size) globalThis.dispatchEvent(new CustomEvent('paket-session', {detail: null})); void s.node.close(); },
+  close(id: string) {
+    const s = sessions.get(id);
+    if(!s)return;
+    s.closed=true;
+    clearTimeout(s.timer);
+    sessions.delete(id);
+    const closed=Promise.allSettled([s.unlist?.(),s.node.close()]).then(()=>{
+      closing.delete(s.seed);
+      s.release();
+    });
+    closing.set(s.seed,closed);
+    if(!sessions.size)globalThis.dispatchEvent(new CustomEvent('paket-session',{detail:null}));
+  },
 };
