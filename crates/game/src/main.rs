@@ -2199,6 +2199,8 @@ mod ride_tests {
             );
         }
         app.world_mut().flush();
+        // Gameplay fixtures that address parcels by index need a fixed route.
+        app.world_mut().resource_mut::<Jobs>().resident_seed = 0;
         let (tx, rx) = mpsc::channel();
         tx.send(Ok(scene)).unwrap();
         app.world_mut()
