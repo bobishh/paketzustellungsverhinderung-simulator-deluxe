@@ -656,6 +656,7 @@ struct BuildingLink {
     entrance: Vec3,
     outward: Vec3,
     accessory: bool,
+    street_entrance: bool,
 }
 
 #[derive(Component)]
@@ -1781,6 +1782,7 @@ fn building_link(building: &paket_geo::Building) -> BuildingLink {
         entrance: threshold + outward * 1.25,
         outward,
         accessory: building.accessory,
+        street_entrance: building.street_entrance,
     }
 }
 

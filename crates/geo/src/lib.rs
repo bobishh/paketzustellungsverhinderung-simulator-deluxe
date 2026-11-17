@@ -3,6 +3,7 @@
 //! Tiles are only a fetch size. The session origin stays fixed while the
 //! bicycle crosses them.
 
+mod entrances;
 pub mod landscape;
 pub mod places;
 
@@ -49,6 +50,8 @@ pub struct Building {
     pub triangles: Vec<[u32; 3]>,
     pub height: f64,
     pub entrance: EastNorth,
+    /// A mapped street has a clear pedestrian approach to the entrance.
+    pub street_entrance: bool,
     /// Ground-level openings where an OSM building passage crosses a facade.
     pub passages: Vec<Passage>,
     pub accessory: bool,
@@ -191,6 +194,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
     let mut streets = Vec::new();
     let mut places = Vec::new();
     let mut passage_ways = Vec::new();
+    let mut pedestrian_approaches = Vec::new();
     let mut skipped = 0;
     for element in doc.elements {
         places.extend(places::parse(&element, origin));
@@ -306,6 +310,24 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
                     element.tags.get("motor_vehicle").map(String::as_str),
                     Some("no")
                 );
+                let public_approach = !element.tags.contains_key("bridge")
+                    && !matches!(highway.as_str(), "motorway" | "motorway_link")
+                    && !matches!(
+                        element
+                            .tags
+                            .get("foot")
+                            .or_else(|| element.tags.get("access"))
+                            .map(String::as_str),
+                        Some("no" | "private")
+                    )
+                    && (motor_road
+                        || highway == "pedestrian"
+                        || element.tags.contains_key("name")
+                        || element
+                            .tags
+                            .get("footway")
+                            .is_some_and(|kind| kind == "sidewalk"));
+                pedestrian_approaches.push(public_approach);
                 streets.push(Street {
                     id,
                     centerline: line,
@@ -331,7 +353,7 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
         }
     }
     assign_passages(&mut buildings, &passage_ways);
-    assign_entrances(&mut buildings, &streets);
+    entrances::assign(&mut buildings, &streets, &pedestrian_approaches);
     Ok(Scene {
         buildings,
         streets,
@@ -578,6 +600,7 @@ fn building_from_ring(
         triangles,
         height,
         entrance,
+        street_entrance: false,
         passages: Vec::new(),
         accessory,
         open_sided: matches!(kind, "carport" | "roof"),
@@ -656,56 +679,6 @@ fn assign_passages(buildings: &mut [Building], ways: &[(Vec<EastNorth>, f64, f64
                 }
             }
         }
-    }
-}
-
-fn assign_entrances(buildings: &mut [Building], streets: &[Street]) {
-    let segments: Vec<_> = streets
-        .iter()
-        .flat_map(|street| street.centerline.windows(2))
-        .map(|pair| (pair[0], pair[1]))
-        .collect();
-    if segments.is_empty() {
-        return;
-    }
-    let distance = |point: EastNorth| {
-        segments
-            .iter()
-            .map(|(a, b)| {
-                let dx = b.east - a.east;
-                let dy = b.north - a.north;
-                let length = dx * dx + dy * dy;
-                let t = if length > 1e-10 {
-                    (((point.east - a.east) * dx + (point.north - a.north) * dy) / length)
-                        .clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                (point.east - a.east - dx * t).hypot(point.north - a.north - dy * t)
-            })
-            .fold(f64::INFINITY, f64::min)
-    };
-    for building in buildings {
-        // A doorway belongs in a facade, not at the nearest footprint corner.
-        building.entrance = building
-            .footprint
-            .iter()
-            .zip(building.footprint.iter().cycle().skip(1))
-            .enumerate()
-            .filter(|(edge, (a, b))| {
-                let half = (b.east - a.east).hypot(b.north - a.north) * 0.5;
-                half >= 0.9
-                    && !building
-                        .passages
-                        .iter()
-                        .any(|p| p.edge == *edge && half + 0.85 > p.start && half - 0.85 < p.end)
-            })
-            .map(|(_, (a, b))| EastNorth {
-                east: (a.east + b.east) * 0.5,
-                north: (a.north + b.north) * 0.5,
-            })
-            .min_by(|a, b| distance(*a).total_cmp(&distance(*b)))
-            .unwrap_or(building.entrance);
     }
 }
 

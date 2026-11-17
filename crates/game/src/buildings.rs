@@ -540,6 +540,7 @@ mod tests {
             address: None,
             triangles: paket_geo::triangulate(&footprint).unwrap(),
             entrance: footprint[0],
+            street_entrance: true,
             footprint,
             height: 9.,
             passages: vec![],

@@ -280,8 +280,9 @@ impl Jobs {
                     .then(a.id.cmp(&b.id))
             })
         });
-        if self.room.is_none() {
-            let room_address = &addresses[0];
+        if self.room.is_none()
+            && let Some(room_address) = addresses.iter().find(|address| address.street_entrance)
+        {
             self.room = Some(Room {
                 address: room_address.id.clone(),
                 center: (room_address.threshold - Vec3::Y * 0.04) - room_address.outward * 1.66,
@@ -301,7 +302,10 @@ impl Jobs {
         }
         for address in addresses {
             if !self.parcels.iter().any(|p| p.address == address.id) {
-                if !authoritative || self.parcels.len() >= DELIVERIES_PER_SHIFT {
+                if !authoritative
+                    || !address.street_entrance
+                    || self.parcels.len() >= DELIVERIES_PER_SHIFT
+                {
                     continue;
                 }
                 self.parcels.push(Parcel {
