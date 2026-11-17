@@ -10,9 +10,7 @@
 
 #share{min-width:108px}#share:disabled{opacity:.45;cursor:default}#share-dialog p{font-size:13px;line-height:1.5}#share-link{margin-bottom:16px}#share-status{min-height:40px}
 .spinner{display:inline-block;flex-shrink:0;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:loading-spin .8s linear infinite;vertical-align:middle}@keyframes loading-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation-duration:2s}}
-#world-loading{position:absolute;z-index:15;top:18px;left:18px;display:flex;gap:10px;align-items:center;min-height:42px;max-width:calc(100% - 300px);padding:10px 14px;background:#14251ff2;border:1px solid #607367;border-radius:8px;font-size:12px}#world-loading.map-loading{max-width:calc(100% - 400px)}#retry-map{padding:4px 8px;white-space:nowrap}
 .radar-frame{position:relative}#radar-markers{position:absolute;inset:0;width:100%;height:100%;overflow:visible}#mesh-players{padding:0 10px 8px;border-top:1px solid #ffffff25;height:146px;position:relative}#mesh-players h3{font-size:11px;margin:9px 0}#peer-count{float:right;color:#b5c2b0}#peer-list{list-style:none;margin:0;padding:0;height:106px;overflow:auto;pointer-events:auto}#peer-list li{display:flex;gap:7px;align-items:center;min-height:34px;font-size:11px}#peer-list .peer-badge{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--peer-color);color:#14251f;font-size:10px;font-weight:800;flex-shrink:0}#peer-list .peer-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#peer-list small{display:block;font-size:9px;color:#b5c2b0}#peer-empty{position:absolute;top:42px;left:10px;right:10px;font-size:11px;color:#b5c2b0;margin:0}
-@media(max-width:600px){#world-loading.map-loading{max-width:calc(100% - 36px);top:65px}}
 
 #game.bounded-scene {
   width: var(--scene-size, 100%) !important;
@@ -142,9 +140,11 @@ body:has(#start:not([hidden])) #share:disabled { display: none; }
 }
 
 /* Lobby controls and map share the same viewport on desktop and phones. */
-#lobby {
+main {
   --panel-width: 390px;
   --map-height: 100%;
+}
+#lobby {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -335,13 +335,85 @@ body:has(#start:not([hidden])) #share:disabled { display: none; }
 #lobby-status:empty { height: 14px; }
 
 @media (max-width: 750px) and (min-width: 621px) {
-  #lobby { --panel-width: 57%; }
+  main { --panel-width: 57%; }
 }
 @media (max-width: 620px) {
-  #lobby { --map-height: clamp(80px, 17%, 130px); }
+  main { --map-height: clamp(80px, 17%, 130px); }
+  #world-loading.map-loading { --map-loading-inset: 0 0 auto; }
   #lobby-map { right: 0; }
   .lobby-panel { inset: var(--map-height) 0 0; width: 100%; }
   .map-tools span { display: none; }
   .lobby-attribution { font-size: 8px; }
-  #world-loading.map-loading { top: 6px; }
 }
+
+#world-loading {
+  --loading-card: #182c25;
+  --loading-hover: #31483b;
+  --loading-accent: #f59151;
+  --loading-backdrop: radial-gradient(ellipse at center, #243b31 0%, #14241f 55%, #0d1714 100%);
+  --map-loading-inset: 0 var(--panel-width) auto 0;
+  --map-loading-height: var(--map-height);
+}
+
+#world-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  color: #fff1dc;
+  background: var(--loading-backdrop);
+  text-align: center;
+}
+.loading-content {
+  width: min(36rem, 100%);
+  display: grid;
+  grid-template-rows: 4.5rem 4.5rem 4.5rem;
+  align-items: center;
+}
+.loading-title {
+  align-self: end;
+  overflow-wrap: anywhere;
+  font: 800 clamp(1.2rem, 4vw, 2.1rem)/1.13 system-ui, sans-serif;
+  letter-spacing: -.04em;
+}
+.loading-title small { display: block; margin-top: .3rem; font-size: .52em; letter-spacing: .02em; }
+.loading-indicator { display: grid; place-items: center; }
+#world-loading .spinner {
+  width: 36px;
+  height: 36px;
+  border: 2px solid #fff1dc38;
+  border-top-color: var(--loading-accent);
+  border-right-color: var(--loading-accent);
+  border-radius: 50% !important;
+}
+.loading-result { align-self: start; }
+#world-loading-text { margin: 0; font-size: 1rem; }
+.loading-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.loading-actions button { padding: .4rem .7rem; color: #fff1dc; border-color: #fff1dc61; background: var(--loading-card); font-size: .85rem; }
+.loading-actions button:hover { background: var(--loading-hover); }
+#world-loading.map-loading {
+  position: absolute;
+  inset: var(--map-loading-inset);
+  height: var(--map-loading-height, auto);
+  padding: 0;
+  background: none;
+  pointer-events: none;
+}
+.map-loading .loading-content {
+  width: max-content;
+  max-width: calc(100% - 12px);
+  padding: .45rem .6rem;
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  background: var(--loading-card);
+  border: 1px solid #fff1dc33;
+}
+.map-loading .loading-title { display: none; }
+#world-loading.map-loading .spinner { width: 18px; height: 18px; }
+.map-loading #world-loading-text { font-size: .8rem; }
+.map-loading .loading-actions { margin: .25rem 0 0; }
+.map-loading .loading-actions button { pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { #world-loading .spinner { animation-duration: 2s; } }

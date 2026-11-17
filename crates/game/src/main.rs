@@ -1141,6 +1141,9 @@ fn stream_tiles(
             let message = scene.err().unwrap_or_else(|| "tile failed".into());
             eprintln!("osm tile {},{}: {message}", tile.x, tile.y);
             ride.retry.insert(tile, 12.0);
+            if player.is_none() && tile == around {
+                platform::ui_event("paket-ride-loading", "\"failed\"");
+            }
             continue;
         };
         println!(

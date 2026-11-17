@@ -152,6 +152,7 @@ pub(crate) fn input(
                     shift.difficulty = d as u8;
                 }
             }
+            "retry-map" => ride.retry.clear(),
             "change-location" if !jobs.interaction_active() => {
                 crate::change_location(&mut commands, &ride, &mut next)
             }

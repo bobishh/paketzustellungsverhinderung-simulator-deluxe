@@ -2,7 +2,7 @@ import './style.css';
 import './basemap';
 import {openInvitation} from './lobby';
 import {setSoftwareRendering} from './render-quality';
-import {showStartup} from './loading';
+import {dismissStartup, showStartup} from './loading';
 import './minimap';
 import './hud';
 import './mouse';
@@ -52,7 +52,7 @@ document.querySelector('#play')!.addEventListener('click', async () => {
   if (running) return;
   const button = document.querySelector<HTMLButtonElement>('#play')!;
   button.disabled = true;
-  document.querySelector<HTMLElement>('#start-spinner')!.hidden=false;
+  showStartup();
   try {
     const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<{info?:{isFallbackAdapter?:boolean}}|null> } }).gpu;
     const adapter = await gpu?.requestAdapter();
@@ -70,12 +70,12 @@ document.querySelector('#play')!.addEventListener('click', async () => {
     const url = '/game/paket_game.js';
     const { default: init } = await import(/* @vite-ignore */ url);
     await init();
-    showStartup();
     running = true;
     document.querySelector<HTMLElement>('#start')!.hidden = true;
     canvas.focus();
   } catch (error) {
+    dismissStartup();
     status.textContent = error instanceof Error ? error.message : String(error);
     button.disabled = false;
-  } finally { document.querySelector<HTMLElement>('#start-spinner')!.hidden=true; }
+  }
 });
