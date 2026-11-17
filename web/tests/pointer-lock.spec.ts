@@ -22,7 +22,10 @@ test('a rejected mouse capture stays visible and the next click can capture it',
   });
   await page.route('**/game/paket_game.js', route => route.fulfill({
     contentType: 'text/javascript',
-    body: "export default async () => dispatchEvent(new CustomEvent('paket-mode', {detail:'ride'}));",
+    body: `export default async () => {
+      dispatchEvent(new CustomEvent('paket-mode', {detail:'ride'}));
+      dispatchEvent(new CustomEvent('paket-hud', {detail:{ready:true}}));
+    };`,
   }));
   await page.goto('/');
   await page.getByRole('button', {name:'Play', exact:true}).click();
