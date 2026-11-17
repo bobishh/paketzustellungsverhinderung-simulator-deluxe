@@ -90,8 +90,26 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   });
   await walkToMarker(2.1);
   const recipient = await page.locator('#stop-recipient').textContent();
-  await key('r');
   const intercom = page.getByRole('group', {name:'Intercom'});
+  if (scenario.name === 'feud') {
+    await key('x');
+    await expect(parcelState).toHaveText('Set aside');
+    await key('F1');
+    const settings = page.locator('#settings-dialog');
+    await expect(settings).toBeVisible();
+    await key('r');
+    await expect(intercom).toBeHidden();
+    await settings.getByRole('button', {name:/Back to work/}).click();
+    await page.locator('#route-toggle').focus();
+  }
+  await key('r');
+  await expect(intercom).toBeVisible({timeout:5_000});
+  if (scenario.name === 'feud') {
+    await intercom.getByRole('button', {name:'Close'}).click();
+    await key('e');
+    await expect(parcelState).toHaveText('In your hands');
+    await key('r');
+  }
   await intercom.getByRole('button', {name:`Ring recipient · ${recipient}`, exact:true}).click();
   await expect(page.locator('#dispatcher-message')).toContainText(scenario.clue);
   await expect(page.locator('#dispatcher-timer')).toContainText('KPI');

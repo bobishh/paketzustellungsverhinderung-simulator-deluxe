@@ -14,6 +14,7 @@ pub(super) struct Service {
     pub modal: Option<Modal>,
     pub attempts: HashMap<String, Attempt>,
     pub browser_action: Option<Action>,
+    open_requested: bool,
     pub visited: HashSet<String>,
     pub bonus: i32,
     pub dialogue_result: Option<i32>,
@@ -118,6 +119,10 @@ pub(crate) struct TimerLabel;
 pub(crate) struct Marker(u8);
 
 impl Jobs {
+    pub(crate) fn request_intercom(&mut self) {
+        self.service.open_requested = true;
+    }
+
     fn name_rng(&self, id: &str) -> SmallRng {
         SmallRng::seed_from_u64((u64::from(self.resident_seed) << 32) | u64::from(hash(id)))
     }
@@ -321,6 +326,7 @@ pub(crate) fn service_update(
     street: Res<crate::StreetMaterials>,
     spatial: SpatialQuery,
 ) {
+    let open_requested = std::mem::take(&mut jobs.service.open_requested);
     let Ok((actor_id, player, actor)) = player.single() else {
         return;
     };
@@ -607,7 +613,7 @@ pub(crate) fn service_update(
             return;
         }
     }
-    if keys.just_pressed(KeyCode::KeyR) {
+    if open_requested || keys.just_pressed(KeyCode::KeyR) {
         if active
             && let Some(attempt) = jobs.service.attempts.get(&address)
             && let Some(b) = buildings.iter().find(|b| {

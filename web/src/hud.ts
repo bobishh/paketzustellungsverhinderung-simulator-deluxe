@@ -75,6 +75,12 @@ window.addEventListener('keydown',e=>{
   // Winit otherwise prevents the browser default for keys reaching the canvas.
   // Keep system/browser tab-switching shortcuts outside the game's input path.
   if(e.key==='Tab'&&(e.metaKey||e.ctrlKey||e.altKey)){e.stopImmediatePropagation();return;}
+  if(e.code==='KeyR'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!state?.interaction&&!document.querySelector('dialog[open]')
+    &&!(e.target instanceof HTMLElement&&(e.target.isContentEditable||e.target.matches('input, textarea, select')))){
+    e.preventDefault();e.stopImmediatePropagation();
+    if(!e.repeat)send({action:'open-intercom'});
+    return;
+  }
   if(e.key==='Tab'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!document.querySelector('dialog[open]')&&!state?.interaction
     &&(document.activeElement===canvas||document.pointerLockElement===canvas)){
     e.preventDefault();e.stopImmediatePropagation();

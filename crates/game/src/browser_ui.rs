@@ -122,6 +122,7 @@ pub(crate) fn input(
                     jobs.intercom_action(revision, kind, choice);
                 }
             }
+            "open-intercom" => jobs.request_intercom(),
             "delivery" => {
                 if let Some(i) = c["index"].as_u64() {
                     jobs.select_delivery(i as usize);
