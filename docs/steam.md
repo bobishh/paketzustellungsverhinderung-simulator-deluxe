@@ -2,6 +2,8 @@
 
 Status: 13 November 2026. The game already has a native Rust/Bevy client. A Steam release can package that executable; it does not require replacing MetaMesh or wrapping the public website. There is no Steam AppID, depot configuration or upload automation in this repository yet.
 
+The [native platforms and touch OpenSpec](../openspec/changes/native-platforms-and-touch/proposal.md) defines the current cross-project plan for Paket, Feed the Poor and Repo City/Vibe City. It includes native UI/storage replacement, browser/native Paket interoperability, phone controls, effort ranges and store lead times. A native-only private beta is an intermediate milestone; the public full-parity Paket release requires the interoperability checks in that specification.
+
 ## What is ready and what is missing
 
 | Area | Current state | Before the first public build |
