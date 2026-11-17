@@ -90,3 +90,5 @@ Map geometry comes from OpenStreetMap, with bundled public neighbourhood data fo
 ## Verification
 
 Run `cargo test --workspace --locked` and, in `web/`, `npm run check && npm test`. After building browser assets, install Chromium with `npx playwright install chromium` and run `npm run test:browser`. The isolated Playwright server uses ports 8797 and 9237 and never reuses a running server. `npm run test:game` additionally connects a real WebGPU/WASM game to a controlled browser peer over the Iroh relay, checking late-join delivery state, player navigation, movement under delayed pose updates and disconnection expiry. It also plays the dispatcher scenarios and walks on a sloped neighbourhood with an OSM stadium and a road bridge in the real game. The tests use small street fixtures to keep software WebGPU rendering bounded. These network-dependent tests require WebGPU and relay access; CI runs the deterministic UI flows.
+
+Set `PAKET_POINTER_LOCK=1` alongside `PAKET_REAL_GAME=1` to run the pointer-lock test in a headed browser with a desktop display.

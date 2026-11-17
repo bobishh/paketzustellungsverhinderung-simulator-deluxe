@@ -11,6 +11,8 @@
 .score-box strong { font-size:20px }
 .score-box small { font-size:10px; color:#b5c0ae }
 .hud-top>button { align-self:flex-start; background:#14251ff0; border-color:#ffffff25; font-size:12px; padding:14px }
+#capture-mouse { position:absolute; top:56px; left:50%; transform:translateX(-50%); padding:6px 11px; background:#14251ff0; font-size:12px }
+body:has(dialog[open]) #capture-mouse { display:none }
 #hud-loading { position:absolute; top:110px; left:18px; background:#14251fe6; padding:8px 12px; font-size:11px }
 #delivery-card { position:absolute; bottom:38px; left:18px; width:302px; padding:16px 18px 12px; background:#14251ff5; border-top:3px solid #f58b43; box-shadow:0 8px 28px #0003 }
 .stop-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; font:10px Fira,monospace; color:#bbc5b2; letter-spacing:.06em }

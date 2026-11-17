@@ -544,7 +544,10 @@ pub(crate) fn interact(
             Visibility::Inherited
         });
     }
-    if ride.mouse_look && !keys.just_pressed(KeyCode::Escape) {
+    let looking = ride.mouse_look && !keys.just_pressed(KeyCode::Escape);
+    #[cfg(target_arch = "wasm32")]
+    let looking = looking && crate::platform::pointer_locked();
+    if looking {
         let precision = if player.photo { 0.60 } else { 1.0 };
         let yaw = -motion.delta.x * controls.sensitivity * precision;
         if player.form == Avatar::Van {

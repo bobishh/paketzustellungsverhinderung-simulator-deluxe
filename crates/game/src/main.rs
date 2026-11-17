@@ -421,7 +421,7 @@ fn cleanup_ride(
     mut cursor: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
     #[cfg(target_arch = "wasm32")]
-    platform::capture_cursor(false);
+    platform::release_pointer();
     if let Ok(mut cursor) = cursor.single_mut() {
         cursor.visible = true;
         cursor.grab_mode = CursorGrabMode::None;
@@ -439,6 +439,18 @@ fn cleanup_ride(
     commands.remove_resource::<traffic::TrafficWorld>();
 }
 
+#[cfg(target_arch = "wasm32")]
+fn cursor_control(keys: Res<ButtonInput<KeyCode>>, jobs: Res<Jobs>, mut ride: ResMut<Ride>) {
+    let escape = keys.just_pressed(KeyCode::Escape);
+    if escape {
+        ride.mouse_look = false;
+    }
+    if escape || jobs.interaction_active() {
+        platform::release_pointer();
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn cursor_control(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -454,11 +466,6 @@ fn cursor_control(
     }
     if let Ok((window, mut cursor)) = window.single_mut() {
         let captured = window.focused && ride.mouse_look && !jobs.interaction_active();
-        #[cfg(target_arch = "wasm32")]
-        platform::capture_cursor(captured);
-        #[cfg(target_arch = "wasm32")]
-        let mode = CursorGrabMode::None; // The browser requires a fresh canvas click.
-        #[cfg(not(target_arch = "wasm32"))]
         let mode = if captured {
             CursorGrabMode::Locked
         } else {

@@ -5,6 +5,7 @@ import {setSoftwareRendering} from './render-quality';
 import {showStartup} from './loading';
 import './minimap';
 import './hud';
+import './mouse';
 import './shift-vote';
 import './help';
 import './bite-audio';
@@ -13,7 +14,7 @@ import { initProfile } from './profile';
 import { restoreIdentity, signIn } from './identity';
 import { mesh } from './mesh';
 
-declare global { var paketArgs: string[]; var paketMesh: typeof mesh; var paketPhoto: (bytes: Uint8Array, index: number) => void; var paketNotify: (text: string) => void; var paketWantsPointer: boolean; }
+declare global { var paketArgs: string[]; var paketMesh: typeof mesh; var paketPhoto: (bytes: Uint8Array, index: number) => void; var paketNotify: (text: string) => void; }
 // Consume identity evidence before loading game assets or making network requests.
 const callbackHash = location.pathname === '/identity/return' ? location.hash : null;
 if (callbackHash !== null) history.replaceState(null, '', '/identity/return');
@@ -31,13 +32,8 @@ document.querySelector('#photo')!.addEventListener('click', () => {
   download.href = photoUrl; download.download = photoName; download.click();
 });
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
-let showedLookHint = false;
 window.addEventListener('paket-mode', ((event: CustomEvent<string>) => {
   document.querySelector<HTMLElement>('#profile-identity')!.hidden = event.detail === 'ride';
-  if (event.detail === 'ride' && !showedLookHint && matchMedia('(pointer: fine)').matches) {
-    showedLookHint = true;
-    paketNotify('Click the game to look around · Esc releases the cursor');
-  }
 }) as EventListener);
 globalThis.paketPhoto = (bytes, index) => {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
@@ -52,11 +48,6 @@ void ready.catch(() => undefined);
 document.querySelector('#signin')!.addEventListener('click', () => { void signIn().catch(error => paketNotify(error.message)); });
 document.querySelector('#fullscreen')!.addEventListener('click', () => { void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(error => paketNotify(error.message)); });
 let running = false;
-canvas.addEventListener('pointerdown', event => {
-  if (running && globalThis.paketWantsPointer && !document.pointerLockElement) {
-    void (event.currentTarget as HTMLCanvasElement).requestPointerLock()?.catch(() => paketNotify('Click the game to capture the mouse. Esc releases it.'));
-  }
-});
 document.querySelector('#play')!.addEventListener('click', async () => {
   if (running) return;
   const button = document.querySelector<HTMLButtonElement>('#play')!;

@@ -90,14 +90,6 @@ window.addEventListener('keydown',e=>{
   if(e.key==='F1'){e.preventDefault();e.stopImmediatePropagation();if(dialog.open)closeSettings();else openSettings();}
   else if(document.querySelector('dialog[open]'))e.stopImmediatePropagation();
 },true);
-canvas.addEventListener('pointerdown',()=>{
-  if(ride&&!state?.interaction&&!document.querySelector('dialog[open]')){
-    send({action:'look',active:true});globalThis.paketWantsPointer=true;
-  }
-});
-document.addEventListener('pointerlockchange',()=>{
-  if(ride&&!document.pointerLockElement)send({action:'look',active:false});
-});
 window.addEventListener('paket-mode',((e:CustomEvent<string>)=>{
   ride=e.detail==='ride';root.hidden=!ride;settings.hidden=!ride;showStops(false);lastStatus='';buttons.clear();el('route-list').replaceChildren();
   if(dialog.open)dialog.close();

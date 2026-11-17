@@ -8,7 +8,7 @@ window.addEventListener('paket-day',()=>{if(dialog.open)dialog.close();send({act
 dialog.addEventListener('cancel',e=>e.preventDefault());
 window.addEventListener('paket-hud',((event:CustomEvent<{vote:Vote}>)=>{
   const v=event.detail.vote;if(!riding||!v?.ended||v.options.length!==3)return;
-  if(!dialog.open){document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(d=>d.close());send({action:'menu',open:true});globalThis.paketWantsPointer=false;void document.exitPointerLock();dialog.showModal();}
+  if(!dialog.open){document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(d=>d.close());send({action:'menu',open:true});void document.exitPointerLock();dialog.showModal();}
   document.querySelector('#vote-title')!.textContent=`Day ${v.day} complete`;
   const rows=v.players.slice().sort((a,b)=>b.score-a.score).map(p=>{const row=document.createElement('tr');for(const text of [p.name,String(p.delivered),String(p.score)]){const cell=document.createElement('td');cell.textContent=text;row.append(cell);}return row;});
   document.querySelector('#vote-scores')!.replaceChildren(...rows);

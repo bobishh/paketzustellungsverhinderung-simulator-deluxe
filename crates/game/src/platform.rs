@@ -58,11 +58,13 @@ mod browser {
         fn photo(bytes: &[u8], index: usize) -> Result<(), JsValue>;
     }
     #[wasm_bindgen(
-        inline_js = "export function gameCapture(wanted){globalThis.paketWantsPointer= wanted; if(!wanted && document.pointerLockElement) document.exitPointerLock();}"
+        inline_js = "export function gamePointerLocked(){return document.pointerLockElement?.id === 'game';} export function gameReleasePointer(){if(gamePointerLocked())document.exitPointerLock();}"
     )]
     extern "C" {
-        #[wasm_bindgen(js_name = gameCapture)]
-        pub fn capture_cursor(wanted: bool);
+        #[wasm_bindgen(js_name = gamePointerLocked)]
+        pub fn pointer_locked() -> bool;
+        #[wasm_bindgen(js_name = gameReleasePointer)]
+        pub fn release_pointer();
     }
     pub fn arguments() -> Vec<String> {
         serde_json::from_str(&args()).unwrap_or_default()

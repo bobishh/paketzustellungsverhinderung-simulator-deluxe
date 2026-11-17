@@ -54,7 +54,7 @@ function drawRoute(){
 }
 function openMap(){
   if(!riding||interaction||document.querySelector('dialog[open]'))return;
-  send({action:'menu',open:true});globalThis.paketWantsPointer=false;void document.exitPointerLock();mapDialog.showModal();fitRoute();
+  send({action:'menu',open:true});void document.exitPointerLock();mapDialog.showModal();fitRoute();
 }
 function closeMap(){mapDialog.close();}
 document.querySelector<HTMLButtonElement>('#hud-map')!.onclick=openMap;
