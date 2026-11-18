@@ -1,5 +1,7 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {expect, test} from '@playwright/test';
 
+test.beforeEach(async({page})=>{await observeGame(page);});
 test('the route skips the closed courtyard and keeps the street address', async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU game.');
   test.setTimeout(120_000);
@@ -11,10 +13,8 @@ test('the route skips the closed courtyard and keeps the street address', async 
       : {path:fixture, contentType:'application/json'},
   ));
   await page.goto('/?lat=52.4895&lon=13.3908');
-  await page.locator('#play').click();
-  await expect(page.locator('#stop-state')).toHaveText('In the van', {timeout:90_000});
-  await page.locator('#route-toggle').click();
-  const stops = page.locator('#route-list .route-copy b');
-  await expect(stops.filter({hasText:/^Riemannstraße 21$/})).toHaveCount(1);
-  await expect(stops.filter({hasText:/^Riemannstraße 9$/})).toHaveCount(0);
+  await waitRide(page);
+  const stops=(await hud(page)).routes as {address:string}[];
+  expect(stops.filter(stop=>stop.address==='Riemannstraße 21')).toHaveLength(1);
+  expect(stops.filter(stop=>stop.address==='Riemannstraße 9')).toHaveLength(0);
 });

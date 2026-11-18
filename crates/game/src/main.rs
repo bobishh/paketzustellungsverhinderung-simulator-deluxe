@@ -7,6 +7,8 @@ mod buildings;
 mod characters;
 mod dogs;
 mod elevation;
+mod game_ui;
+mod graphics;
 mod jobs;
 mod map;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,6 +23,7 @@ mod shift;
 mod surfaces;
 mod terrain;
 mod traffic;
+mod ui_guidance;
 #[cfg(debug_assertions)]
 mod visual_check;
 
@@ -36,7 +39,6 @@ use std::time::Duration;
 use actors::{Models, ParkedVan, Player, Role};
 use avian3d::prelude::*;
 use bevy::asset::RenderAssetUsages;
-use bevy::ecs::system::ParamSet;
 use bevy::light::CascadeShadowConfigBuilder;
 use bevy::light::{Atmosphere, SunDisk, atmosphere::ScatteringMedium};
 use bevy::math::Affine2;
@@ -109,7 +111,7 @@ fn main() {
     .add_systems(OnEnter(Mode::Travel), travel)
     .add_systems(
         Update,
-        (map::input, map::update_lobby, map::tiles)
+        (map::responsive, map::input, map::update_lobby, map::tiles)
             .chain()
             .run_if(in_state(Mode::Map)),
     );
@@ -127,6 +129,8 @@ fn main() {
         )
         .expect("the default font asset can be replaced");
     install_ride(&mut app);
+    game_ui::install(&mut app);
+    graphics::install(&mut app);
     #[cfg(not(target_arch = "wasm32"))]
     native_audio::install(&mut app);
     if platform::arguments().iter().any(|a| a == "--press-shot") {
@@ -211,14 +215,11 @@ fn install_ride(app: &mut App) {
                     jobs::dog,
                     sync_peers,
                     jobs::open_room,
-                    hud,
-                    guide,
-                    action_prompt,
+                    photo_reticle,
                 )
                     .chain(),
                 jobs::settle_thrown.before(jobs::residents),
                 invite_control,
-                return_to_map,
                 dogs::walk.after(jobs::courier),
                 characters::animate,
                 (actors::ground_couriers, actors::ground_vans),
@@ -488,20 +489,6 @@ fn cursor_control(
     }
 }
 
-#[derive(Component)]
-struct MapButton;
-
-fn return_to_map(
-    mut commands: Commands,
-    buttons: Query<(), (With<MapButton>, Added<bevy::ui::Pressed>)>,
-    ride: Res<Ride>,
-    mut next: ResMut<NextState<Mode>>,
-) {
-    if !buttons.is_empty() {
-        change_location(&mut commands, &ride, &mut next);
-    }
-}
-
 fn change_location(commands: &mut Commands, ride: &Ride, next: &mut NextState<Mode>) {
     // Every route to the selector must create its required resource before OnEnter.
     commands.insert_resource(
@@ -515,31 +502,7 @@ fn change_location(commands: &mut Commands, ride: &Ride, next: &mut NextState<Mo
     next.set(Mode::Map);
 }
 
-#[derive(Component)]
-struct InviteButton;
-
-#[derive(Component)]
-struct InviteLabel;
-
-#[derive(Component)]
-struct ShareToggle;
-
-#[derive(Component)]
-struct SharePanel;
-
-#[derive(Component)]
-struct ShareLink;
-
-fn invite_control(
-    mut ride: ResMut<Ride>,
-    buttons: Query<(), (With<InviteButton>, Added<bevy::ui::Pressed>)>,
-    toggle: Query<(), (With<ShareToggle>, Added<bevy::ui::Pressed>)>,
-    mut panel: Query<&mut Node, With<SharePanel>>,
-    mut text: ParamSet<(
-        Query<&mut Text, With<InviteLabel>>,
-        Query<&mut Text, With<ShareLink>>,
-    )>,
-) {
+fn invite_control(mut ride: ResMut<Ride>) {
     let result = ride
         .connecting
         .as_ref()
@@ -552,42 +515,16 @@ fn invite_control(
                     ride.invite = Some(paket_session::invite_link(&session.invitation));
                     let _ = fs::write("invitation.json", &session.invitation);
                 }
+                platform::ui_event(
+                    "paket-session",
+                    &serde_json::json!({"link":ride.invite,"host":session.is_host,"device":session.device}).to_string(),
+                );
                 ride.session = Some(session);
                 ride.invite_status = "Copy invite link";
             }
             Err(error) => {
                 eprintln!("session: {error}");
                 ride.invite_status = "Session unavailable";
-            }
-        }
-    }
-    if !buttons.is_empty() {
-        if let Some(link) = &ride.invite {
-            ride.invite_status = if platform::copy_text(link) {
-                "Invite copied"
-            } else {
-                "Clipboard unavailable"
-            };
-        }
-    }
-    if !toggle.is_empty() {
-        if let Ok(mut panel) = panel.single_mut() {
-            panel.display = if panel.display == Display::None {
-                Display::Flex
-            } else {
-                Display::None
-            };
-        }
-    }
-    if let Ok(mut text) = text.p0().single_mut() {
-        if text.0 != ride.invite_status {
-            **text = ride.invite_status.into();
-        }
-    }
-    if let Some(link) = &ride.invite {
-        if let Ok(mut text) = text.p1().single_mut() {
-            if text.0 != *link {
-                **text = link.clone();
             }
         }
     }
@@ -693,19 +630,7 @@ impl RemoteActor {
 }
 
 #[derive(Component)]
-struct Hud;
-
-#[derive(Component)]
-struct CompassNeedle;
-
-#[derive(Component)]
-struct CompassDistance;
-
-#[derive(Component)]
 struct PhotoReticle;
-
-#[derive(Component)]
-struct ActionPrompt;
 
 #[derive(Component)]
 struct WorldFloor;
@@ -857,137 +782,6 @@ fn setup(
         DespawnOnExit(Mode::Ride),
     ));
     commands.spawn((
-        Text::new("© OpenStreetMap contributors"),
-        TextFont {
-            font_size: FontSize::Px(16.0),
-            ..default()
-        },
-        TextColor(Color::srgb(0.96, 0.95, 0.9)),
-        BackgroundColor(Color::srgba(0.035, 0.055, 0.06, 0.86)),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(16.0),
-            left: Val::Px(16.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            ..default()
-        },
-        Hud,
-        if cfg!(target_arch = "wasm32") {
-            Visibility::Hidden
-        } else {
-            Visibility::Inherited
-        },
-        DespawnOnExit(Mode::Ride),
-    ));
-    if !cfg!(target_arch = "wasm32") {
-        commands.spawn((
-            DespawnOnExit(Mode::Ride),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(12.),
-                width: Val::Percent(100.),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(8.),
-                ..default()
-            },
-            children![
-                (
-                    Text::default(),
-                    TextFont {
-                        font_size: FontSize::Px(26.),
-                        ..default()
-                    },
-                    TextColor(Color::srgb(1., 0.55, 0.08)),
-                    UiTransform::default(),
-                    CompassNeedle,
-                ),
-                (
-                    Text::default(),
-                    TextFont {
-                        font_size: FontSize::Px(15.),
-                        ..default()
-                    },
-                    CompassDistance,
-                ),
-            ],
-        ));
-    }
-    if !cfg!(target_arch = "wasm32") {
-        let panel_color = BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.93));
-        commands.spawn((
-            bevy::ui_widgets::Button,
-            ShareToggle,
-            DespawnOnExit(Mode::Ride),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(12.0),
-                right: Val::Px(12.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            },
-            panel_color,
-            children![Text::new("Share")],
-        ));
-        commands.spawn((
-            SharePanel,
-            DespawnOnExit(Mode::Ride),
-            Node {
-                display: Display::None,
-                position_type: PositionType::Absolute,
-                top: Val::Px(58.0),
-                right: Val::Px(12.0),
-                width: Val::Px(380.0),
-                max_width: Val::Percent(90.0),
-                padding: UiRect::all(Val::Px(12.0)),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(8.0),
-                ..default()
-            },
-            panel_color,
-            children![
-                (
-                    Text::new(""),
-                    ShareLink,
-                    TextFont {
-                        font_size: FontSize::Px(13.0),
-                        ..default()
-                    },
-                    TextLayout::linebreak(bevy::text::LineBreak::AnyCharacter),
-                ),
-                (
-                    bevy::ui_widgets::Button,
-                    InviteButton,
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.24, 0.34, 0.35)),
-                    children![(Text::new("Preparing invite…"), InviteLabel)],
-                )
-            ],
-        ));
-    }
-    commands.spawn((
-        bevy::ui_widgets::Button,
-        MapButton,
-        if cfg!(target_arch = "wasm32") {
-            Visibility::Hidden
-        } else {
-            Visibility::Inherited
-        },
-        DespawnOnExit(Mode::Ride),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            left: Val::Px(12.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.05, 0.08, 0.09, 0.85)),
-        children![Text::new("Change neighbourhood")],
-    ));
-    commands.spawn((
         PhotoReticle,
         DespawnOnExit(Mode::Ride),
         Node {
@@ -1004,32 +798,6 @@ fn setup(
         },
         TextColor(Color::WHITE),
         UiTransform::from_translation(Val2::percent(-50.0, -50.0)),
-    ));
-    commands.spawn((
-        ActionPrompt,
-        if cfg!(target_arch = "wasm32") {
-            Visibility::Hidden
-        } else {
-            Visibility::Inherited
-        },
-        DespawnOnExit(Mode::Ride),
-        Node {
-            display: Display::None,
-            position_type: PositionType::Absolute,
-            top: Val::Percent(64.0),
-            left: Val::Percent(50.0),
-            max_width: Val::Px(620.0),
-            padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
-            ..default()
-        },
-        Text::new(""),
-        TextFont {
-            font_size: FontSize::Px(18.0),
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        BackgroundColor(Color::srgba(0.035, 0.055, 0.06, 0.9)),
-        UiTransform::from_translation(Val2::percent(-50.0, 0.0)),
     ));
 }
 
@@ -1601,164 +1369,25 @@ fn follow_floor(
     *raised = true;
 }
 
-fn guide(
+fn photo_reticle(
     jobs: Res<Jobs>,
-    actors: Query<(&Player, &Transform)>,
-    mut needle: Query<(&mut Text, &mut UiTransform), With<CompassNeedle>>,
-    mut label: Query<&mut Text, (With<CompassDistance>, Without<CompassNeedle>)>,
+    actors: Query<&Player>,
     mut crosshair: Query<(&mut Node, &mut TextColor), With<PhotoReticle>>,
-    vans: Query<&Transform, With<ParkedVan>>,
 ) {
-    let Ok((player, actor)) = actors.single() else {
+    let Ok(player) = actors.single() else {
         return;
     };
-    if let Ok((mut crosshair, mut color)) = crosshair.single_mut() {
-        crosshair.display = if player.photo {
+    if let Ok((mut node, mut color)) = crosshair.single_mut() {
+        node.display = if player.photo {
             Display::Flex
         } else {
             Display::None
         };
         color.0 = if jobs.photo_ready {
-            Color::srgb(0.38, 1.0, 0.63)
+            Color::srgb(0.38, 1., 0.63)
         } else {
             Color::WHITE
         };
-    }
-    let (Ok((mut needle, mut spin)), Ok(mut label)) = (needle.single_mut(), label.single_mut())
-    else {
-        return;
-    };
-    if let Some(target) = jobs.navigation_target(
-        player,
-        player.parked.and_then(|entity| vans.get(entity).ok()),
-    ) {
-        let (bearing, distance) = jobs::navigation_bearing(actor, target);
-        needle.0 = "↑".into();
-        spin.rotation = Rot2::radians(bearing);
-        label.0 = format!("{distance:.0} m");
-    } else {
-        needle.0.clear();
-        label.0.clear();
-    }
-}
-
-fn action_prompt(
-    jobs: Res<Jobs>,
-    mut prompt: Query<(&mut Text, &mut Node, &mut TextColor), With<ActionPrompt>>,
-) {
-    let Ok((mut text, mut node, mut color)) = prompt.single_mut() else {
-        return;
-    };
-    node.display = if jobs.prompt.is_empty() {
-        Display::None
-    } else {
-        Display::Flex
-    };
-    if text.0 != jobs.prompt {
-        text.0.clone_from(&jobs.prompt);
-    }
-    color.0 = if jobs.photo_ready {
-        Color::srgb(0.38, 1.0, 0.63)
-    } else if jobs.pursued {
-        Color::srgb(1.0, 0.63, 0.27)
-    } else {
-        Color::srgb(0.96, 0.95, 0.9)
-    };
-}
-
-fn hud(
-    ride: Res<Ride>,
-    jobs: Res<Jobs>,
-    shift: Res<shift::Shift>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut text: Query<&mut Text, With<Hud>>,
-    actor: Query<(&Player, &Transform, &LinearVelocity)>,
-    peers: Query<(&RemoteActor, &Transform)>,
-    vans: Query<&Transform, With<ParkedVan>>,
-) {
-    let Ok(mut text) = text.single_mut() else {
-        return;
-    };
-    let mut display = format!("{}\n", shift.label());
-    if let Ok((player, position, velocity)) = actor.single() {
-        match player.form {
-            Avatar::Courier => {
-                if let Some(van) = player.parked.and_then(|entity| vans.get(entity).ok()) {
-                    let distance =
-                        actors::horizontal_distance(position.translation, van.translation);
-                    display.push_str(&format!(
-                        "Van {:.0} m | {}\n",
-                        distance,
-                        if distance <= 3.5 {
-                            "V enter / E parcel"
-                        } else {
-                            "walk to the van"
-                        }
-                    ));
-                }
-                display.push_str(&jobs.manifest());
-                if keys.pressed(KeyCode::F1) {
-                    display.push_str("\nWASD move | Shift run | Ctrl crouch\nTab / Shift+Tab parcel | E deliver | F camera | click photo");
-                }
-            }
-            Avatar::Van => {
-                display.push_str(&format!(
-                    "{:02.0} km/h | {}\n",
-                    velocity.0.xz().length() * 3.6,
-                    if velocity.0.dot(position.forward().as_vec3()) < -0.2 {
-                        "REVERSE"
-                    } else {
-                        "DRIVE"
-                    }
-                ));
-                display.push_str(&jobs.manifest());
-                if keys.pressed(KeyCode::F1) {
-                    display.push_str("\nW gas | S brake/reverse | A/D steer\nSpace handbrake | V exit | H call residents");
-                }
-            }
-            Avatar::Dog => {
-                display.push_str(jobs.dog_status(position.translation));
-                if keys.pressed(KeyCode::F1) {
-                    display.push_str("\nWASD move | Shift run | B alert residents");
-                }
-            }
-        }
-        let radar = jobs.radar(
-            ride.session.as_ref().map(|session| session.device.as_str()),
-            position,
-            peers.iter().filter_map(|(peer, transform)| {
-                Some((peer.device.clone(), peer.van_position(transform)?))
-            }),
-        );
-        if !radar.is_empty() {
-            display.push('\n');
-            display.push_str(&radar);
-        }
-    }
-    if !jobs.status.is_empty() {
-        display.push('\n');
-        display.push_str(&jobs.status);
-    }
-    if ride.waiting_for_tile {
-        display.push_str("\nLoading the next streets...");
-    }
-    if ride.session.is_some() {
-        display.push_str(&format!("\nPlayers: {}", 1 + peers.iter().count()));
-    }
-    display.push_str("\nHold F1: controls | Esc: cursor | M: map");
-    if keys.pressed(KeyCode::F1) {
-        display.push_str("\nMouse look | Wheel zoom | -/+ sensitivity | F12 screenshot");
-    }
-    display.push_str("\nOpenStreetMap contributors");
-    let display = display
-        .replace('·', "|")
-        .replace('→', ">")
-        .replace('–', "-")
-        .replace('↑', "^")
-        .replace('↓', "v")
-        .replace('…', "...");
-    if text.0 != display {
-        text.0 = display;
     }
 }
 

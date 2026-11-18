@@ -1,3 +1,4 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {expect, test} from '@playwright/test';
 
 const scenarios = [
@@ -12,6 +13,7 @@ const scenarios = [
 for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dispatcher scenario`, async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU game.');
   test.setTimeout(180_000);
+  await observeGame(page);
   await page.setViewportSize({width: 640, height: 480});
   await page.addInitScript(() => {
     (globalThis as any).hudFrames = 0;
@@ -34,8 +36,7 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   await page.route('**/elevation/**', r => r.fulfill({status:503}));
   await page.route('**/api/osm?*', r => r.fulfill({json:fixture}));
   await page.goto('/?lat=0&lon=0');
-  await page.locator('#play').click();
-  await expect(page.locator('#world-loading')).toBeHidden({timeout:90_000});
+  await waitRide(page);
   const canvas = page.locator('#game');
   const key = (k: string) => page.keyboard.press(k, {delay:130});
   const walkToMarker = async (tolerance: number) => {
@@ -55,71 +56,66 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
     }
     throw new Error('Could not reach the marked door');
   };
-  await expect(page.locator('#stop-state')).toHaveText('In the van', {timeout:90_000});
+  await expect.poll(async()=>(await selected(page))?.state,{timeout:90_000}).toBe('in-van');
 
-  await page.locator('#route-toggle').click();
-  const stops = page.locator('#route-list .route-copy');
-  await expect(stops).toHaveCount(2);
-  const names = await stops.locator('small').allTextContents();
-  expect(new Set(names.map(name => name.split(' ').at(-1))).size).toBe(2);
-  await page.locator('#route-list').getByRole('button', {name:/Test Street 1/}).click();
-  await page.locator('#route-toggle').click();
-  await expect(page.locator('#stop-address')).toHaveText('Test Street 1');
+  const stops=(await hud(page)).routes as {name:string}[];expect(stops).toHaveLength(2);
+  const names=stops.map(stop=>stop.name);expect(new Set(names.map(name=>name.split(' ').at(-1))).size).toBe(2);
+  await clickUi(page,'Deliveries');await clickUi(page,/Test Street 1/);await clickUi(page,'Close · Esc');
+  expect((await selected(page)).address).toBe('Test Street 1');
   await canvas.focus();
   await key('e');
-  const parcelState = page.locator('#stop-state');
-  await expect(parcelState).toHaveText('In your hands');
+  const parcelState=async()=>(await selected(page))?.state;
+  await expect.poll(parcelState).toBe('carrying');
   if (scenario.name === 'feud') await test.step('exchange and set aside an unrung parcel', async () => {
     await key('Tab');
-    await expect(page.locator('#hud-action')).toContainText('Exchange for selected parcel');
+    await expect.poll(async()=>(await hud(page)).prompt).toContain('Exchange for selected parcel');
     await key('e');
-    await expect(parcelState).toHaveText('In your hands');
-    await expect(page.locator('#notice')).toContainText('Parcel exchanged');
+    await expect.poll(parcelState).toBe('carrying');
+    await expect.poll(async()=>(await hud(page)).status).toContain('Parcel exchanged');
     await key('Shift+Tab');
-    await expect(page.locator('#hud-action')).toContainText('Exchange for selected parcel');
+    await expect.poll(async()=>(await hud(page)).prompt).toContain('Exchange for selected parcel');
     await key('e');
-    await expect(parcelState).toHaveText('In your hands');
+    await expect.poll(parcelState).toBe('carrying');
     await key('x');
-    await expect(parcelState).toHaveText('Set aside');
+    await expect.poll(parcelState).toBe('set-aside');
     await key('Tab');
-    await expect(parcelState).toHaveText('In the van');
+    await expect.poll(parcelState).toBe('in-van');
     await key('Shift+Tab');
-    await expect(page.locator('#hud-action')).toContainText('Pick up box');
+    await expect.poll(async()=>(await hud(page)).prompt).toContain('Pick up box');
     await key('e');
-    await expect(parcelState).toHaveText('In your hands');
+    await expect.poll(parcelState).toBe('carrying');
   });
   await walkToMarker(2.1);
-  const recipient = await page.locator('#stop-recipient').textContent();
-  const intercom = page.getByRole('group', {name:'Intercom'});
+  const recipient=(await selected(page)).name;
+  const intercom=async()=>(await hud(page)).intercom;
   if (scenario.name === 'feud') {
     await key('x');
-    await expect(parcelState).toHaveText('Set aside');
+    await expect.poll(parcelState).toBe('set-aside');
     await key('F1');
-    const settings = page.locator('#settings-dialog');
-    await expect(settings).toBeVisible();
+    await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.panel).toBe('settings');
     await key('r');
-    await expect(intercom).toBeHidden();
-    await settings.getByRole('button', {name:/Back to work/}).click();
-    await page.locator('#route-toggle').focus();
+    expect(await intercom()).toBeNull();
+    await clickUi(page,'Close · Esc');
+    await canvas.focus();
   }
   await key('r');
-  await expect(intercom).toBeVisible({timeout:5_000});
+  await expect.poll(intercom,{timeout:5_000}).toBeTruthy();
   if (scenario.name === 'feud') {
-    await intercom.getByRole('button', {name:'Close'}).click();
+    await clickUi(page,'Close · Esc');
     await key('e');
-    await expect(parcelState).toHaveText('In your hands');
+    await expect.poll(parcelState).toBe('carrying');
     await key('r');
   }
-  await intercom.getByRole('button', {name:`Ring recipient · ${recipient}`, exact:true}).click();
-  await expect(page.locator('#dispatcher-message')).toContainText(scenario.clue);
-  await expect(page.locator('#dispatcher-timer')).toContainText('KPI');
-  await intercom.getByRole('button', {name:'Close'}).click();
+  await clickUi(page,`Ring recipient · ${recipient}`);
+  await expect.poll(async()=>(await hud(page)).dispatcher?.message).toContain(scenario.clue);
+  await expect.poll(async()=>(await hud(page)).dispatcher?.timer).toContain('KPI');
+  await clickUi(page,'Close · Esc');
   if (scenario.name === 'picky recipient') {
-    const parcel = page.locator('#stop-state');
+    const parcel=async()=>(await selected(page))?.state;
     const pressUntilState = async (label: string) => {
       await page.keyboard.down('e');
       try {
-        await expect(parcel).toHaveText(label, {timeout:12_000});
+        await expect.poll(parcel,{timeout:12_000}).toBe(({ 'Photo needed':'photo-due','In your hands':'carrying'} as Record<string,string>)[label]);
       } finally {
         await page.keyboard.up('e');
       }
@@ -131,20 +127,20 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   }
   if (!scenario.reply) {
     await key('e');
-    await expect(page.locator('#route-total')).toHaveText('1 / 2', {timeout:20_000});
-    await expect(page.locator('#notice')).toContainText('returned the parcel to the real door · 0 KPI');
+    await expect.poll(async()=>(await hud(page)).delivered,{timeout:20_000}).toBe(1);
+    await expect.poll(async()=>(await hud(page)).status).toContain('returned the parcel to the real door · 0 KPI');
     return;
   }
   await walkToMarker(1.8);
   await key('r');
-  await intercom.getByRole('button', {name:'Tell the truth'}).click();
-  await expect(intercom).toContainText('refused');
-  await intercom.getByRole('button', {name:scenario.reply}).click();
-  await expect(intercom).toContainText('coming to the door');
-  await intercom.getByRole('button', {name:'Close'}).click();
-  await expect(page.locator('#hud-action')).toContainText('Hand over to the neighbor', {timeout:25_000});
+  await clickUi(page,'Tell the truth');
+  await expect.poll(async()=>JSON.stringify(await intercom())).toContain('refused');
+  await clickUi(page,scenario.reply);
+  await expect.poll(async()=>JSON.stringify(await intercom())).toContain('coming to the door');
+  await clickUi(page,'Close · Esc');
+  await expect.poll(async()=>(await hud(page)).prompt,{timeout:25_000}).toContain('Hand over to the neighbor');
   await key('e');
-  await expect(page.locator('#route-total')).toHaveText('1 / 2');
-  await expect(page.locator('#notice')).toContainText('Neighbor took the parcel');
-  await expect.poll(async () => Number(await page.locator('#hud-score').textContent())).toBeGreaterThan(scenario.name === 'feud' ? 100 : 25);
+  await expect.poll(async()=>(await hud(page)).delivered).toBe(1);
+  await expect.poll(async()=>(await hud(page)).status).toContain('Neighbor took the parcel');
+  await expect.poll(async () => Number((await hud(page)).score)).toBeGreaterThan(scenario.name === 'feud' ? 100 : 25);
 });

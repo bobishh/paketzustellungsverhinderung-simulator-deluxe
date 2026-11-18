@@ -1,7 +1,9 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {expect,test} from '@playwright/test';
 
 test.use({deviceScaleFactor:2});
 
+test.beforeEach(async({page})=>{await observeGame(page);});
 test('the real game walks uphill, shows the stadium and joins both sidewalks to a road bridge', async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires WebGPU.');
   test.setTimeout(150_000);
@@ -30,11 +32,10 @@ test('the real game walks uphill, shows the stadium and joins both sidewalks to 
   await page.route('**/elevation/**/*.png', r=>r.fulfill({path:new URL('../../fixtures/elevation-slope.png',import.meta.url).pathname,contentType:'image/png'}));
   await page.route('**/api/osm?*',r=>r.fulfill({json:new URL(r.request().url()).searchParams.has('landscape')?water:ways}));
   await page.goto(`/?lat=${lat}&lon=${lon}`);
-  await page.locator('#play').click();
-  await expect(page.locator('#terrain-credit')).toBeVisible({timeout:90_000});
+  await expect.poll(async()=>(await fact(page,'paket-radar'))?.terrain,{timeout:90_000}).toBe(true);
   await expect.poll(() => page.locator('#game').evaluate((canvas: HTMLCanvasElement) => {
     const bounds = canvas.getBoundingClientRect();
-    const density = devicePixelRatio * Number(canvas.dataset.renderScale);
+    const density = devicePixelRatio;
     return Math.max(Math.abs(canvas.width - bounds.width * density),
       Math.abs(canvas.height - bounds.height * density));
   })).toBeLessThan(3);

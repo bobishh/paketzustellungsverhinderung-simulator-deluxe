@@ -1,4 +1,4 @@
-declare global { var paketFrame: (milliseconds: number) => void; }
+declare global { var paketFrame: (milliseconds: number) => void; var paketSceneScale: number; }
 
 const canvas=document.querySelector<HTMLCanvasElement>('#game')!;
 const area=canvas.parentElement!;
@@ -11,7 +11,6 @@ const storageKey=()=>software?'paket.render-quality.software.v2':'paket.render-q
 let tier=0, active=false, ready=false, viewport=0, warmup=0, frames:number[]=[];
 let sampled=0, slowWindows=0, fastWindows=0, retryAfter=0, rejectedDuration=0;
 let trial: {tier: number; duration: number; windows: number} | undefined;
-let observedDensity: number | undefined;
 
 function reset(warmupMs=900){
   warmup=warmupMs;
@@ -29,14 +28,11 @@ function save(){
 }
 
 function apply(){
-  const scale=scales()[tier];
-  // Winit sizes the surface from the browser's device-pixel observer. Its
-  // density can differ from devicePixelRatio, including with Chromium emulation.
-  const layoutScale=active ? scale*devicePixelRatio/(observedDensity ?? devicePixelRatio) : 1;
-  canvas.classList.toggle('bounded-scene',active && Math.abs(layoutScale-1)>0.001);
-  canvas.dataset.renderScale=String(active ? scale : 1);
-  canvas.style.setProperty('--scene-size', `${layoutScale*100}%`);
-  canvas.style.setProperty('--scene-upscale', String(1/layoutScale));
+  const scale=active ? scales()[tier] : 1;
+  // The canvas and Bevy UI keep full device resolution. Rust resizes only the
+  // street render texture, then composites it beneath the interface.
+  globalThis.paketSceneScale=scale;
+  canvas.dataset.renderScale=String(scale);
 }
 
 function selectViewport(){
@@ -61,12 +57,7 @@ function selectViewport(){
   apply();
 }
 
-const observer=new ResizeObserver(([entry])=>{
-  const {width}=entry.contentRect;
-  const physical=entry.devicePixelContentBoxSize?.[0]?.inlineSize;
-  observedDensity=width>0 && physical ? physical/width : undefined;
-  selectViewport();
-});
+const observer=new ResizeObserver(()=>selectViewport());
 try{observer.observe(area,{box:'device-pixel-content-box'});}
 catch{observer.observe(area);}
 window.addEventListener('resize',selectViewport);

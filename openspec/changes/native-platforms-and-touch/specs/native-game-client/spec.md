@@ -28,6 +28,38 @@ Each interface SHALL submit typed game actions to the owning Rust behavior and d
 - **WHEN** the current browser build is launched
 - **THEN** its existing game actions and saves continue to work through the browser adapter
 
+### Requirement: Both browser clients render the shared Bevy interface
+Paket and Feed the Poor SHALL compile their Bevy game interface for native and WASM targets. Browser JavaScript SHALL provide platform services, including network, storage, identity, audio, geolocation, clipboard and system text input. Browser HTML MAY provide the canvas and technical bootstrap, compatibility or renderer-startup error screen. It MUST NOT render a second game menu, HUD, interaction dialog or report.
+
+#### Scenario: Firefox opens a game menu and HUD
+- **GIVEN** a Firefox device supports the required WebGPU renderer
+- **WHEN** the player selects a location, starts a run and opens an in-game panel
+- **THEN** the shared Bevy interface renders the controls and consumes their input
+- **AND** game actions use the same Rust rules as on native platforms
+
+#### Scenario: Scene quality decreases while playing
+- **GIVEN** the game interface renders at the window's device resolution
+- **WHEN** graphics calibration reduces the 3D scene resolution
+- **THEN** only the scene render texture shrinks
+- **AND** HUD text, widget bounds, pointer coordinates and world-label projections retain their logical window coordinates
+
+#### Scenario: Search remains usable after a service failure
+- **GIVEN** the player has entered an address in a Bevy field
+- **WHEN** the address service is pending and then fails
+- **THEN** the interface retains the query and control positions, explains the failure and permits retry
+- **AND** a hidden browser input may invoke the system keyboard without replacing the visible Bevy field
+
+#### Scenario: A rejected invitation remains editable
+- **GIVEN** the player types an invalid invitation into the Bevy field
+- **WHEN** joining is rejected
+- **THEN** the field retains the entered value and keyboard focus remains available for correction
+
+#### Scenario: Change neighbourhood from Settings
+- **GIVEN** the player has an active mesh and has opened Settings
+- **WHEN** they choose Change neighbourhood
+- **THEN** the settings panel closes and the neighbourhood controls become available
+- **AND** Return to your mesh restores the existing invitation, deliveries and local credit.
+
 ### Requirement: Native data survives restarts and package updates
 One persistence owner SHALL store versioned native progress transactionally in OS application-data locations. Assets SHALL load from the shipped package and writable cache/photos from OS writable locations. Save migration or import MUST preserve domain IDs, original fortune, cumulative spending, charity buildings and valid signed career receipts. Invalid imports MUST leave existing data intact. Device keys MUST NOT be copied implicitly.
 

@@ -13,7 +13,7 @@ cd web && npm ci --install-links && cd ..
 ./scripts/build-web.sh
 ```
 
-The wasm-bindgen CLI version must match the version in Cargo.lock. The local MetaMesh repository is expected at `../mesh`; its packages export TypeScript directly and its checked-in `mesh-transport/transport-wasm/` runtime must be present. CI pins MetaMesh to the revision in `.github/workflows/ci.yml` so a clean checkout can reproduce the same dependencies.
+The wasm-bindgen CLI version must match the version in Cargo.lock. Set `CARGO_TARGET_DIR` to keep Rust build artifacts outside the checkout; the web build uses the same directory when generating its WASM bindings. The local MetaMesh repository is expected at `../mesh`; its packages export TypeScript directly and its checked-in `mesh-transport/transport-wasm/` runtime must be present. CI pins MetaMesh to the revision in `.github/workflows/ci.yml` so a clean checkout can reproduce the same dependencies.
 
 For development, run Wrangler from `web/` on port 8788 and `npm run dev` in another terminal (port 4188). For a production preview, serve `web/dist` through the Worker so large precompressed WASM modules and map requests are handled correctly.
 
@@ -37,7 +37,7 @@ The host fills one shared route of up to 12 unique delivery stops as neighbourin
 
 The ground uses Mapzen elevation around the ride origin. The game uses one set of heights for physics, roads, buildings and scenery. This is terrain relief at the scale of a neighbourhood, with a smooth return to flat ground beyond the sampled area. The game starts with flat ground if the elevation tiles are unavailable.
 
-The browser HUD shows the shift clock, KPI, current delivery, an expandable route and context controls. A compact arrow points to the current objective relative to the player’s heading. The game measures frame times after the street loads and adjusts scene resolution. It remembers the result for a similar viewport. The HUD stays sharp at every scene resolution. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
+The Bevy HUD shows the shift clock, KPI, current delivery, a route panel and context controls. A compact arrow points to the current objective relative to the player’s heading. The game measures frame times after the street loads and adjusts the separate 3D render texture. It remembers the result for a similar viewport. Bevy UI uses the full window resolution at every scene quality. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
 
 The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Resident names stay consistent within a ride. Residents have different away slots and response delays. Dispatcher SMS clues open optional neighbor handover challenges. Ring the marked neighbor, choose what to say and hand over the parcel for a bonus. The bonus starts falling 45 seconds after the first ring. A dog can take a dropped challenge parcel back to the correct door. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
 
@@ -61,9 +61,9 @@ Feed the Poor. Credits and licenses are in `assets/audio/job-audio-credits.txt`.
 
 NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
 
-The browser minimap uses the loaded street geometry and actual actor positions. Other players appear in a roster with matching numbered colour markers around the map circumference. The larger orange diamond points toward the selected delivery. Remote actors interpolate buffered network poses, briefly predict through jitter, and disappear after ten seconds without a new pose. Loading indicators cover the public directory, map tiles and game startup; failed map tiles can be retried. Player careers live in the application's IndexedDB store and replicate over the game mesh as signed, application-scoped per-device records. Peers verify Identity certificate chains and signatures before merging monotonic counters. Profiles combine the same person's devices without double-counting replays; new face seeds and guest-to-Identity career attachment persist across reloads. The portrait is procedural. This is peer replication through joined games: independent cross-device discovery through the Identity resource catalogue is not wired yet, and there is no always-online keeper. Clients retain received replicas locally.
+The Bevy minimap uses the loaded street geometry and actual actor positions. Other players appear in a roster with matching numbered colour markers around the map circumference. The larger orange diamond points toward the selected delivery. Remote actors interpolate buffered network poses, briefly predict through jitter, and disappear after ten seconds without a new pose. Loading indicators cover the public directory, map tiles and game startup; failed map tiles can be retried. Player careers live in the application's IndexedDB store and replicate over the game mesh as signed, application-scoped per-device records. Peers verify Identity certificate chains and signatures before merging monotonic counters. Profiles combine the same person's devices without double-counting replays; new face seeds and guest-to-Identity career attachment persist across reloads. The portrait is procedural. This is peer replication through joined games: independent cross-device discovery through the Identity resource catalogue is not wired yet, and there is no always-online keeper. Clients retain received replicas locally.
 
-The browser lobby renders OpenFreeMap's Fiord vector basemap and falls back to OpenStreetMap raster tiles if the vector map is unavailable. Both use the same neighbourhood picker. The landing image is captured in-engine at Chamissoplatz, Berlin. To reproduce it, open `?lat=52.4895&lon=13.3908&press-shot` and choose **Play**. The scene uses the game's actor, dog, car and playground geometry.
+The same Bevy interface renders the lobby, map, shift HUD, delivery dialogs and settings on every platform. The neighbourhood picker uses OpenStreetMap raster tiles, address search and rounded geolocation. Browser code supplies network, identity, storage, audio and OS capabilities without rendering game widgets. The landing image is captured in-engine at Chamissoplatz, Berlin. To reproduce it, open `?lat=52.4895&lon=13.3908&press-shot` and choose **Play**. The scene uses the game's actor, dog, car and playground geometry.
 
 ## How to play
 
@@ -81,7 +81,7 @@ The header has no home navigation. During a shift, Identity sign-in is hidden an
 - Dog: E bite/scratch, Space jump, G mark a van, B bark.
 - F: camera; Space / left mouse: take a delivery photo. In the browser, **Download photo** saves the latest PNG.
 - M: map and ride invitations; Esc: release cursor; click the game to resume mouse look.
-- F1: browser settings; hold F1 for controls in the native build.
+- F1: settings and controls on every platform.
 
 ## Checks
 

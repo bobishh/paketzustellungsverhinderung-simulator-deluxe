@@ -9,10 +9,13 @@ const PENDING = 'paket.identity.pending';
 const EVIDENCE = 'paket.identity.approval';
 type Pending = { request: DeviceAuthorizationRequest; returnPath: string };
 export let profile: LocalProfile;
+export let identityName='Courier';
+export let identityLinked=false;
 export let certificates: DeviceAuthorizationApproval['certificates'] = [];
 
 export async function restoreIdentity(callbackHash: string | null): Promise<string | null> {
   profile = await store.bootstrap('Courier');
+  identityName=profile.identity.displayName;identityLinked=false;
   if (callbackHash !== null) {
     const raw = sessionStorage.getItem(PENDING);
     sessionStorage.removeItem(PENDING);
@@ -57,9 +60,8 @@ export async function restoreIdentity(callbackHash: string | null): Promise<stri
 }
 function renderIdentity(approval: DeviceAuthorizationApproval) {
   const signedName = approval.profileState && identityProfileValue(approval.profileState, 'name').values[0];
-  document.querySelector('#identity-name')!.textContent = typeof signedName === 'string' ? signedName : approval.identity.displayName;
-  document.querySelector('#signin')!.textContent = 'Switch Identity';
-  document.querySelector('#profile-identity-note')!.textContent = 'This career is linked to your Identity profile.';
+  identityName=typeof signedName==='string'?signedName:approval.identity.displayName;identityLinked=true;
+  if(typeof globalThis.dispatchEvent==='function')globalThis.dispatchEvent(new CustomEvent('paket-identity',{detail:{name:identityName,linked:true}}));
 }
 export async function signIn() {
   const current = await store.bootstrap('Courier');

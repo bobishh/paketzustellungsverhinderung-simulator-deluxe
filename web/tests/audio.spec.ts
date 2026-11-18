@@ -1,5 +1,7 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {test,expect} from '@playwright/test';
 
+test.beforeEach(async({page})=>{await observeGame(page);});
 test('a real shift plays recorded footsteps and a throttle-driven engine, and settings silence it',async({page})=>{
  test.skip(!process.env.PAKET_REAL_GAME,'Requires the real WebGPU game.');
  test.setTimeout(120_000);
@@ -23,24 +25,26 @@ test('a real shift plays recorded footsteps and a throttle-driven engine, and se
   {type:'way',id:722,tags:{building:'yes','addr:housenumber':'1','addr:street':'Audio Street'},geometry:[point(-8,12),point(8,12),point(8,25),point(-8,25),point(-8,12)]},
  ]}}));
  await page.goto('/?lat=52.4895&lon=13.3908');
- await page.getByRole('button',{name:'Play',exact:true}).click();
- await expect(page.locator('#world-loading')).toBeHidden({timeout:45_000});
+ await waitRide(page);
  await expect.poll(()=>page.evaluate(()=>(globalThis as any).streetAudio.length),{timeout:45_000}).toBeGreaterThan(0);
+ // A direct ride URL has no preceding Play click. Unlock audio with real input.
+ await page.locator('#game').focus();
+ await page.keyboard.press('Shift',{delay:80});
  await expect.poll(()=>page.evaluate(()=>(globalThis as any).audioStarts.filter((source:any)=>source.loop).length)).toBeGreaterThan(0);
  await page.locator('#game').focus();
  await page.keyboard.press('w',{delay:500});
  await expect.poll(()=>page.evaluate(()=>(globalThis as any).audioStarts.filter((source:any)=>!source.loop).length)).toBeGreaterThan(0);
  await page.keyboard.press('v');
- await expect(page.locator('#speedometer')).toBeVisible();
+ await expect.poll(async()=>(await hud(page)).form).toBe('van');
  await page.keyboard.down('w');
  try{
   await expect.poll(()=>page.evaluate(()=>(globalThis as any).streetAudio.some((state:any)=>state.form==='van'&&state.throttle===1&&state.speed>5))).toBeTruthy();
   await expect.poll(()=>page.evaluate(()=>(globalThis as any).audioRates.some((value:number)=>value>1.05))).toBeTruthy();
  }finally{await page.keyboard.up('w');}
- await page.locator('#settings').click();
- await page.locator('#game-sound').uncheck();
+ await clickUi(page,'Settings');
+ await clickUi(page,'Sound: on');
  const muted=await page.evaluate(()=>(globalThis as any).audioStarts.length);
- await page.locator('#resume-game').click();
+ await clickUi(page,'Close · Esc');
  await page.keyboard.press('w',{delay:600});
  expect(await page.evaluate(()=>(globalThis as any).audioStarts.length)).toBe(muted);
  expect(await page.evaluate(()=>localStorage.getItem('paket.sound'))).toBe('off');

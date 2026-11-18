@@ -317,7 +317,7 @@ pub(crate) fn service_update(
     ride: Res<Ride>,
     mut shift: ResMut<crate::shift::Shift>,
     mut jobs: ResMut<Jobs>,
-    actions: Query<&Action, Added<bevy::ui::Pressed>>,
+    actions: Query<(Entity, &Action), With<crate::game_ui::Activated>>,
     player: Query<(Entity, &Player, &Transform)>,
     buildings: Query<&BuildingLink>,
     residents: Query<(Entity, &Resident, &Transform)>,
@@ -326,6 +326,11 @@ pub(crate) fn service_update(
     street: Res<crate::StreetMaterials>,
     spatial: SpatialQuery,
 ) {
+    for (entity, _) in &actions {
+        commands
+            .entity(entity)
+            .remove::<crate::game_ui::Activated>();
+    }
     let open_requested = std::mem::take(&mut jobs.service.open_requested);
     let Ok((actor_id, player, actor)) = player.single() else {
         return;
@@ -347,7 +352,7 @@ pub(crate) fn service_update(
         .service
         .browser_action
         .take()
-        .or_else(|| actions.iter().next().copied());
+        .or_else(|| actions.iter().next().map(|(_, action)| *action));
     if keys.just_pressed(KeyCode::Escape) {
         action = Some(Action::Close);
     }
@@ -710,29 +715,32 @@ fn text(value: impl Into<String>, size: f32) -> impl Bundle {
     )
 }
 fn button(parent: &mut ChildSpawnerCommands, action: Action, title: String, active: bool) {
-    parent.spawn((
-        Button,
-        Hovered::default(),
-        action,
-        Node {
-            padding: UiRect::all(Val::Px(12.)),
-            margin: UiRect::bottom(Val::Px(5.)),
-            ..default()
-        },
-        BackgroundColor(if active {
-            Color::srgb(0.24, 0.42, 0.31)
-        } else {
-            Color::srgb(0.19, 0.24, 0.24)
-        }),
-        children![text(title, 17.)],
-    ));
+    parent
+        .spawn((
+            Button,
+            Hovered::default(),
+            action,
+            AccessibleLabel::new(title.clone()),
+            Node {
+                padding: UiRect::all(Val::Px(12.)),
+                margin: UiRect::bottom(Val::Px(5.)),
+                ..default()
+            },
+            BackgroundColor(if active {
+                Color::srgb(0.24, 0.42, 0.31)
+            } else {
+                Color::srgb(0.19, 0.24, 0.24)
+            }),
+            children![text(title, 17.)],
+        ))
+        .observe(crate::game_ui::activate);
 }
 pub(crate) fn service_ui(
     mut commands: Commands,
     jobs: Res<Jobs>,
     shift: Res<crate::shift::Shift>,
     time: Res<Time<Virtual>>,
-    panels: Query<Entity, With<Panel>>,
+    mut panels: Query<(Entity, &mut Visibility), With<Panel>>,
     mut timers: Query<&mut Text, With<TimerLabel>>,
     mut last: Local<Option<u64>>,
     player: Query<&Transform, With<Player>>,
@@ -741,26 +749,35 @@ pub(crate) fn service_ui(
     mut markers: Query<(&Marker, &mut Node, &mut Text), (Without<TimerLabel>, Without<Panel>)>,
 ) {
     let now = time.elapsed_secs();
+    for (_, mut visibility) in &mut panels {
+        *visibility = if jobs.menu_open {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+    }
     if *last != Some(jobs.service.revision) {
         *last = Some(jobs.service.revision);
-        for root in &panels {
+        for (root, _) in &panels {
             commands.entity(root).despawn();
         }
-        if !cfg!(target_arch = "wasm32")
-            && let Some(modal) = &jobs.service.modal
-        {
+        if let Some(modal) = &jobs.service.modal {
             commands
                 .spawn((
                     Panel,
+                    crate::game_ui::Layer::Intercom,
+                    bevy::ui_widgets::ScrollArea,
                     DespawnOnExit(Mode::Ride),
-                    ZIndex(50),
+                    GlobalZIndex(60),
                     Node {
                         position_type: PositionType::Absolute,
                         left: Val::Percent(50.),
                         top: Val::Percent(50.),
                         width: Val::Px(440.),
                         max_width: Val::Percent(94.),
-                        padding: UiRect::all(Val::Px(24.)),
+                        padding: UiRect::all(Val::Px(18.)),
+                        max_height: Val::Percent(86.),
+                        overflow: Overflow::scroll_y(),
                         flex_direction: FlexDirection::Column,
                         ..default()
                     },
@@ -790,14 +807,18 @@ pub(crate) fn service_ui(
                                 button(
                                     p,
                                     Action::Bell(i),
-                                    format!(
-                                        "{}  {name}",
-                                        if pressed & (1 << i) != 0 {
-                                            "●"
-                                        } else {
-                                            "○"
-                                        }
-                                    ),
+                                    if i == 0 {
+                                        format!("Ring recipient · {name}")
+                                    } else {
+                                        format!(
+                                            "{}  {name}",
+                                            if pressed & (1 << i) != 0 {
+                                                "●"
+                                            } else {
+                                                "○"
+                                            }
+                                        )
+                                    },
                                     pressed & (1 << i) != 0,
                                 );
                             }
@@ -844,9 +865,7 @@ pub(crate) fn service_ui(
         }
     }
     for mut label in &mut timers {
-        if !cfg!(target_arch = "wasm32")
-            && let Some(modal) = &jobs.service.modal
-        {
+        if let Some(modal) = &jobs.service.modal {
             label.0 = match &modal.kind {
                 ModalKind::Dialogue { expires, .. } => format!(
                     "Answer in {:.1}s · mangled name +15 KPI",
@@ -992,7 +1011,8 @@ mod tests {
                         .unwrap()
                         .0
                 };
-                app.world_mut().entity_mut(button).insert(bevy::ui::Pressed);
+                app.world_mut()
+                    .trigger(bevy::ui_widgets::Activate { entity: button });
                 app.update();
             }
             assert!(
@@ -1011,7 +1031,8 @@ mod tests {
                     .unwrap()
                     .0
             };
-            app.world_mut().entity_mut(close).insert(bevy::ui::Pressed);
+            app.world_mut()
+                .trigger(bevy::ui_widgets::Activate { entity: close });
             app.update();
         }
         assert!(app.world().resource::<crate::shift::Shift>().locked);

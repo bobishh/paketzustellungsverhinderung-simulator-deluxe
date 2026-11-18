@@ -1,18 +1,15 @@
 import {StepDistance,streetLoops,type Effect,type SamplePlayer,type StreetState} from './street-sound';
 
-const toggle=document.querySelector<HTMLInputElement>('#game-sound')!;
-try{toggle.checked=localStorage.getItem('paket.sound')!=='off';}catch{}
+let enabled=true,menu=false;
+try{enabled=localStorage.getItem('paket.sound')!=='off';}catch{}
 let player:SamplePlayer|undefined,ride=false,state:StreetState|undefined;
 const steps=new StepDistance();
 function refresh(effects:Effect[]=[]){
- const active=ride&&Boolean(state?.active)&&!document.hidden&&!document.querySelector('dialog[open]');
- player?.sync({active,volume:toggle.checked?50:0,effects,loops:active&&state?streetLoops(state):[]});
+ const active=ride&&Boolean(state?.active)&&!document.hidden&&!menu;
+ player?.sync({active,volume:enabled?50:0,effects,loops:active&&state?streetLoops(state):[]});
  if(!active)steps.reset();
 }
-toggle.addEventListener('change',()=>{
- try{localStorage.setItem('paket.sound',toggle.checked?'on':'off');}catch{}
- refresh();
-});
+window.addEventListener('paket-sound-setting',((event:CustomEvent<boolean>)=>{enabled=event.detail;refresh();})as EventListener);
 const audioModule='/assets/job-sample-audio.js';
 void import(/* @vite-ignore */audioModule).then(module=>{
  player=module.createSampleAudio({target:document});refresh();
@@ -31,7 +28,8 @@ window.addEventListener('game-sound',event=>refresh([(event as CustomEvent<strin
 window.addEventListener('paket-bite',()=>refresh(['bite']));
 let routes=new Map<number,string>(),photo=false;
 window.addEventListener('paket-hud',event=>{
- const hud=(event as CustomEvent<{routes:{index:number;state:string}[];photoReady:boolean}>).detail;
+ const hud=(event as CustomEvent<{routes:{index:number;state:string}[];photoReady:boolean;menu?:boolean}>).detail;
+ menu=Boolean(hud.menu);
  const effects:Effect[]=[];
  for(const route of hud.routes){
   const previous=routes.get(route.index);
@@ -47,4 +45,3 @@ window.addEventListener('paket-hud',event=>{
  refresh(effects);
 });
 document.addEventListener('visibilitychange',()=>refresh());
-new MutationObserver(()=>refresh()).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});

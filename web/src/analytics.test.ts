@@ -83,13 +83,10 @@ describe('game analytics privacy and transitions', () => {
 
   it('tracks UI actions without text, entered addresses or invite links', () => {
     const f = fixture(), stop = f.init();
-    const dispatch = (type: string, target: unknown) => {
-      const event = new Event(type); Object.defineProperty(event, 'target', { value: target }); f.doc.dispatchEvent(event);
-    };
-    const profile = { id: 'player-profile', dataset: {}, matches: () => false, textContent: 'PRIVATE_PLAYER' };
-    dispatch('click', { closest: () => profile }); dispatch('click', { closest: () => profile });
-    dispatch('submit', { id: 'address-form', elements: [{ value: 'PRIVATE_ADDRESS' }] });
-    dispatch('submit', { id: 'join-form', elements: [{ value: 'PRIVATE_INVITE' }] });
+    f.emit('paket-ui-action',{action:'ui-panel',panel:'profile',name:'PRIVATE_PLAYER'});
+    f.emit('paket-ui-action',{action:'ui-panel',panel:'profile',name:'PRIVATE_PLAYER'});
+    f.emit('paket-ui-action',{action:'service',kind:'search',query:'PRIVATE_ADDRESS'});
+    f.emit('paket-ui-action',{action:'join',link:'PRIVATE_INVITE'});
     stop();
     expect(f.telemetry().map(e => e.event)).toEqual(['game.profile.opened', 'game.location.search_requested', 'game.shift.join_requested']);
     expect(JSON.stringify(f.requests())).not.toContain('PRIVATE_');

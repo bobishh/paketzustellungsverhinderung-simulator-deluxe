@@ -30,7 +30,7 @@ Do not redesign the public landing pages, change the cast or add monetization in
 | --- | --- |
 | Game state | Existing Rust game rules own money, deliveries, encounters and progression. UI never owns a second economy or delivery ledger. |
 | Player input | One Rust action resource carries analog movement/look and contextual actions into existing rules. |
-| Game UI | Bevy UI presents state and submits typed actions on native desktop and phones. Existing browser UI can remain another adapter. |
+| Game UI | The same Bevy UI presents state and submits game actions on native desktop, phones and WASM. Browser code supplies platform capabilities rather than a second renderer. |
 | Persistence | One storage module owns versioned snapshots, atomic writes, migrations and restore validation. |
 | Platform services | A narrow adapter provides paths, network access, credentials, clipboard/share and lifecycle notifications. |
 
@@ -42,7 +42,9 @@ Use Bevy UI for native launch/location selection, role/character selection, load
 
 Read the current browser command/state contracts and replace stringly native no-ops with typed Rust actions and state projections. Keep WASM serialization at the browser boundary. Define actions alongside the owning game behavior, not in a new central registry of every subsystem. Both front ends must exercise the same Rust transition.
 
-Keep the existing browser interface until replacements are verified. Native Bevy widgets can later compile to WASM, but replacing the web HUD or landing page is not a prerequisite. OS text entry, Unicode names/addresses, scaling, safe areas and focus handling are required; render UI at display resolution independently of scene resolution.
+Compile the shared Bevy widgets to WASM in both games. Keep browser HTML limited to the canvas and technical bootstrap/compatibility failures; retain a hidden OS-keyboard input when required by mobile browser activation rules. Preserve existing generated artwork, game actions, IndexedDB saves and multiplayer authority. Remove obsolete DOM widget renderers after their real-game acceptance flows have been adapted. OS text entry, Unicode names/addresses, scaling, safe areas and focus handling remain required.
+
+Render the street through a separate adaptive texture and composite it beneath the full-resolution UI camera. Camera rays and world-label projections use logical window coordinates at every scene scale. Publish a bounded read-only projection of actual laid-out Bevy widgets for browser pointer-lock routing and isolated acceptance tests; it must not become a second UI or game-state owner.
 
 ### 3. Use native persistence and explicit data movement
 

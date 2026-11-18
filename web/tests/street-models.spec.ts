@@ -1,5 +1,7 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {expect, test} from '@playwright/test';
 
+test.beforeEach(async({page})=>{await observeGame(page);});
 test('a real shift loads the Quaternius pedestrians and traffic models', async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU build.');
   const models = new Set<string>();
@@ -14,9 +16,8 @@ test('a real shift loads the Quaternius pedestrians and traffic models', async (
     }
   });
   await page.goto('/?lat=52.4895&lon=13.3908');
-  await page.getByRole('button', {name: 'Play', exact: true}).click();
-  await expect(page.locator('#start')).toBeHidden({timeout: 30_000});
-  await expect(page.locator('#route-direction')).toBeVisible({timeout: 45_000});
+  await waitRide(page);
+  await expect.poll(async()=>(await hud(page)).navigation).toBeTruthy();
   await expect.poll(() => [...models].sort()).toEqual([
     'car-compact.glb', 'car-sedan.glb', 'car-sport.glb', 'car-suv.glb', 'car-taxi.glb',
     'courier.glb', 'delivery-van.glb', 'man-casual.glb', 'man-hoodie.glb',
@@ -32,10 +33,10 @@ test('a real shift loads the Quaternius pedestrians and traffic models', async (
 
   await page.locator('#game').screenshot({path: test.info().outputPath('street-models.png')});
   await page.keyboard.press('v');
-  await expect(page.locator('#speedometer')).toBeVisible();
+  await expect.poll(async()=>(await hud(page)).form).toBe('van');
   await page.keyboard.down('w');
   try {
-    await expect.poll(async () => Number(await page.locator('#speed-value').textContent())).toBeGreaterThan(8);
+    await expect.poll(async () => Number((await hud(page)).speed)).toBeGreaterThan(8);
   } finally {
     await page.keyboard.up('w');
   }
@@ -52,11 +53,10 @@ test('the courier walks with both hands on the parcel and both soles clear of th
     });
   });
   await page.goto('/?lat=52.4895&lon=13.3908&inspect-courier');
-  await page.getByRole('button', {name: 'Play', exact: true}).click();
-  await expect(page.locator('#hud-action')).toContainText('Collect this parcel', {timeout: 45_000});
+  await expect.poll(async()=>(await hud(page)).prompt,{timeout:45_000}).toContain('Collect this parcel');
   const samples = () => page.evaluate(() => (window as unknown as Window & {courierSamples: Sample[]}).courierSamples);
   await page.keyboard.press('e');
-  await expect(page.locator('#stop-state')).toHaveText('In your hands');
+  await expect.poll(async()=>(await selected(page))?.state).toBe('carrying');
   await expect.poll(async () => (await samples()).some(sample => sample.carrying)).toBeTruthy();
 
   await page.keyboard.down('w');
@@ -115,9 +115,8 @@ test('scene quality keeps its resolution when a smaller canvas does not improve 
     localStorage.setItem('paket.render-quality.v2', JSON.stringify({pixels: innerWidth * (innerHeight - 66), tier: 7}));
   });
   await page.goto('/?lat=52.4895&lon=13.3908');
-  await page.getByRole('button', {name: 'Play', exact: true}).click();
-  await expect(page.locator('#world-loading')).toBeHidden({timeout: 45_000});
-  await expect(page.locator('#route-direction')).toBeVisible({timeout: 45_000});
+  await waitRide(page);
+  await expect.poll(async()=>(await hud(page)).navigation).toBeTruthy();
   const canvas = page.locator('#game');
   const initial = Number(await canvas.getAttribute('data-render-scale'));
   expect(initial).toBeGreaterThan(0.2);

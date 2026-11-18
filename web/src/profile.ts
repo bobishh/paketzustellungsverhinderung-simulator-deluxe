@@ -1,5 +1,5 @@
 import { signEnvelope, verifyEnvelope, verifyDeviceCertificateChain } from '@meta-uber/mesh-identity';
-import { profile, certificates } from './identity';
+import {profile,certificates,identityName,identityLinked} from './identity';
 const DOMAIN='PAKET-PROFILE/1';
 type Stats={workMs:number;shifts:number;delivered:number;photos:number;score:number;rings:number;markedVans:number;special:number};
 type Career={kind:'paket-career';application:string;personId:string;deviceId:string;version:number;joinedAt:number;face:number;faceUpdated:number;stats:Stats};
@@ -43,22 +43,18 @@ function career(){
   const face=own.slice().sort((a,b)=>b.faceUpdated-a.faceUpdated||a.deviceId.localeCompare(b.deviceId))[0]?.face??0;
   return{stats,face,joinedAt:Math.min(...own.map(p=>p.joinedAt))};
 }
-function portrait(seed:number){
-  const skin=['#d29d78','#b77953','#865439','#e7b492'][seed%4],hair=['#29241d','#48362c','#aa7950','#84765e'][(seed>>>3)%4];
-  return `<svg viewBox="0 0 120 140" width="120" height="140" role="img" aria-label="Generated courier portrait"><path fill="#ec853e" d="M12 140v-25q3-23 48-23t48 23v25"/><path fill="${skin}" d="M48 87h24v24H48z"/><rect x="30" y="25" width="60" height="72" rx="24" fill="${skin}"/><path fill="${hair}" d="M28 49V27q0-19 31-19t33 19v22l-12-23-42 8z"/><path fill="#282c25" d="M37 51h16v4H37zm30 0h16v4H67z"/><circle cx="46" cy="63" r="3" fill="#263b37"/><circle cx="75" cy="63" r="3" fill="#263b37"/><path d="M58 63v12h7m-17 9q13 7 25-1" fill="none" stroke="#835437" stroke-width="3"/><path fill="#19382b" d="M22 126h76v14H22z"/>${seed%3===0?'<g fill="none" stroke="#342b24" stroke-width="3"><circle cx="45" cy="63" r="12"/><circle cx="76" cy="63" r="12"/><path d="M57 62h7"/></g>':''}</svg>`;
+export function emitProfile(){
+  if(!initialized)return;
+  const c=career();
+  globalThis.dispatchEvent(new CustomEvent('paket-profile',{detail:{...c,name:identityName||'Courier',linked:identityLinked}}));
 }
-function render(){
-  if(!initialized||typeof document==='undefined')return;const c=career(),s=c.stats,days=Math.max(1,Math.floor((Date.now()-c.joinedAt)/86400000)+1);
-  const content=document.querySelector('#profile-content');if(!content)return;
-  content.innerHTML=`<div class="profile-top">${portrait(c.face)}<div><strong class="career-name"></strong><p>Employed for ${days} ${days===1?'day':'days'}</p><button id="new-face">New face ↻</button></div></div><div class="profile-stats"><div><b>${s.delivered}</b><small>Parcels completed</small></div><div><b>${s.score}</b><small>Career KPI</small></div><div><b>${Math.floor(s.workMs/60000)}m</b><small>Time on the job</small></div></div>`;
-  content.querySelector('.career-name')!.textContent=document.querySelector('#identity-name')!.textContent??'Courier';
-  for(const [title,done]of [['First day on the job',s.shifts>0],['Ring leader · 6 doorbells',s.rings>=6],['Photographic evidence',s.photos>0],['Territory claimed',s.markedVans>0],['Delivery of the day',s.special>0],['1000 KPI club',s.score>=1000]]as const){const el=document.createElement('div');el.className=`achievement${done?'':' locked'}`;el.textContent=`${done?'★':'○'}  ${title}`;content.append(el);}
-  content.querySelector('#new-face')!.addEventListener('click',()=>{local.face=crypto.getRandomValues(new Uint32Array(1))[0];local.faceUpdated=Date.now();dirty=true;render();void flush().catch(e=>paketNotify(e.message));});
+export function newFace(){
+  if(!initialized)return;
+  local.face=crypto.getRandomValues(new Uint32Array(1))[0];local.faceUpdated=Date.now();dirty=true;emitProfile();
+  void flush().catch(e=>paketNotify(e.message));
 }
+function render(){emitProfile();}
 if(typeof document!=='undefined'){
-  const dialog=document.querySelector<HTMLDialogElement>('#profile-dialog');
-  document.querySelector('#player-profile')?.addEventListener('click',()=>{if(document.pointerLockElement)void document.exitPointerLock();if(!initialized){paketNotify('Profile is still loading.');return;}render();dialog?.showModal();});
-  dialog?.querySelector('.dialog-close')?.addEventListener('click',()=>dialog.close());
   window.addEventListener('paket-mode',((e:CustomEvent<string>)=>{playing=e.detail==='ride';previous=zero();lastTick=Date.now();if(playing&&initialized){local.stats.shifts++;dirty=true;}})as EventListener);
   window.addEventListener('paket-progress',((e:CustomEvent<Stats&{ended:boolean}>)=>{
     if(!initialized||!playing)return;const now=Date.now(),p=e.detail;

@@ -1,45 +1,20 @@
-import {expect, test} from '@playwright/test';
-
-if (process.env.PAKET_POINTER_LOCK) test.use({headless:false});
-
-test('a rejected mouse capture stays visible and the next click can capture it', async ({page}) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'gpu', {value: {requestAdapter: async () => ({})}});
-    let locked: Element|null = null;
-    Object.defineProperty(document, 'pointerLockElement', {get: () => locked});
-    let reject = true;
-    Object.defineProperty(Element.prototype, 'requestPointerLock', {value: function (this: Element) {
-      queueMicrotask(() => {
-        if (reject) {
-          reject = false;
-          document.dispatchEvent(new Event('pointerlockerror'));
-        } else {
-          locked = this;
-          document.dispatchEvent(new Event('pointerlockchange'));
-        }
-      });
-    }});
-  });
-  await page.route('**/game/paket_game.js', route => route.fulfill({
-    contentType: 'text/javascript',
-    body: `export default async () => {
-      dispatchEvent(new CustomEvent('paket-mode', {detail:'ride'}));
-      dispatchEvent(new CustomEvent('paket-hud', {detail:{ready:true}}));
-    };`,
-  }));
-  await page.goto('/');
-  await page.getByRole('button', {name:'Play', exact:true}).click();
-  const capture = page.getByRole('button', {name:'Capture mouse'});
-  const locked = () => page.evaluate(() => document.pointerLockElement?.id ?? null);
-  await capture.click({timeout:5000});
-  await expect(page.locator('#notice')).toContainText('Mouse capture was blocked');
-  expect(await locked()).toBeNull();
-  await expect(capture).toBeEnabled();
-  await capture.click();
-  await expect.poll(locked).toBe('game');
-  await expect(capture).toBeHidden();
+import {expect,test} from '@playwright/test';
+import {observeGame,clickUi,fact,waitRide} from './bevy-ui';
+if(process.env.PAKET_POINTER_LOCK)test.use({headless:false});
+test.beforeEach(async({page})=>{await observeGame(page);});
+test('a rejected capture stays available and the next trusted Bevy button click captures',async({page})=>{
+ test.skip(!process.env.PAKET_REAL_GAME,'Requires the real game.');
+ await page.addInitScript(()=>{
+  let locked:Element|null=null,reject=true;
+  Object.defineProperty(document,'pointerLockElement',{get:()=>locked});
+  Object.defineProperty(Element.prototype,'requestPointerLock',{value:function(this:Element){queueMicrotask(()=>{if(reject){reject=false;document.dispatchEvent(new Event('pointerlockerror'));}else{locked=this;document.dispatchEvent(new Event('pointerlockchange'));}});}});
+ });
+ await page.goto('/?lat=52.4895&lon=13.3908');await waitRide(page);
+ const locked=()=>page.evaluate(()=>document.pointerLockElement?.id??null);
+ await clickUi(page,'Capture mouse');
+ await expect.poll(()=>fact(page,'paket-notice')).toContain('Mouse capture was blocked');expect(await locked()).toBeNull();
+ await clickUi(page,'Capture mouse');await expect.poll(locked).toBe('game');
 });
-
 test.describe('desktop pointer capture', () => {
   test.skip(!process.env.PAKET_REAL_GAME || !process.env.PAKET_POINTER_LOCK, 'Requires WebGPU and a desktop browser display.');
 
@@ -52,8 +27,7 @@ test.describe('desktop pointer capture', () => {
       });
     });
     await page.goto('/?lat=52.4895&lon=13.3908');
-    await page.getByRole('button', {name:'Play', exact:true}).click();
-    await expect(page.locator('#route-direction')).toBeVisible({timeout:45_000});
+    await waitRide(page);
     await page.bringToFront();
     await page.keyboard.press('Shift');
     const canvas = page.locator('#game');
@@ -66,14 +40,14 @@ test.describe('desktop pointer capture', () => {
     await expect.poll(async () => Math.abs(Math.sin((await heading()) - initial))).toBeGreaterThan(0.15);
     await expect.poll(locked).toBe('game');
     await page.keyboard.press('F1');
-    await expect(page.locator('#settings-dialog')).toBeVisible();
+    await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.panel).toBe('settings');
     await expect.poll(locked).toBeNull();
-    await page.getByRole('button', {name:/Back to work/}).click();
+    await clickUi(page,'Close · Esc');
     await canvas.click({position:{x:620,y:320}});
     await expect.poll(locked).toBe('game');
     await page.evaluate(() => document.exitPointerLock());
     await expect.poll(locked).toBeNull();
-    await expect(page.getByRole('button', {name:'Capture mouse'})).toBeVisible();
+    await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.regions.some((r:any)=>r.label==='Capture mouse')).toBe(true);
     await canvas.click({position:{x:620,y:320}});
     await expect.poll(locked).toBe('game');
   });

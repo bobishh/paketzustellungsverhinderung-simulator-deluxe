@@ -1,3 +1,4 @@
+import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {test,expect} from '@playwright/test';
 
 test('Given a real mesh peer, the WASM game interpolates sparse poses and expires disconnected players',async({browser})=>{
@@ -5,6 +6,7 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
   test.setTimeout(180_000);
   const hostContext=await browser.newContext(),guestContext=await browser.newContext({viewport:{width:640,height:480}});
   const host=await hostContext.newPage(),guest=await guestContext.newPage();
+  await observeGame(guest);
   const errors:string[]=[];
   guest.on('pageerror',e=>{if(!e.message.includes('Using exceptions for control flow'))errors.push(e.message)});
   await guest.addInitScript(()=>{
@@ -38,24 +40,17 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
       };
       publish();w.poseTimer=setInterval(publish,300);return JSON.parse(session.invitation);
     });
-    const link=`http://127.0.0.1:8797/#join=${Buffer.from(JSON.stringify(invitation)).toString('base64url')}`;
-    await guest.goto(link);await guest.locator('#play').click();
-    await expect(guest.locator('#peer-list li')).toHaveCount(1,{timeout:90_000});
-    await expect(guest.locator('[data-peer-marker]')).toHaveCount(1);
-    await expect(guest.locator('#peer-list')).toContainText('Courier');
-    const color=await guest.locator('#peer-list li').getAttribute('data-color');
-    await expect(guest.locator('[data-peer-marker]')).toHaveAttribute('data-color',color!);
-    await expect(guest.locator('#world-loading')).toBeHidden({timeout:30_000});
-    await expect(guest.locator('a:visible')).toHaveCount(0);
-    await expect(guest.locator('#target-marker')).toBeVisible({timeout:30_000});
-    await expect(guest.locator('#route-total')).toHaveText('1 / 3');
-    await expect(guest.locator('#stop-address')).toHaveText('Mesh stop B');
-    await expect(guest.locator('#hud-score')).toHaveText('0');
-    await guest.locator('#route-toggle').click();
-    await expect(guest.locator('#route-list .route-stop').first()).toContainText('Handed over');
-    await guest.locator('#route-toggle').click();
-    await guest.locator('#share').click();await expect(guest.locator('#share-link')).toHaveValue(link);await guest.locator('#share-close').click();
-    await expect(guest.locator('#share-dialog')).toBeHidden();
+    const link=new URL('/#join='+Buffer.from(JSON.stringify(invitation)).toString('base64url'),host.url()).href;
+    await guest.goto(link);await waitRide(guest);
+    await expect.poll(async()=>(await fact(guest,'paket-radar'))?.peers?.length,{timeout:90_000}).toBe(1);
+    await expect.poll(async()=>(await fact(guest,'paket-ui-regions'))?.texts?.some((t:any)=>t.text.includes('Courier'))).toBe(true);
+    expect((await hud(guest)).delivered).toBe(1);
+    expect((await hud(guest)).routes).toHaveLength(3);
+    expect((await selected(guest)).address).toBe('Mesh stop B');expect((await hud(guest)).score).toBe(0);
+    await clickUi(guest,'Deliveries');await clickUi(guest,/1 · Mesh stop A · handed/);await clickUi(guest,/2 · Mesh stop B ·/);await clickUi(guest,'Close · Esc');
+    await clickUi(guest,'Share mesh');
+    await expect.poll(async()=>(await fact(guest,'paket-ui-regions'))?.texts?.some((t:any)=>t.text===link)).toBe(true);
+    await clickUi(guest,'Close · Esc');
     await guest.waitForFunction(()=>(globalThis as any).hudFrames>120,{},{timeout:60_000});
     await host.evaluate(()=>{(globalThis as any).walkAt=performance.now();});
     await guest.waitForTimeout(2500);
@@ -70,11 +65,30 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
     expect(samples.at(-1)!.p[0]-samples[0].p[0]).toBeGreaterThan(12);
     expect(Math.max(...regular.map(s=>s.dx))).toBeLessThan(1.8);
     expect(regular.filter(s=>s.dx<0.02).length/regular.length).toBeLessThan(0.1);
+    // Match the actual drawn roster and minimap, rather than a DOM reconstruction.
+    await expect.poll(async()=>{
+      const view=await fact(guest,'paket-ui-regions');
+      const peer=view?.markers?.find((mark:any)=>mark.kind==='peer');
+      return Boolean(peer&&view.markers.some((mark:any)=>mark.kind==='roster'&&mark.id===peer.id));
+    }).toBe(true);
+    const view=await fact(guest,'paket-ui-regions');
+    const peer=view.markers.find((mark:any)=>mark.kind==='peer');
+    const row=view.markers.find((mark:any)=>mark.kind==='roster'&&mark.id===peer.id);
+    const ring=view.markers.find((mark:any)=>mark.kind==='ring');
+    const target=view.markers.find((mark:any)=>mark.kind==='target');
+    expect(peer.color).toEqual(row.color);expect(peer.slot).toBe(row.slot);
+    const member=(await fact(guest,'paket-members')).find((member:any)=>member.id===peer.id);
+    expect(view.texts.some((item:any)=>item.text===`${peer.slot+1} · ${member.name}`)).toBe(true);
+    expect(view.texts.some((item:any)=>item.text===String(peer.slot+1))).toBe(true);
+    expect(ring).toBeDefined();
+    expect(Math.hypot(peer.x+peer.width/2-ring.x-ring.width/2,peer.y+peer.height/2-ring.y-ring.height/2)).toBeCloseTo(ring.width/2,0);
+    expect(target).toBeDefined();expect(target.width).toBeGreaterThan(peer.width);
+    expect(target.color).not.toEqual(peer.color);
     await guest.screenshot({path:test.info().outputPath('mesh-players.png')});
     await hostContext.close();
-    await expect(guest.locator('#peer-list li')).toHaveCount(0,{timeout:20_000});
-    await expect(guest.locator('[data-peer-marker]')).toHaveCount(0);
-    await guest.waitForTimeout(1500);await expect(guest.locator('#peer-list li')).toHaveCount(0);
+    await expect.poll(async()=>(await fact(guest,'paket-radar'))?.peers?.length,{timeout:20_000}).toBe(0);
+    await guest.waitForTimeout(1500);expect((await fact(guest,'paket-radar')).peers).toHaveLength(0);
+    await expect.poll(async()=>((await fact(guest,'paket-ui-regions'))?.markers??[]).filter((mark:any)=>mark.kind==='peer').length).toBe(0);
     expect(errors).toEqual([]);
   }finally{await guestContext.close();await hostContext.close();}
 });
@@ -103,28 +117,19 @@ test('a host can reopen the same mesh with the same invitation and completed sto
       ]});
       return room;
     });
-    const link='/#join='+Buffer.from(session.invitation).toString('base64url');
+    const link=new URL('/#join='+Buffer.from(session.invitation).toString('base64url'),host.url()).href;
     await host.close();
     const reopened=await hostContext.newPage();
-    await reopened.goto('/');
-    await reopened.locator('#play').click();
-    await expect(reopened.getByRole('button',{name:'Return to your mesh'})).toBeVisible();
-    await reopened.getByRole('button',{name:'Return to your mesh'}).click();
-    await expect(reopened.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
-    await expect(reopened.locator('#hud-score')).toHaveText('335');
-    await expect(reopened.locator('#route-direction')).toBeVisible();
-    await expect(reopened.locator('#stop-recipient')).toHaveText('Mila Weber');
-    await reopened.getByRole('button',{name:'Settings',exact:true}).click();
-    await reopened.getByRole('button',{name:'Change neighbourhood'}).click();
-    await reopened.getByRole('button',{name:'Return to your mesh'}).click();
-    await expect(reopened.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
-    await expect(reopened.locator('#hud-score')).toHaveText('335');
-    const guest=await guestContext.newPage();
-    await guest.goto(link);
-    await guest.locator('#play').click();
-    await expect(guest.locator('#route-list')).toBeHidden();
-    await expect(guest.locator('#route-total')).toHaveText('1 / 2',{timeout:80_000});
-    await expect(guest.locator('#stop-recipient')).toHaveText('Mila Weber');
-    await expect(guest.locator('#hud-score')).toHaveText('0');
+    await observeGame(reopened);await reopened.goto('/');
+    await clickUi(reopened,'Play');await clickUi(reopened,'Friends');await clickUi(reopened,'Return to your mesh');await waitRide(reopened);
+    await expect.poll(async()=>(await hud(reopened)).delivered,{timeout:80_000}).toBe(1);
+    expect((await hud(reopened)).routes).toHaveLength(2);expect((await hud(reopened)).score).toBe(335);
+    expect((await selected(reopened)).name).toBe('Mila Weber');
+    await clickUi(reopened,'Settings');await clickUi(reopened,'Change neighbourhood');
+    await clickUi(reopened,'Friends');await clickUi(reopened,'Return to your mesh');await waitRide(reopened);
+    expect((await hud(reopened)).delivered).toBe(1);expect((await hud(reopened)).score).toBe(335);
+    const guest=await guestContext.newPage();await observeGame(guest);await guest.goto(link);await waitRide(guest);
+    expect((await hud(guest)).delivered).toBe(1);expect((await hud(guest)).routes).toHaveLength(2);
+    expect((await selected(guest)).name).toBe('Mila Weber');expect((await hud(guest)).score).toBe(0);
   }finally{await guestContext.close();await hostContext.close();}
 });

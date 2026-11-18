@@ -1583,6 +1583,7 @@ pub(crate) fn courier(
                 #[cfg(target_arch = "wasm32")]
                 let saved = crate::platform::save_photo(&captured.image, index);
                 if saved {
+                    crate::game_ui::save_photo(&captured.image);
                     jobs.parcels[index].state = ParcelState::Filed(score);
                     if let Ok(mut player) = players.single_mut() {
                         player.photo = false;
@@ -1919,7 +1920,8 @@ mod tests {
                 .unwrap()
                 .0
         };
-        app.world_mut().entity_mut(button).insert(bevy::ui::Pressed);
+        app.world_mut()
+            .trigger(bevy::ui_widgets::Activate { entity: button });
         app.update();
         let close = {
             let world = app.world_mut();
@@ -1930,7 +1932,8 @@ mod tests {
                 .unwrap()
                 .0
         };
-        app.world_mut().entity_mut(close).insert(bevy::ui::Pressed);
+        app.world_mut()
+            .trigger(bevy::ui_widgets::Activate { entity: close });
         app.update();
         *app.world_mut().get_mut::<Transform>(actor).unwrap() = previous;
     }

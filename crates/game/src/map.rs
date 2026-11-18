@@ -29,16 +29,8 @@ use paket_session::{Discovery, SharedStreet, invite_link, invite_origin};
 use crate::{Mode, SessionResult, actors::Role, connect_session, start_ride};
 
 const TILE: f64 = 256.0;
-const TOOLBAR: f32 = if cfg!(target_arch = "wasm32") {
-    0.0
-} else {
-    74.0
-};
-const SIDEBAR: f32 = if cfg!(target_arch = "wasm32") {
-    360.0
-} else {
-    328.0
-};
+const TOOLBAR: f32 = 42.;
+const SIDEBAR: f32 = 350.;
 const RIDE_SLOTS: usize = 4;
 pub(crate) const KREUZBERG: LatLon = LatLon {
     lat: FIXTURE_LAT,
@@ -89,6 +81,14 @@ pub struct MapUi;
 
 #[derive(Component)]
 pub struct Viewport;
+#[derive(Component)]
+pub(super) struct MapLayout;
+#[derive(Component)]
+pub(super) struct MapPane;
+#[derive(Component)]
+pub(super) struct Sidebar;
+#[derive(Component)]
+pub(super) struct LobbyGroup(bool);
 
 #[derive(Component)]
 pub struct MapStatus;
@@ -98,6 +98,10 @@ pub struct LocationLabel;
 pub struct NearbyLabel;
 #[derive(Component)]
 pub struct InviteInput;
+#[derive(Component)]
+pub(crate) struct AddressInput;
+#[derive(Component)]
+pub(super) struct SearchResults;
 #[derive(Component)]
 pub struct RideSlot(usize);
 
@@ -114,6 +118,7 @@ pub enum Action {
     Solo,
     Nearby(usize),
     Page(isize),
+    LobbyTab(bool),
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -148,6 +153,8 @@ pub struct Map {
     connection: Connection,
     status: &'static str,
     role: Role,
+    auto_start: bool,
+    friends: bool,
 }
 
 #[derive(Default)]
@@ -172,7 +179,7 @@ impl Map {
         Self {
             center: project(center, zoom),
             zoom,
-            raster_map: !cfg!(target_arch = "wasm32"),
+            raster_map: true,
             cached_map: Arc::new(cached::CachedMap::read(&cache.with_file_name("osm"))),
             cache,
             active: HashMap::new(),
@@ -191,6 +198,8 @@ impl Map {
             connection: Connection::Idle,
             status: "",
             role: Role::Courier,
+            auto_start: false,
+            friends: false,
         }
     }
 
@@ -199,12 +208,12 @@ impl Map {
         self
     }
 
-    fn point(&self) -> LatLon {
+    pub(crate) fn point(&self) -> LatLon {
         self.exact_point
             .unwrap_or_else(|| unproject(self.center, self.zoom))
     }
 
-    fn select(&mut self, point: LatLon) {
+    pub(crate) fn select(&mut self, point: LatLon) {
         self.center = project(point, self.zoom);
         self.exact_point = Some(point);
     }
@@ -283,7 +292,10 @@ fn button(action: Action, title: &str, primary: bool) -> impl Bundle {
         Button,
         Hovered::default(),
         action,
+        AccessibleLabel::new(title),
         Node {
+            min_height: Val::Px(36.),
+            flex_shrink: 0.,
             justify_content: JustifyContent::Center,
             padding: UiRect::axes(Val::Px(11.0), Val::Px(8.0)),
             ..default()
@@ -304,219 +316,409 @@ fn button_color(primary: bool, hovered: bool) -> Color {
 
 pub fn setup(mut commands: Commands) {
     crate::platform::ui_event("paket-mode", "\"map\"");
-    let muted = Color::srgb(0.64, 0.74, 0.71);
-    commands.spawn((Camera2d, MapUi));
+    crate::platform::service(&serde_json::json!({"kind":"refresh"}));
+    let muted = Color::srgb(0.68, 0.76, 0.70);
+    commands.spawn((Camera2d, Msaa::Off, MapUi));
     commands
         .spawn((
+            MapUi,
+            MapLayout,
+            bevy::input_focus::tab_navigation::TabGroup::default(),
+            crate::game_ui::Layer::Lobby,
             Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                padding: UiRect::top(Val::Px(46.)),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.08, 0.13, 0.13)),
-            MapUi,
+            BackgroundColor(Color::srgb(0.08, 0.13, 0.11)),
         ))
         .with_children(|root| {
-            root.spawn(Node {
-                flex_grow: 1.0,
-                min_width: Val::Px(0.0),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            })
-            .with_children(|column| {
-                column.spawn((
-                    Node {
-                        flex_grow: 1.0,
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.17, 0.24, 0.23)),
-                    Viewport,
-                    children![(
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Percent(50.0),
-                            top: Val::Percent(50.0),
-                            width: Val::Px(34.0),
-                            height: Val::Px(34.0),
-                            border: UiRect::all(Val::Px(2.0)),
-                            border_radius: BorderRadius::MAX,
-                            ..default()
-                        },
-                        UiTransform::from_translation(Val2::percent(-50.0, -50.0)),
-                        BorderColor::all(Color::srgb(1.0, 0.45, 0.19)),
-                        ZIndex(1),
-                    )],
-                ));
-                column.spawn((
-                    if cfg!(target_arch = "wasm32") {
-                        Visibility::Hidden
-                    } else {
-                        Visibility::Inherited
-                    },
-                    Node {
-                        height: Val::Px(TOOLBAR),
-                        flex_shrink: 0.0,
-                        padding: UiRect::all(Val::Px(12.0)),
-                        column_gap: Val::Px(8.0),
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    children![
-                        button(Action::ZoomOut, "−", false),
-                        button(Action::ZoomIn, "+", false),
-                        button(Action::Select(CITIES[1].1), "New York", false),
-                        button(Action::Select(KREUZBERG), "Kreuzberg", false),
-                        label("© OpenStreetMap contributors", 12.0, muted),
-                    ],
-                ));
-            });
             root.spawn((
-                if cfg!(target_arch = "wasm32") {
-                    Visibility::Hidden
-                } else {
-                    Visibility::Inherited
-                },
+                MapPane,
                 Node {
-                    width: Val::Px(SIDEBAR),
-                    flex_shrink: 0.0,
+                    flex_grow: 1.,
+                    min_width: Val::Px(0.),
                     flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(16.0)),
-                    row_gap: Val::Px(8.0),
-                    overflow: Overflow::scroll_y(),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.10, 0.16, 0.16)),
             ))
-            .with_children(|panel| {
-                panel.spawn(label("Choose your shift", 28.0, Color::WHITE));
-                for (name, point) in CITIES {
-                    panel.spawn(button(Action::Select(*point), name, false));
-                }
-                panel.spawn(label(
-                    "Click or drag the map to choose a start.",
-                    14.0,
-                    muted,
-                ));
-                panel.spawn((label("", 16.0, Color::WHITE), LocationLabel));
-                panel.spawn((
+            .with_children(|column| {
+                column
+                    .spawn((
+                        Viewport,
+                        Node {
+                            flex_grow: 1.,
+                            min_height: Val::Px(0.),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.17, 0.24, 0.23)),
+                    ))
+                    .with_children(|viewport| {
+                        viewport.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(50.),
+                                top: Val::Percent(50.),
+                                width: Val::Px(30.),
+                                height: Val::Px(30.),
+                                border: UiRect::all(Val::Px(2.)),
+                                border_radius: BorderRadius::MAX,
+                                ..default()
+                            },
+                            UiTransform::from_translation(Val2::percent(-50., -50.)),
+                            BorderColor::all(Color::srgb(1., 0.45, 0.19)),
+                            ZIndex(2),
+                        ));
+                    });
+                column
+                    .spawn(Node {
+                        height: Val::Px(TOOLBAR),
+                        flex_shrink: 0.,
+                        column_gap: Val::Px(6.),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::horizontal(Val::Px(6.)),
+                        ..default()
+                    })
+                    .with_children(|p| {
+                        add_button(p, Action::ZoomOut, "−");
+                        add_button(p, Action::ZoomIn, "+");
+                        p.spawn((
+                            crate::game_ui::Bound("map-loading"),
+                            label("Loading map…", 11., muted),
+                            Node {
+                                flex_grow: 1.,
+                                min_width: Val::Px(0.),
+                                ..default()
+                            },
+                        ));
+                        crate::game_ui::add_button(
+                            p,
+                            serde_json::json!({"action":"retry-map"}),
+                            "Retry map",
+                        );
+                    });
+            });
+            root.spawn((
+                Sidebar,
+                Node {
+                    width: Val::Px(SIDEBAR),
+                    flex_shrink: 0.,
+                    min_height: Val::Px(0.),
+                    padding: UiRect::all(Val::Px(10.)),
+                    row_gap: Val::Px(6.),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.10, 0.17, 0.13)),
+            ))
+            .with_children(|p| {
+                p.spawn(Node {
+                    column_gap: Val::Px(6.),
+                    flex_shrink: 0.,
+                    ..default()
+                })
+                .with_children(|p| {
+                    add_button(p, Action::LobbyTab(false), "Neighbourhood");
+                    add_button(p, Action::LobbyTab(true), "Friends");
+                });
+                p.spawn((
+                    LobbyGroup(false),
+                    bevy::ui_widgets::ScrollArea,
                     Node {
-                        column_gap: Val::Px(8.0),
+                        flex_grow: 1.,
+                        min_height: Val::Px(0.),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(6.),
+                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
-                    children![
-                        button(Action::Role(Role::Courier), "Courier", true),
-                        button(Action::Role(Role::Dog), "Dog", false)
-                    ],
-                ));
-
-                panel.spawn((
+                ))
+                .with_children(|p| {
+                    p.spawn((LocationLabel, label("", 14., Color::WHITE)));
+                    crate::game_ui::add_button(
+                        p,
+                        serde_json::json!({"action":"service","kind":"location"}),
+                        "My location",
+                    );
+                    p.spawn(label(
+                        "Only your rounded neighbourhood is shared.",
+                        10.,
+                        muted,
+                    ));
+                    text_input(p, true);
+                    crate::game_ui::add_button(
+                        p,
+                        serde_json::json!({"action":"service","kind":"search"}),
+                        "Find address or place",
+                    );
+                    p.spawn((
+                        SearchResults,
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(4.),
+                            ..default()
+                        },
+                    ));
+                    p.spawn(Node {
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: Val::Px(5.),
+                        row_gap: Val::Px(4.),
+                        ..default()
+                    })
+                    .with_children(|p| {
+                        for (name, point) in CITIES {
+                            add_button(
+                                p,
+                                Action::Select(*point),
+                                name.split('·').next().unwrap_or(name).trim(),
+                            );
+                        }
+                    });
+                });
+                p.spawn((
+                    LobbyGroup(true),
+                    bevy::ui_widgets::ScrollArea,
                     Node {
-                        column_gap: Val::Px(8.0),
+                        display: Display::None,
+                        flex_grow: 1.,
+                        min_height: Val::Px(0.),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(6.),
+                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
-                    children![
-                        button(Action::New, "With friends", true),
-                        button(Action::Solo, "Play solo", false)
-                    ],
-                ));
-                panel.spawn(label("Friend’s invite link", 14.0, muted));
-                panel.spawn((
-                    TextInput,
-                    InviteInput,
-                    EditableText::new(""),
-                    TextFont {
-                        font_size: FontSize::Px(15.0),
+                ))
+                .with_children(|p| {
+                    crate::game_ui::add_button(
+                        p,
+                        serde_json::json!({"action":"service","kind":"resume"}),
+                        "Return to your mesh",
+                    );
+                    p.spawn(label("Friend’s invitation", 13., muted));
+                    text_input(p, false);
+                    p.spawn(Node {
+                        column_gap: Val::Px(6.),
+                        flex_wrap: FlexWrap::Wrap,
                         ..default()
-                    },
-                    TextColor(Color::WHITE),
+                    })
+                    .with_children(|p| {
+                        add_button(p, Action::Join, "Join shift");
+                        add_button(p, Action::Copy, "Copy link");
+                        add_button(p, Action::Start, "Enter mesh");
+                    });
+                    crate::game_ui::add_button(
+                        p,
+                        serde_json::json!({"action":"service","kind":"public"}),
+                        "Public mesh: off",
+                    );
+                    p.spawn(label("Public meshes", 16., Color::WHITE));
+                    crate::game_ui::add_button(
+                        p,
+                        serde_json::json!({"action":"service","kind":"refresh"}),
+                        "Refresh",
+                    );
+                    p.spawn((NearbyLabel, label("", 12., muted)));
+                    for index in 0..RIDE_SLOTS {
+                        p.spawn((
+                            Button,
+                            Hovered::default(),
+                            Action::Nearby(index),
+                            Node {
+                                display: Display::None,
+                                padding: UiRect::all(Val::Px(7.)),
+                                ..default()
+                            },
+                            BackgroundColor(button_color(false, false)),
+                            children![(label("", 13., Color::WHITE), RideSlot(index))],
+                        ))
+                        .observe(activated);
+                    }
+                    p.spawn(Node {
+                        column_gap: Val::Px(6.),
+                        ..default()
+                    })
+                    .with_children(|p| {
+                        add_button(p, Action::Page(-1), "Previous");
+                        add_button(p, Action::Page(1), "Next");
+                    });
+                });
+                p.spawn((
+                    MapStatus,
+                    label("", 11., Color::srgb(1., 0.70, 0.47)),
                     Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(35.0),
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                        height: Val::Px(28.),
+                        flex_shrink: 0.,
                         overflow: Overflow::clip(),
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.06, 0.10, 0.10)),
                 ));
-                panel.spawn((
-                    Node {
-                        column_gap: Val::Px(8.0),
+                p.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.,
+                    row_gap: Val::Px(6.),
+                    ..default()
+                })
+                .with_children(|p| {
+                    p.spawn(Node {
+                        column_gap: Val::Px(6.),
                         ..default()
-                    },
-                    children![
-                        button(Action::Join, "Join", false),
-                        button(Action::Copy, "Copy link", false),
-                        button(Action::Start, "Start ride", true)
-                    ],
-                ));
-                panel.spawn((
-                    label("", 14.0, Color::srgb(1.0, 0.70, 0.47)),
-                    Node {
-                        min_height: Val::Px(34.0),
+                    })
+                    .with_children(|p| {
+                        add_button(p, Action::Role(Role::Courier), "Courier");
+                        add_button(p, Action::Role(Role::Dog), "Dog");
+                    });
+                    p.spawn(Node {
+                        column_gap: Val::Px(6.),
                         ..default()
-                    },
-                    MapStatus,
-                ));
-                panel.spawn(label("Friends nearby", 18.0, Color::WHITE));
-                panel.spawn((label("", 14.0, muted), NearbyLabel));
-                for index in 0..RIDE_SLOTS {
-                    panel.spawn((
-                        Button,
-                        Hovered::default(),
-                        Action::Nearby(index),
-                        Node {
-                            display: Display::None,
-                            padding: UiRect::all(Val::Px(8.0)),
-                            ..default()
-                        },
-                        BackgroundColor(button_color(false, false)),
-                        children![(label("", 15.0, Color::WHITE), RideSlot(index))],
-                    ));
-                }
-                panel.spawn((
-                    Node {
-                        column_gap: Val::Px(8.0),
-                        ..default()
-                    },
-                    children![
-                        button(Action::Page(-1), "Previous", false),
-                        button(Action::Page(1), "Next", false),
-                    ],
-                ));
+                    })
+                    .with_children(|p| {
+                        add_button(p, Action::Solo, "Play solo");
+                        add_button(p, Action::New, "Play with friends");
+                    });
+                });
             });
         });
 }
+fn text_input(parent: &mut ChildSpawnerCommands, address: bool) {
+    let mut field = parent.spawn((
+        TextInput,
+        bevy::input_focus::tab_navigation::TabIndex(if address { 0 } else { 1 }),
+        AccessibleLabel::new(if address {
+            "Street address or place"
+        } else {
+            "Invitation link"
+        }),
+        EditableText::new(""),
+        TextFont {
+            font_size: FontSize::Px(14.),
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            width: Val::Percent(100.),
+            min_height: Val::Px(36.),
+            flex_shrink: 0.,
+            padding: UiRect::all(Val::Px(7.)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        BackgroundColor(Color::srgb(0.055, 0.10, 0.075)),
+    ));
+    if address {
+        field.insert(AddressInput);
+    } else {
+        field.insert(InviteInput);
+    }
+}
+pub(crate) fn responsive(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    map: Res<Map>,
+    mut nodes: Query<(
+        &mut Node,
+        Has<MapLayout>,
+        Has<MapPane>,
+        Has<Sidebar>,
+        Option<&LobbyGroup>,
+    )>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let portrait = window.width() < 600.;
+    let header = crate::game_ui::header_height(window.width());
+    for (mut node, layout, pane, sidebar, group) in &mut nodes {
+        if layout {
+            node.flex_direction = if portrait {
+                FlexDirection::Column
+            } else {
+                FlexDirection::Row
+            };
+            node.padding.top = Val::Px(header);
+        }
+        if pane {
+            node.width = if portrait {
+                Val::Percent(100.)
+            } else {
+                Val::Auto
+            };
+            node.height = if portrait {
+                Val::Px(portrait_map_height(window) + TOOLBAR)
+            } else {
+                Val::Percent(100.)
+            };
+            node.flex_grow = if portrait { 0. } else { 1. };
+            node.flex_shrink = if portrait { 0. } else { 1. };
+        }
+        if sidebar {
+            node.width = if portrait {
+                Val::Percent(100.)
+            } else {
+                Val::Px(SIDEBAR)
+            };
+            node.height = if portrait {
+                Val::Auto
+            } else {
+                Val::Percent(100.)
+            };
+            node.flex_grow = if portrait { 1. } else { 0. };
+        }
+        if let Some(group) = group {
+            node.display = if group.0 == map.friends {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
+}
+fn portrait_map_height(window: &Window) -> f32 {
+    ((window.height() - crate::game_ui::header_height(window.width())) * 0.30).clamp(140., 220.)
+}
+fn add_button(parent: &mut ChildSpawnerCommands, action: Action, title: &str) {
+    parent
+        .spawn(button(action, title, false))
+        .observe(activated);
+}
 
 fn viewport_size(window: &Window) -> Vec2 {
-    #[cfg(target_arch = "wasm32")]
-    if let Some(size) = crate::platform::lobby_map_size() {
-        return size;
+    if window.width() < 600. {
+        Vec2::new(window.width(), portrait_map_height(window))
+    } else {
+        Vec2::new(
+            (window.width() - SIDEBAR).max(0.),
+            (window.height() - TOOLBAR - crate::game_ui::header_height(window.width())).max(0.),
+        )
     }
-    Vec2::new(
-        (window.width() - SIDEBAR).max(0.0),
-        (window.height() - TOOLBAR).max(0.0),
-    )
 }
 
 pub fn input(
+    ui: Res<crate::game_ui::Ui>,
     mut commands: Commands,
     mut map: ResMut<Map>,
     windows: Query<&Window, With<PrimaryWindow>>,
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
-    actions: Query<&Action, Added<bevy::ui::Pressed>>,
+    actions: Query<(Entity, &Action), With<crate::game_ui::Activated>>,
     mut invites: Query<&mut EditableText, With<InviteInput>>,
     mut next: ResMut<NextState<Mode>>,
 ) {
     let window = windows.single().ok();
-    let cursor = window.and_then(Window::cursor_position);
-    let over_map = cursor
-        .zip(window)
-        .is_some_and(|(cursor, window)| cursor.cmplt(viewport_size(window)).all());
+    let cursor = window.and_then(Window::cursor_position).map(|v| {
+        v - Vec2::new(
+            0.,
+            window
+                .map(|w| crate::game_ui::header_height(w.width()))
+                .unwrap_or(46.),
+        )
+    });
+    let over_map = cursor.zip(window).is_some_and(|(cursor, window)| {
+        cursor.cmpge(Vec2::ZERO).all() && cursor.cmplt(viewport_size(window)).all()
+    });
     let connecting = matches!(map.connection, Connection::Pending { .. });
-    let over_map = over_map && !connecting;
+    let over_map = over_map && !connecting && !ui.panel_open();
     if connecting {
         map.drag_start = None;
     }
@@ -554,7 +756,12 @@ pub fn input(
         return;
     };
 
-    let mut requested: Vec<Action> = actions.iter().copied().collect();
+    let mut requested: Vec<Action> = actions.iter().map(|(_, action)| *action).collect();
+    for (entity, _) in &actions {
+        commands
+            .entity(entity)
+            .remove::<crate::game_ui::Activated>();
+    }
     let external: Vec<serde_json::Value> =
         serde_json::from_str(&crate::platform::ui_commands()).unwrap_or_default();
     for command in external {
@@ -586,20 +793,26 @@ pub fn input(
         }
     }
     for action in &requested {
-        if connecting && !matches!(action, Action::Role(_)) {
+        if connecting && !matches!(action, Action::Role(_) | Action::LobbyTab(_)) {
             continue;
         }
         match *action {
             Action::ZoomIn => map.zoom(1),
             Action::ZoomOut => map.zoom(-1),
-            Action::Select(point) => map.select(point),
+            Action::Select(point) => {
+                crate::platform::service(&serde_json::json!({"kind":"selection"}));
+                map.select(point);
+            }
             Action::Role(role) => map.role = role,
+            Action::LobbyTab(friends) => map.friends = friends,
             Action::New => {
+                map.auto_start = true;
                 *invite = EditableText::new("");
                 let _ = map.connect(None);
                 return;
             }
             Action::Join => {
+                map.auto_start = true;
                 let link = invite.value().to_string().trim().to_owned();
                 if let Connection::Ready { link: hosted, .. } = &map.connection
                     && hosted == &link
@@ -614,6 +827,7 @@ pub fn input(
                 map.page = map.page.saturating_add_signed(delta);
             }
             Action::Nearby(index) => {
+                map.auto_start = true;
                 if let Some((link, _, _)) = map.nearby.get(map.page * RIDE_SLOTS + index).cloned() {
                     *invite = EditableText::new(&link);
                     let _ = map.connect(Some(link));
@@ -677,6 +891,10 @@ pub fn input(
 }
 
 pub fn update_lobby(
+    ui: Res<crate::game_ui::Ui>,
+    mut commands: Commands,
+    results: Query<(Entity, Option<&Children>), With<SearchResults>>,
+    mut previous_results: Local<String>,
     mut map: ResMut<Map>,
     mut invites: Query<&mut EditableText, With<InviteInput>>,
     mut labels: Query<(
@@ -688,6 +906,45 @@ pub fn update_lobby(
     )>,
     mut actions: Query<(&Action, &mut Node, &Hovered, &mut BackgroundColor)>,
 ) {
+    let services = ui.value("paket-services");
+    let search = services["places"].to_string();
+    if search != *previous_results {
+        *previous_results = search;
+        for (entity, children) in &results {
+            if let Some(children) = children {
+                for child in children {
+                    commands.entity(*child).despawn();
+                }
+            }
+            commands.entity(entity).with_children(|p| {
+                for place in services["places"].as_array().into_iter().flatten().take(5) {
+                    if let (Some(lat), Some(lon)) = (place["lat"].as_f64(), place["lon"].as_f64()) {
+                        add_button(
+                            p,
+                            Action::Select(LatLon { lat, lon }),
+                            place["name"].as_str().unwrap_or("Place"),
+                        );
+                    }
+                }
+            });
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    if let Some(meshes) = services["meshes"].as_array() {
+        map.nearby = meshes
+            .iter()
+            .filter_map(|v| {
+                Some((
+                    v["link"].as_str()?.into(),
+                    LatLon {
+                        lat: v["lat"].as_f64()?,
+                        lon: v["lon"].as_f64()?,
+                    },
+                    v["name"].as_str().unwrap_or("Mesh").into(),
+                ))
+            })
+            .collect();
+    }
     let pending = match &map.connection {
         Connection::Pending {
             origin,
@@ -715,8 +972,16 @@ pub fn update_lobby(
                     *input = EditableText::new(&link);
                 }
                 map.select(origin);
+                crate::platform::ui_event(
+                    "paket-session",
+                    &serde_json::json!({"link":link,"host":session.is_host,"device":session.device}).to_string(),
+                );
                 map.connection = Connection::Ready { session, link };
                 map.status = "Mesh ready.";
+                if map.auto_start {
+                    map.auto_start = false;
+                    crate::game_ui::queue(serde_json::json!({"action":"start"}));
+                }
             }
             Err(error) => {
                 eprintln!("session: {error}");
@@ -756,9 +1021,15 @@ pub fn update_lobby(
         let value = if location {
             location_name(point)
         } else if status {
-            map.status.into()
+            format!(
+                "{}\n{}",
+                map.status,
+                services["status"].as_str().unwrap_or("")
+            )
         } else if nearby {
-            if map.discovery.is_none() {
+            if cfg!(target_arch = "wasm32") {
+                format!("{} public meshes", map.nearby.len())
+            } else if map.discovery.is_none() {
                 if cfg!(target_arch = "wasm32") {
                     "Share a ride link to invite friends.".into()
                 } else {
@@ -806,6 +1077,7 @@ pub fn update_lobby(
         }
         let value = button_color(
             matches!(action, Action::New | Action::Start)
+                || matches!(action,Action::LobbyTab(value) if *value==map.friends)
                 || matches!(action, Action::Role(role) if *role == map.role),
             interaction.0,
         );
@@ -844,13 +1116,6 @@ pub fn tiles(
         return;
     };
     let size = viewport_size(window);
-    if cfg!(target_arch = "wasm32")
-        && (node.width != Val::Px(size.x) || node.height != Val::Px(size.y))
-    {
-        node.position_type = PositionType::Absolute;
-        node.width = Val::Px(size.x);
-        node.height = Val::Px(size.y);
-    }
     if !map.raster_map {
         return;
     }
@@ -1101,6 +1366,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(bevy::state::app::StatesPlugin)
             .init_state::<Mode>()
+            .init_resource::<crate::game_ui::Ui>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<AccumulatedMouseMotion>()
             .init_resource::<AccumulatedMouseScroll>()
@@ -1117,11 +1383,11 @@ mod tests {
                 .find(|(_, action)| select(action))
                 .unwrap()
                 .0;
-            world.entity_mut(entity).insert(bevy::ui::Pressed);
+            world.trigger(bevy::ui_widgets::Activate { entity });
             app.update();
             app.world_mut()
                 .entity_mut(entity)
-                .remove::<bevy::ui::Pressed>();
+                .remove::<crate::game_ui::Activated>();
         }
 
         press(
@@ -1163,5 +1429,27 @@ mod tests {
         assert_eq!(*app.world().resource::<State<Mode>>().get(), Mode::Ride);
         assert_eq!(app.world().resource::<crate::Ride>().origin, CITIES[1].1);
         assert_eq!(app.world().resource::<crate::Ride>().role, Role::Dog);
+    }
+}
+
+fn activated(
+    event: On<bevy::ui_widgets::Activate>,
+    actions: Query<&Action>,
+    mut commands: Commands,
+) {
+    if let Ok(action) = actions.get(event.entity) {
+        let value = match action {
+            Action::Solo => serde_json::json!({"action":"solo"}),
+            Action::New => serde_json::json!({"action":"new"}),
+            Action::Join | Action::Nearby(_) => serde_json::json!({"action":"join"}),
+            Action::Role(role) => {
+                serde_json::json!({"action":"role","role":if matches!(role,Role::Dog){"dog"}else{"courier"}})
+            }
+            _ => serde_json::json!({"action":"map"}),
+        };
+        crate::platform::ui_event("paket-ui-action", &value.to_string());
+        commands
+            .entity(event.entity)
+            .insert(crate::game_ui::Activated);
     }
 }

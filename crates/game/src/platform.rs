@@ -26,21 +26,6 @@ pub fn load_scene(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn lobby_map_size() -> Option<bevy::math::Vec2> {
-    #[wasm_bindgen::prelude::wasm_bindgen(
-        inline_js = "export function lobbyMapSize(){return globalThis.paketLobbyMapSize?.() ?? [];}"
-    )]
-    extern "C" {
-        #[wasm_bindgen::prelude::wasm_bindgen(js_name = lobbyMapSize)]
-        fn size() -> js_sys::Array;
-    }
-    let size = size();
-    let width = size.get(0).as_f64()? as f32;
-    let height = size.get(1).as_f64()? as f32;
-    (width > 0. && height > 0.).then_some(bevy::math::Vec2::new(width, height))
-}
-
-#[cfg(target_arch = "wasm32")]
 mod browser {
     use super::*;
     use wasm_bindgen::prelude::*;
@@ -108,28 +93,64 @@ mod browser {
 #[cfg(target_arch = "wasm32")]
 pub use browser::*;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn ui_event(name: &str, text: &str) {
-    if !crate::native_audio::accepts(name) {
-        return;
+    crate::game_ui::record(name, text);
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::native_audio::accepts(name) {
+        if let Ok(value) = serde_json::from_str(text) {
+            crate::native_audio::event(name, &value);
+        }
     }
-    if let Ok(value) = serde_json::from_str(text) {
-        crate::native_audio::event(name, &value);
+    #[cfg(target_arch = "wasm32")]
+    browser_ui_event(name, text);
+}
+pub fn ui_commands() -> String {
+    let mut values = crate::game_ui::drain_commands();
+    #[cfg(target_arch = "wasm32")]
+    values.extend(
+        serde_json::from_str::<Vec<serde_json::Value>>(&browser_commands()).unwrap_or_default(),
+    );
+    values.retain(|command| {
+        if command["action"] == "ui-event" {
+            if let Some(name) = command["name"].as_str() {
+                crate::game_ui::record(name, &command["data"].to_string());
+            }
+            false
+        } else {
+            true
+        }
+    });
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".into())
+}
+pub fn text_inputs() -> Vec<serde_json::Value> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        serde_json::from_str(&browser_text_inputs()).unwrap_or_default()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Vec::new()
     }
 }
-#[cfg(not(target_arch = "wasm32"))]
-pub fn ui_commands() -> String {
-    "[]".into()
+pub fn service(value: &serde_json::Value) {
+    #[cfg(target_arch = "wasm32")]
+    browser_service(&value.to_string());
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::game_ui::native_service(value);
 }
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(
-    inline_js = "export function gameUi(name,json){globalThis.dispatchEvent(new CustomEvent(name,{detail:JSON.parse(json)}));} export function gameCommands(){return JSON.stringify(globalThis.paketCommands?.splice(0,16)||[]);}"
+    inline_js = "export function gameUi(name,json){globalThis.dispatchEvent(new CustomEvent(name,{detail:JSON.parse(json)}));} export function gameCommands(){return JSON.stringify(globalThis.paketCommands?.splice(0,64)||[]);} export function gameService(json){globalThis.dispatchEvent(new CustomEvent('paket-service',{detail:JSON.parse(json)}));} export function gameTextInputs(){return JSON.stringify(globalThis.paketTextInputs?.splice(0,32)||[]);}"
 )]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameUi)]
-    pub fn ui_event(name: &str, json: &str);
+    fn browser_ui_event(name: &str, json: &str);
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameCommands)]
-    pub fn ui_commands() -> String;
+    fn browser_commands() -> String;
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameService)]
+    fn browser_service(json: &str);
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = gameTextInputs)]
+    fn browser_text_inputs() -> String;
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -12,16 +12,16 @@ use paket_geo::{FIXTURE_LAT, FIXTURE_LON, TileId};
 const CHAMISSOPLATZ: Vec3 = Vec3::new(-9.2, 0., 158.);
 
 #[derive(Resource, Default)]
-struct Scene {
+pub(crate) struct Scene {
     base: Option<(Vec3, Quat)>,
+    pub(crate) ready: bool,
 }
 pub(crate) fn install(app: &mut App) {
     app.init_resource::<Scene>().add_systems(
-        Update,
+        PostUpdate,
         compose
-            .after(crate::actors::camera_follow)
-            .after(crate::jobs::service_ui)
-            .after(crate::action_prompt)
+            .before(bevy::ui::UiSystems::Prepare)
+            .before(bevy::transform::TransformSystems::Propagate)
             .run_if(in_state(Mode::Ride)),
     );
 }
@@ -38,7 +38,10 @@ fn compose(
     mut visible: Query<&mut Visibility>,
     mut ui: Query<&mut Node>,
     vans: Query<Entity, With<ParkedVan>>,
+    assets: Res<AssetServer>,
+    roots: Query<&WorldAssetRoot>,
 ) {
+    scene.ready = false;
     let Ok((player, actor)) = player.single() else {
         return;
     };
@@ -113,6 +116,11 @@ fn compose(
         ));
         (base, rotation)
     });
+    scene.ready = !ride.loaded.is_empty()
+        && !roots.is_empty()
+        && roots
+            .iter()
+            .all(|root| assets.is_loaded_with_dependencies(root.0.id()));
     let forward = rotation * Vec3::NEG_Z;
     let right = rotation * Vec3::X;
     if let Ok((mut camera, mut projection)) = cameras.single_mut() {

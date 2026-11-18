@@ -4,12 +4,15 @@ cd "$(dirname "$0")/.."
 # Set RUSTC/CARGO_HOME only if using a separate writable toolchain cache.
 cargo build --locked -p paket-game --profile web-release --target wasm32-unknown-unknown
 mkdir -p web/public/game web/public/mesh web/public/assets/fonts web/public/assets/street web/public/osm
-wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir web/public/game --out-name paket_game target/wasm32-unknown-unknown/web-release/paket-game.wasm
+wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir web/public/game --out-name paket_game "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/web-release/paket-game.wasm"
 cp assets/fonts/FiraMono-Medium.ttf assets/fonts/FiraMono-LICENSE web/public/assets/fonts/
 cp assets/fonts/NotoSansJP-Variable.ttf assets/fonts/NotoSansJP-LICENSE web/public/assets/fonts/
 cp assets/street/*.glb web/public/assets/street/
 mkdir -p web/public/assets
 cp assets/audio/* web/public/assets/
+mkdir -p web/public/assets/native/audio web/public/assets/landing
+cp assets/native/audio/*.png web/public/assets/native/audio/
+cp assets/landing/delivery-day.png web/public/assets/landing/
 if [ -f assets/landing/delivery-day.webp ]; then cp assets/landing/delivery-day.webp web/public/assets/; fi
 cp ../mesh/packages/mesh-transport/transport-wasm/meta_mesh.js ../mesh/packages/mesh-transport/transport-wasm/meta_mesh_bg.wasm web/public/mesh/
 # Public OSM geometry for curated starter cities avoids first-load Overpass delays.

@@ -75,25 +75,18 @@ export function initGameAnalytics(options: { target?: Window; fetch?: typeof fet
       attrs: { mode, ...(objectCount === undefined ? {} : { object_count: objectCount }) } });
     if (queue.length >= 20) flush();
   };
-  listen(doc, 'click', event => {
-    const element = (event.target as Element | null)?.closest?.<HTMLElement>('button');
-    if (!element || element.matches(':disabled')) return;
-    if (element.dataset.role === 'courier' || element.dataset.role === 'dog') mode = element.dataset.role;
-    const name = clickEvents[element.id];
-    if (name && now() - (clickTimes.get(name) ?? -Infinity) >= 1000) {
-      clickTimes.set(name, now()); record(name);
-    }
+  listen(target,'paket-ui-action',event=>{
+    const action=(event as CustomEvent<{action?:string;role?:string;kind?:string;panel?:string}>).detail;
+    if(action.action==='role')mode=action.role==='dog'?'dog':'courier';
+    const key=action.action==='solo'?'solo':action.action==='new'?'friends':action.action==='ui-panel'&&action.panel==='profile'?'player-profile':action.action==='service'&&action.kind==='signin'?'signin':action.action==='service'&&action.kind==='copy-invite'?'share':'';
+    const name=action.action==='join'?'game.shift.join_requested':action.action==='service'&&action.kind==='search'?'game.location.search_requested':clickEvents[key];
+    if(name&&now()-(clickTimes.get(name)??-Infinity)>=1000){clickTimes.set(name,now());record(name);}
   });
-  listen(doc, 'submit', event => {
-    const id = (event.target as HTMLFormElement | null)?.id;
-    if (id === 'join-form') record('game.shift.join_requested');
-    if (id === 'address-form') record('game.location.search_requested');
-  });
+  listen(target,'paket-hud',event=>{const form=(event as CustomEvent<{form?:string}>).detail.form;if(form==='dog')mode='dog';else if(form==='courier'||form==='van')mode='courier';});
   listen(target, 'paket-mode', event => {
     const next = (event as CustomEvent<unknown>).detail;
     if (next === 'ride' && !riding) {
       riding = true; ended = false; baseline = undefined; startedAt = now();
-      mode = doc.querySelector<HTMLElement>('[data-role][aria-pressed="true"]')?.dataset.role === 'dog' ? 'dog' : 'courier';
       record('game.shift.started');
     } else if (next === 'map' && riding) {
       if (!ended) record('game.shift.left', undefined, now() - startedAt);

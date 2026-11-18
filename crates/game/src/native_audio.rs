@@ -4,7 +4,6 @@ mod mix;
 use bevy::{
     audio::{AudioSinkPlayback, SpatialAudioSink, Volume},
     prelude::*,
-    ui_widgets::Button,
 };
 use serde_json::Value;
 use std::{
@@ -20,7 +19,13 @@ static LOADING: AtomicBool = AtomicBool::new(false);
 pub(crate) fn accepts(name: &str) -> bool {
     matches!(
         name,
-        "paket-mode" | "street-audio" | "game-sound" | "paket-bite" | "paket-hud" | "rich-round"
+        "paket-sound-setting"
+            | "paket-mode"
+            | "street-audio"
+            | "game-sound"
+            | "paket-bite"
+            | "paket-hud"
+            | "rich-round"
     )
 }
 pub(crate) fn event(name: &str, value: &Value) {
@@ -53,19 +58,10 @@ struct Audio {
 }
 #[derive(Component)]
 struct Voice;
-#[derive(Component)]
-struct SoundButton;
-#[derive(Component)]
-struct SoundIcon;
-
 pub(crate) fn install(app: &mut App) {
     app.init_resource::<Audio>()
         .add_systems(Startup, setup)
-        .add_observer(toggle)
-        .add_systems(
-            Update,
-            (render.after(crate::browser_ui::sound), paint.after(render)),
-        );
+        .add_systems(Update, render.after(crate::browser_ui::sound));
 }
 fn setup(mut commands: Commands, assets: Res<AssetServer>, mut audio: ResMut<Audio>) {
     let bank: Value =
@@ -89,47 +85,8 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>, mut audio: ResMut<Aud
     audio.foreground = true;
     audio.mixer.muted = std::env::var("FEED_GAME_SOUND").is_ok_and(|value| value == "off");
     commands.spawn((SpatialListener::new(2.), Transform::default()));
-    commands.spawn((
-        Button,
-        SoundButton,
-        bevy::picking::hover::Hovered::default(),
-        AccessibleLabel::new("Mute sound (F8)"),
-        Node {
-            position_type: PositionType::Absolute,
-            top: px(8),
-            right: px(118),
-            width: px(44),
-            height: px(44),
-            display: Display::None,
-            border_radius: BorderRadius::MAX,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.05, 0.11, 0.12, 0.9)),
-        GlobalZIndex(60),
-        children![(
-            ImageNode::new(assets.load("native/audio/speaker.png")),
-            SoundIcon,
-            Node {
-                width: px(28),
-                height: px(28),
-                ..default()
-            }
-        )],
-    ));
 }
-fn toggle(
-    event: On<bevy::ui_widgets::Activate>,
-    buttons: Query<(), With<SoundButton>>,
-    mut audio: ResMut<Audio>,
-    mut mouse: ResMut<ButtonInput<MouseButton>>,
-) {
-    if buttons.contains(event.entity) {
-        audio.mixer.muted = !audio.mixer.muted;
-        mouse.clear_just_pressed(MouseButton::Left);
-    }
-}
+
 fn render(
     mut commands: Commands,
     real: Res<Time<Real>>,
@@ -153,10 +110,20 @@ fn render(
     }
     if keys.just_pressed(KeyCode::F8) {
         audio.mixer.muted = !audio.mixer.muted;
+        crate::platform::ui_event(
+            "paket-settings",
+            &serde_json::json!({"sound":!audio.mixer.muted}).to_string(),
+        );
     }
     if let Ok(mut events) = EVENTS.get_or_init(Mutex::default).lock() {
         for (name, value) in events.drain(..) {
-            audio.mixer.event(&name, &value, real.elapsed_secs_f64());
+            if name == "paket-sound-setting" {
+                if let Some(enabled) = value.as_bool() {
+                    audio.mixer.muted = !enabled;
+                }
+            } else {
+                audio.mixer.event(&name, &value, real.elapsed_secs_f64());
+            }
         }
     }
     let ready = ride.as_ref().is_some_and(|ride| !ride.loaded.is_empty())
@@ -254,40 +221,4 @@ fn spawn(commands: &mut Commands, cue: &Cue, sound: &mix::Sound) -> Entity {
             Voice,
         ))
         .id()
-}
-fn paint(
-    mut commands: Commands,
-    audio: Res<Audio>,
-    mode: Res<State<crate::Mode>>,
-    assets: Res<AssetServer>,
-    mut buttons: Query<(Entity, &mut Node), With<SoundButton>>,
-    mut icons: Query<&mut ImageNode, With<SoundIcon>>,
-) {
-    let path = if audio.mixer.muted {
-        "native/audio/muted.png"
-    } else {
-        "native/audio/speaker.png"
-    };
-    let image = assets.load(path);
-    for mut icon in &mut icons {
-        if icon.image != image {
-            icon.image = image.clone();
-        }
-    }
-    for (entity, mut node) in &mut buttons {
-        node.display = if *mode.get() == crate::Mode::Ride {
-            Display::Flex
-        } else {
-            Display::None
-        };
-        if audio.is_changed() {
-            commands
-                .entity(entity)
-                .insert(AccessibleLabel::new(if audio.mixer.muted {
-                    "Enable sound (F8)"
-                } else {
-                    "Mute sound (F8)"
-                }));
-        }
-    }
 }
