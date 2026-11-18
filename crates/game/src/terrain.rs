@@ -179,7 +179,11 @@ pub(crate) fn finish(
         )
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
         .with_inserted_indices(Indices::U32(triangles));
-        let mesh = crate::elevation::drape(mesh, &elevation.heights, Vec3::ZERO);
+        let mesh = if cover == Cover::Water {
+            crate::elevation::water_surface(mesh, &elevation.heights)
+        } else {
+            crate::elevation::drape(mesh, &elevation.heights, Vec3::ZERO)
+        };
         commands.spawn((
             Mesh3d(meshes.add(crate::shapes::lit(mesh))),
             MeshMaterial3d(material),

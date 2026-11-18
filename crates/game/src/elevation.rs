@@ -1,4 +1,5 @@
 //! Shared terrain heights for physics and scenery. Zero is the ride origin's elevation.
+mod water;
 use avian3d::prelude::*;
 use bevy::{
     asset::RenderAssetUsages,
@@ -237,6 +238,44 @@ pub(crate) fn floor(heights: &Heights, center: Vec3, half: f32) -> (Mesh, Collid
     (mesh, collider)
 }
 
+// Water must share every terrain breakline: interpolating between merely nearby
+// samples can put the inside of a water triangle underneath the physical ground.
+pub(crate) fn water_surface(mesh: Mesh, heights: &Heights) -> Mesh {
+    use bevy::mesh::VertexAttributeValues;
+    if !heights.available() {
+        return mesh;
+    }
+    let Some(VertexAttributeValues::Float32x3(vertices)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+    else {
+        return mesh;
+    };
+    let Some(indices) = mesh.indices() else {
+        return mesh;
+    };
+    let indices = indices.iter().collect::<Vec<_>>();
+    let mut points = Vec::new();
+    for face in indices.chunks_exact(3) {
+        let triangle = [
+            Vec3::from(vertices[face[0]]),
+            Vec3::from(vertices[face[1]]),
+            Vec3::from(vertices[face[2]]),
+        ];
+        for triangle in water::conform(triangle, STEP, RADIUS) {
+            points.extend(triangle.map(|p| p + Vec3::Y * (heights.at(p) + DRAPE_CLEARANCE)));
+        }
+    }
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        points.iter().map(|p| p.xz() / 3.).collect::<Vec<_>>(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, points)
+    .with_computed_flat_normals()
+}
+
 // Overlay triangles are split before sampling so long roads follow hills between OSM nodes.
 pub(crate) fn drape(mesh: Mesh, heights: &Heights, origin: Vec3) -> Mesh {
     use bevy::mesh::VertexAttributeValues;
@@ -303,4 +342,82 @@ pub(crate) fn drape(mesh: Mesh, heights: &Heights, origin: Vec3) -> Mesh {
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, points)
     .with_computed_flat_normals()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::mesh::VertexAttributeValues;
+
+    fn water_triangle() -> Mesh {
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![
+                Vec3::new(3., -0.016, 2.),
+                Vec3::new(19., -0.016, 18.),
+                Vec3::new(19., -0.016, 3.),
+            ],
+        )
+        .with_inserted_indices(Indices::U32(vec![0, 1, 2]))
+    }
+
+    #[test]
+    fn water_interiors_stay_above_the_actual_terrain_collider_on_a_ridge() {
+        let mut grid = vec![0.; SIDE * SIDE];
+        let index = (RADIUS / STEP) as usize * SIDE + (RADIUS / STEP) as usize;
+        grid[index + 1] = 4.;
+        grid[index + SIDE] = 4.;
+        let heights = Heights(Some(Arc::from(grid)));
+        let (_, collider) = floor(&heights, Vec3::ZERO, STEP);
+        let mesh = water_surface(water_triangle(), &heights);
+        let Some(VertexAttributeValues::Float32x3(vertices)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            panic!("water positions missing")
+        };
+        for triangle in vertices.chunks_exact(3) {
+            let [a, b, c] = [
+                Vec3::from(triangle[0]),
+                Vec3::from(triangle[1]),
+                Vec3::from(triangle[2]),
+            ];
+            for i in 0..=10 {
+                for j in 0..=10 - i {
+                    let point = a + (b - a) * (i as f32 / 10.) + (c - a) * (j as f32 / 10.);
+                    let (distance, _) = collider
+                        .cast_ray(
+                            Vec3::ZERO,
+                            Quat::IDENTITY,
+                            point.with_y(20.),
+                            Vec3::NEG_Y,
+                            40.,
+                            false,
+                        )
+                        .expect("terrain below water");
+                    let expected = 20. - distance - 0.016 + DRAPE_CLEARANCE + FLOOR_RECESS;
+                    assert!(
+                        (point.y - expected).abs() < 0.001,
+                        "water and physical terrain disagree at {point:?}: expected {expected}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn missing_elevation_keeps_the_original_flat_water_mesh() {
+        let mesh = water_surface(water_triangle(), &Heights::default());
+        let Some(VertexAttributeValues::Float32x3(vertices)) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            panic!("water positions missing")
+        };
+        assert_eq!(vertices.len(), 3);
+        assert!(vertices.iter().all(|point| point[1] == -0.016));
+        assert_eq!(mesh.indices().unwrap().len(), 3);
+    }
 }
