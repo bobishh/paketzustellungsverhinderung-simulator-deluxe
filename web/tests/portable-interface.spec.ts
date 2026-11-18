@@ -1,6 +1,16 @@
 import {expect,test} from '@playwright/test';
 import {observeGame,clickUi,fillUi,fact,waitRide} from './bevy-ui';
-test.beforeEach(async({page})=>{await observeGame(page);});
+test.beforeEach(async({page})=>{
+ await observeGame(page);
+ // Menu/HUD checks use real geometry without depending on public map services.
+ await page.route('**/elevation/**',route=>route.fulfill({status:503}));
+ await page.route('**/api/osm?*',route=>{
+  const query=new URL(route.request().url()).searchParams;
+  return query.get('x')==='0'&&query.get('y')==='0'&&!query.has('landscape')
+   ? route.fulfill({path:new URL('../../fixtures/kreuzberg.json',import.meta.url).pathname,contentType:'application/json'})
+   : route.fulfill({json:{elements:[]}});
+ });
+});
 test('Bevy neighbourhood controls preserve arbitrary addresses and expose recoverable search failure',async({page})=>{
  test.setTimeout(120_000);
  await page.route('**/api/meshes',r=>r.fulfill({json:[]}));

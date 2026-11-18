@@ -24,7 +24,7 @@ function capture(){if(!riding||blocked||!captureAllowed||pending||owns())return;
 globalThis.paketCapture=capture;
 canvas.addEventListener('pointerdown',event=>{
  const hit=hitAt(event);
- if(hit?.field&&!hit.readOnly&&(event.pointerType==='touch'||matchMedia('(pointer:coarse)').matches)){imePointer={id:event.pointerId,region:hit};return;}
+ if(hit?.field&&!hit.readOnly){imePointer={id:event.pointerId,region:hit};return;}
  cancelIme();if(!hit||hit.capture)capture();
 });
 // Winit focuses its canvas on pointerdown. Focus the hidden OS input only on the

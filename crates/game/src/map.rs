@@ -428,6 +428,7 @@ pub fn setup(mut commands: Commands) {
                     bevy::ui_widgets::ScrollArea,
                     Node {
                         flex_grow: 1.,
+                        flex_basis: Val::Px(0.),
                         min_height: Val::Px(0.),
                         flex_direction: FlexDirection::Column,
                         row_gap: Val::Px(6.),
@@ -483,6 +484,7 @@ pub fn setup(mut commands: Commands) {
                     Node {
                         display: Display::None,
                         flex_grow: 1.,
+                        flex_basis: Val::Px(0.),
                         min_height: Val::Px(0.),
                         flex_direction: FlexDirection::Column,
                         row_gap: Val::Px(6.),
@@ -598,6 +600,7 @@ fn text_input(parent: &mut ChildSpawnerCommands, address: bool) {
         TextColor(Color::WHITE),
         Node {
             width: Val::Percent(100.),
+            height: Val::Px(36.),
             min_height: Val::Px(36.),
             flex_shrink: 0.,
             padding: UiRect::all(Val::Px(7.)),
@@ -630,6 +633,7 @@ pub(crate) fn responsive(
     let header = crate::game_ui::header_height(window.width());
     for (mut node, layout, pane, sidebar, group) in &mut nodes {
         if layout {
+            node.height = Val::Px(window.height());
             node.flex_direction = if portrait {
                 FlexDirection::Column
             } else {
@@ -646,7 +650,7 @@ pub(crate) fn responsive(
             node.height = if portrait {
                 Val::Px(portrait_map_height(window) + TOOLBAR)
             } else {
-                Val::Percent(100.)
+                Val::Px((window.height() - header).max(0.))
             };
             node.flex_grow = if portrait { 0. } else { 1. };
             node.flex_shrink = if portrait { 0. } else { 1. };
@@ -657,12 +661,19 @@ pub(crate) fn responsive(
             } else {
                 Val::Px(SIDEBAR)
             };
-            node.height = if portrait {
-                Val::Auto
-            } else {
-                Val::Percent(100.)
-            };
-            node.flex_grow = if portrait { 1. } else { 0. };
+            node.height = Val::Px(
+                (window.height()
+                    - header
+                    - if portrait {
+                        portrait_map_height(window) + TOOLBAR
+                    } else {
+                        0.
+                    })
+                .max(0.),
+            );
+            node.flex_grow = 0.;
+            node.flex_shrink = 0.;
+            node.overflow = Overflow::clip();
         }
         if let Some(group) = group {
             node.display = if group.0 == map.friends {
