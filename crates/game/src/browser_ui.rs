@@ -160,3 +160,61 @@ pub(crate) fn input(
         }
     }
 }
+
+// Publish committed street motion to the browser recording player at 10 Hz.
+pub(crate) fn sound(
+    time: Res<Time>,
+    ride: Res<Ride>,
+    jobs: Res<Jobs>,
+    keys: Res<ButtonInput<KeyCode>>,
+    player: Query<(&Player, &Transform, &avian3d::prelude::LinearVelocity)>,
+    cars: Query<(&Transform, &avian3d::prelude::LinearVelocity), With<crate::traffic::Car>>,
+    mut timer: Local<f32>,
+) {
+    if !cfg!(target_arch = "wasm32") {
+        return;
+    }
+    *timer += time.delta_secs();
+    if *timer < 0.1 {
+        return;
+    }
+    *timer = 0.;
+    let Ok((person, actor, velocity)) = player.single() else {
+        return;
+    };
+    let active = !jobs.menu_open && !ride.waiting_for_tile;
+    let controls = active && ride.mouse_look && !jobs.interaction_active();
+    let pressed = |a, b| {
+        if keys.pressed(a) || keys.pressed(b) {
+            1.0
+        } else {
+            0.0
+        }
+    };
+    let throttle = if controls {
+        pressed(KeyCode::KeyW, KeyCode::ArrowUp) - pressed(KeyCode::KeyS, KeyCode::ArrowDown)
+    } else {
+        0.0
+    };
+    let traffic = cars
+        .iter()
+        .map(|(car, velocity)| {
+            let offset = (car.translation - actor.translation).with_y(0.0);
+            let distance = offset.length();
+            (distance, offset, velocity.0.xz().length() * 3.6)
+        })
+        .filter(|(distance, _, _)| distance.is_finite() && *distance < 42.0)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(distance, offset, speed)| {
+            serde_json::json!({"distance":distance,"pan":actor.right().dot(offset.normalize_or_zero()),"speed":speed})
+        });
+    let form = match person.form {
+        paket_session::Avatar::Van => "van",
+        paket_session::Avatar::Dog => "dog",
+        _ => "courier",
+    };
+    crate::platform::ui_event("street-audio", &serde_json::json!({
+        "active":active,"position":actor.translation.to_array(),"speed":velocity.0.xz().length()*3.6,
+        "verticalSpeed":velocity.0.y,"form":form,"throttle":throttle,"traffic":traffic
+    }).to_string());
+}

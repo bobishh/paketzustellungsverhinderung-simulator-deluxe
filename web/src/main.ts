@@ -8,7 +8,7 @@ import './hud';
 import './mouse';
 import './shift-vote';
 import './help';
-import './bite-audio';
+import './audio';
 import { initGameAnalytics } from './analytics';
 import { initProfile } from './profile';
 import { restoreIdentity, signIn } from './identity';

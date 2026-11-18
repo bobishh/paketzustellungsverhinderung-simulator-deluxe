@@ -871,6 +871,16 @@ pub(crate) fn residents(
         });
     let noisy = (player.form == Avatar::Van && keys.just_pressed(KeyCode::KeyH))
         || (player.form == Avatar::Dog && keys.just_pressed(KeyCode::KeyB));
+    if noisy && active {
+        crate::platform::ui_event(
+            "game-sound",
+            if player.form == Avatar::Dog {
+                "\"dog\""
+            } else {
+                "\"horn\""
+            },
+        );
+    }
     let mut witnessed = false;
     let mut pursued = false;
     for (entity, mut npc, mut transform) in &mut npcs {

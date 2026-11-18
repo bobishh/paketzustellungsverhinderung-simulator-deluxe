@@ -1,0 +1,47 @@
+Game audio credits
+
+Physical recordings are dedicated to the public domain under CC0 1.0:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+OwlishMedia / owlstorm: Sound Effects Pack (footsteps, cloth, paper and physical impacts).
+https://opengameart.org/node/86682
+HaelDB: Footsteps Leather, Cloth, Armor (cloth footsteps; CC0 option).
+https://opengameart.org/content/footsteps-leather-cloth-armor
+AntumDeluge: Bicycle Sounds (bell).
+https://opengameart.org/content/bicycle-sounds
+
+aidansamuel: Darts.wav
+https://freesound.org/people/aidansamuel/sounds/540132/
+greatsoundstube: put glass down full.mp3
+https://freesound.org/people/greatsoundstube/sounds/628594/
+megashroom: Beer Pouring Into Glass 170427_1449.wav
+https://freesound.org/people/megashroom/sounds/390164/
+Kinoton: Hamburg City Traffic Ambience
+https://freesound.org/people/Kinoton/sounds/352152/
+stijn: CarPassing4.wav
+https://freesound.org/people/stijn/sounds/19982/
+cazalrenoux: bicycle chain and freewheel_with brakes
+https://freesound.org/people/cazalrenoux/sounds/849362/
+GiocoSound: Car_Sound_BMW_120d (outside idle, low RPM, high RPM)
+https://freesound.org/people/GiocoSound/sounds/401552/
+https://freesound.org/people/GiocoSound/sounds/401556/
+https://freesound.org/people/GiocoSound/sounds/401551/
+Sadiquecat: Dog bark 2
+https://freesound.org/people/Sadiquecat/sounds/850823/
+jonahlpayne: dingdong
+https://freesound.org/people/jonahlpayne/sounds/827464/
+TOMRORYPARSONS: Camera shutter sound.wav
+https://freesound.org/people/TOMRORYPARSONS/sounds/425245/
+
+Edits: clips selected, trimmed, filtered, levelled and faded; loops crossfaded;
+MP3 bank encoded at 24 kHz / 96 kbps. Freesound public HQ previews used.
+
+Crowd surname calls: generated for these games with Kokoro-82M v1.0,
+using generic am_onyx, bm_george and af_bella voice styles. Pitch and short
+room echoes applied. These recordings do not imitate the characters' voices.
+Kokoro model: Apache-2.0. https://huggingface.co/hexgrad/Kokoro-82M
+kokoro-onnx 0.6.1: MIT. https://github.com/thewh1teagle/kokoro-onnx
+Model SHA-256: f3a290d384fbb27966d462905c71a46cef9e5fd00516b40df32a0b4afe77ac96
+Voice styles SHA-256: bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
+
+Car horn — danlucaz, CC0: https://freesound.org/people/danlucaz/sounds/517673/

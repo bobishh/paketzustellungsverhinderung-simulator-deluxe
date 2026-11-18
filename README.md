@@ -41,7 +41,23 @@ The browser HUD shows the shift clock, KPI, current delivery, an expandable rout
 
 The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Resident names stay consistent within a ride. Residents have different away slots and response delays. Dispatcher SMS clues open optional neighbor handover challenges. Ring the marked neighbor, choose what to say and hand over the parcel for a bonus. The bonus starts falling 45 seconds after the first ring. A dog can take a dropped challenge parcel back to the correct door. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
 
-A bite causes a brief shock: one jump, flailing arms, a small camera jolt and blocked movement/parcel actions for 1.2 seconds (NPC dog) or 1.5 seconds (player dog). The browser adds a procedural yelp, with a sound toggle in settings. No parcel or KPI is lost.
+A bite causes a brief shock: one jump, flailing arms, a small camera jolt and blocked movement/parcel actions for 1.2 seconds (NPC dog) or 1.5 seconds (player dog). No parcel or KPI is lost.
+
+## Browser sound
+
+Recorded footsteps follow travelled ground distance. The street ambience, nearby
+traffic, parcel handling, intercom, camera and dog interactions use the shared
+recording bank in `assets/audio/`. The van mixes recordings of idle, low and high
+engine speeds. Pedal input controls load; road speed supplies a gear-relative RPM
+curve. Gain, pitch and stereo position change gradually rather than restarting
+loops on each frame. Passing traffic fades with distance from the actual vehicle.
+
+The settings sound switch persists across visits. Menus and hidden tabs silence
+playback. Audio loads independently with three bounded attempts; missing audio
+never prevents a shift. `browser_ui::sound` owns the browser motion contract,
+`web/src/street-sound.ts` owns the street mix, and the shared sample player owns
+Web Audio resources. Keep the sample player and bank identical to Job Hunt and
+Feed the Poor. Credits and licenses are in `assets/audio/job-audio-credits.txt`.
 
 NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
 

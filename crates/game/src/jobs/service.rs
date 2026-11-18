@@ -414,6 +414,7 @@ pub(crate) fn service_update(
                     },
                     Action::Bell(i),
                 ) if i < 6 => {
+                    crate::platform::ui_event("game-sound", "\"doorbell\"");
                     shift.locked = true;
                     let start = *started.get_or_insert(now);
                     *pressed |= 1 << i;

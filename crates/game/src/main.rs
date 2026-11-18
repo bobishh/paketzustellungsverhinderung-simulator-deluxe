@@ -226,7 +226,11 @@ fn install_ride(app: &mut App) {
                 nearby_buildings,
                 jobs::service_ui.after(jobs::courier),
                 capture_frame,
-                (browser_ui::frame, browser_ui::update.after(sync_peers)),
+                (
+                    browser_ui::frame,
+                    browser_ui::update.after(sync_peers),
+                    browser_ui::sound.after(browser_ui::input),
+                ),
             )
                 .run_if(in_state(Mode::Ride)),
         );
