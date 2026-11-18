@@ -30,9 +30,6 @@ pub(crate) fn update(
     mut version: Local<Option<(u64, u64)>>,
     mut outlines: Local<String>,
 ) {
-    if !cfg!(target_arch = "wasm32") {
-        return;
-    }
     *timer += time.delta_secs();
     if *timer < 0.1 {
         return;
@@ -171,9 +168,6 @@ pub(crate) fn sound(
     cars: Query<(&Transform, &avian3d::prelude::LinearVelocity), With<crate::traffic::Car>>,
     mut timer: Local<f32>,
 ) {
-    if !cfg!(target_arch = "wasm32") {
-        return;
-    }
     *timer += time.delta_secs();
     if *timer < 0.1 {
         return;

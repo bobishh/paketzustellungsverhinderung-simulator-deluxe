@@ -1,0 +1,751 @@
+{
+  "channels": 1,
+  "cues": {
+    "bell": [
+      {
+        "file": "native/audio/53a92bcfd1c6c4b4520a8446.wav",
+        "gain": 0.16,
+        "loop": false
+      }
+    ],
+    "bike-chain": [
+      {
+        "file": "native/audio/c4db254779768d54a18b915c.wav",
+        "gain": 0.25,
+        "loop": true
+      }
+    ],
+    "bike-coast": [
+      {
+        "file": "native/audio/9c863be26c6054613e23a079.wav",
+        "gain": 0.22,
+        "loop": true
+      }
+    ],
+    "bite": [
+      {
+        "file": "native/audio/1e0a0bc1332516143906cc61.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "bounce": [
+      {
+        "file": "native/audio/9e0452cb36fe3517be6d0d2a.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "brake": [
+      {
+        "file": "native/audio/162b4c9604f110ba0cdda83b.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "brick": [
+      {
+        "file": "native/audio/48cc10d87ce65234fca3151d.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "call-elon-musk": [
+      {
+        "file": "native/audio/c0c0dfb7a9f826a11e29647d.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/97c22b5f1f884cb1ce045def.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/013fd0cf72d8a0c747758b04.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-jeff-bezos": [
+      {
+        "file": "native/audio/c0b870b5540cbb6557764e2c.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/89cb24655b84b72466d12f9b.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/78e1245bb4a5cfc5ada57744.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-larry-ellison": [
+      {
+        "file": "native/audio/a4c54e63413bc05de5ec04c1.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/66f68447ee472b95b4140863.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/737832bbd20a44313bae0d1c.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-larry-page": [
+      {
+        "file": "native/audio/f7c4dc1b866002d0a13131f8.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/96cee162f5818cc9fa3c327e.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/625abea5f360e787e40a1987.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-mark-zuckerberg": [
+      {
+        "file": "native/audio/a68d99734daaff34a5c27e85.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/2656557d61cceac2ae26255a.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/baee0cdf9d86443b69cab0f7.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-michael-dell": [
+      {
+        "file": "native/audio/32070920dfc2d2a4d7fd26ee.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/e942b8e7f65afecfdcad4423.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/7fb7f5a4a9c94eb0c622db72.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-sergey-brin": [
+      {
+        "file": "native/audio/f12292876a0692fc9a2e9f8d.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/5dcdb96f80af133a87e5dcb0.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/b080d81fd47a007cac67a3f0.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-steve-ballmer": [
+      {
+        "file": "native/audio/afe73e783fcec095d99a3369.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/d792cf2c2d5af0f3c0c40370.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/45e8d6e796689e45c49feff6.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "call-warren-buffett": [
+      {
+        "file": "native/audio/8578a1d36b01c2050a824733.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/2798e101d3d8d6e0045f3b62.wav",
+        "gain": 0.34,
+        "loop": false
+      },
+      {
+        "file": "native/audio/2f5eaa3d923b5087b3579e09.wav",
+        "gain": 0.34,
+        "loop": false
+      }
+    ],
+    "camera": [
+      {
+        "file": "native/audio/cfe67792c58edf3d7ba7b73f.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "car-pass": [
+      {
+        "file": "native/audio/d10a38b510633cc7a8ad333c.wav",
+        "gain": 0.25,
+        "loop": false
+      }
+    ],
+    "catch-cash": [
+      {
+        "file": "native/audio/df3737f08c8b8b5c610e30cc.wav",
+        "gain": 0.22,
+        "loop": false
+      },
+      {
+        "file": "native/audio/dc75542d0679e4a3808e7b9d.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "catch-food": [
+      {
+        "file": "native/audio/c1fc62f1813917f186800df2.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "chain": [
+      {
+        "file": "native/audio/cc043e2d69082fabe63d2ff3.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "click": [
+      {
+        "file": "native/audio/cc043e2d69082fabe63d2ff3.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "cloth": [
+      {
+        "file": "native/audio/936d4aac0455bcd8db74cbce.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "correct": [
+      {
+        "file": "native/audio/cc043e2d69082fabe63d2ff3.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "crash": [
+      {
+        "file": "native/audio/b0815f4b1730a592da896a68.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "dart": [
+      {
+        "file": "native/audio/aa177479143fd5ed91babc55.wav",
+        "gain": 0.42,
+        "loop": false
+      },
+      {
+        "file": "native/audio/8761e35a2deb08dde99ed37b.wav",
+        "gain": 0.42,
+        "loop": false
+      }
+    ],
+    "dart-miss": [
+      {
+        "file": "native/audio/9e0452cb36fe3517be6d0d2a.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "dog": [
+      {
+        "file": "native/audio/c7614ff1459bee137ba44a66.wav",
+        "gain": 0.3,
+        "loop": false
+      }
+    ],
+    "doorbell": [
+      {
+        "file": "native/audio/39e84213e528844e6722e3cd.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "engine": [
+      {
+        "file": "native/audio/0577fe71c537109aa0d3efc8.wav",
+        "gain": 0.3,
+        "loop": true
+      }
+    ],
+    "engine-high": [
+      {
+        "file": "native/audio/42431e0f2e1a234110e97dd7.wav",
+        "gain": 0.32,
+        "loop": true
+      }
+    ],
+    "engine-idle": [
+      {
+        "file": "native/audio/0577fe71c537109aa0d3efc8.wav",
+        "gain": 0.3,
+        "loop": true
+      }
+    ],
+    "engine-low": [
+      {
+        "file": "native/audio/d1e50eff861f41b66cdff631.wav",
+        "gain": 0.32,
+        "loop": true
+      }
+    ],
+    "failure": [
+      {
+        "file": "native/audio/df3737f08c8b8b5c610e30cc.wav",
+        "gain": 0.22,
+        "loop": false
+      },
+      {
+        "file": "native/audio/dc75542d0679e4a3808e7b9d.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "gasp": [
+      {
+        "file": "native/audio/1e0a0bc1332516143906cc61.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "glass": [
+      {
+        "file": "native/audio/296924cd39b0561651b92f13.wav",
+        "gain": 0.3,
+        "loop": false
+      }
+    ],
+    "grip": [
+      {
+        "file": "native/audio/936d4aac0455bcd8db74cbce.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "horn": [
+      {
+        "file": "native/audio/3167f898549a8f07bd87b4ff.wav",
+        "gain": 0.27,
+        "loop": false
+      }
+    ],
+    "jump": [
+      {
+        "file": "native/audio/936d4aac0455bcd8db74cbce.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "land": [
+      {
+        "file": "native/audio/c1fc62f1813917f186800df2.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "launch": [
+      {
+        "file": "native/audio/936d4aac0455bcd8db74cbce.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "mail": [
+      {
+        "file": "native/audio/df3737f08c8b8b5c610e30cc.wav",
+        "gain": 0.22,
+        "loop": false
+      },
+      {
+        "file": "native/audio/dc75542d0679e4a3808e7b9d.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "metal": [
+      {
+        "file": "native/audio/48cc10d87ce65234fca3151d.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "miss": [
+      {
+        "file": "native/audio/c1fc62f1813917f186800df2.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "money": [
+      {
+        "file": "native/audio/322acd66f621eb536ed6ad8a.wav",
+        "gain": 0.23,
+        "loop": false
+      }
+    ],
+    "paper": [
+      {
+        "file": "native/audio/df3737f08c8b8b5c610e30cc.wav",
+        "gain": 0.22,
+        "loop": false
+      },
+      {
+        "file": "native/audio/dc75542d0679e4a3808e7b9d.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "parcel": [
+      {
+        "file": "native/audio/b0815f4b1730a592da896a68.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "photo": [
+      {
+        "file": "native/audio/cfe67792c58edf3d7ba7b73f.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "pickup": [
+      {
+        "file": "native/audio/b0815f4b1730a592da896a68.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "pour": [
+      {
+        "file": "native/audio/f6848af7808e416b2266b8bb.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "purchase": [
+      {
+        "file": "native/audio/b0815f4b1730a592da896a68.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "push": [
+      {
+        "file": "native/audio/3ee607a0a6ac5b3dd45896d6.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "robot-step": [
+      {
+        "file": "native/audio/48cc10d87ce65234fca3151d.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "scrape": [
+      {
+        "file": "native/audio/3ee607a0a6ac5b3dd45896d6.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "send": [
+      {
+        "file": "native/audio/df3737f08c8b8b5c610e30cc.wav",
+        "gain": 0.22,
+        "loop": false
+      },
+      {
+        "file": "native/audio/dc75542d0679e4a3808e7b9d.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "shock": [
+      {
+        "file": "native/audio/1e0a0bc1332516143906cc61.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "soft-hit": [
+      {
+        "file": "native/audio/c1fc62f1813917f186800df2.wav",
+        "gain": 0.2,
+        "loop": false
+      }
+    ],
+    "step": [
+      {
+        "file": "native/audio/ec8587f03a5c443f3ff495c4.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/ca2f3cb7f54fa1df24918d45.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/fe53bad83feb01c00b6684f0.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/e84998f7715fe4b91cfc9d37.wav",
+        "gain": 0.16,
+        "loop": false
+      }
+    ],
+    "step-grass": [
+      {
+        "file": "native/audio/9d6c136907a9c62432deec8d.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/cc4c2abec70a5c380113f7fe.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/bb17a41454479a7ebb339b9f.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/6852e0ec93cd970926c1ed2d.wav",
+        "gain": 0.13,
+        "loop": false
+      }
+    ],
+    "step-pavement": [
+      {
+        "file": "native/audio/ec8587f03a5c443f3ff495c4.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/ca2f3cb7f54fa1df24918d45.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/fe53bad83feb01c00b6684f0.wav",
+        "gain": 0.16,
+        "loop": false
+      },
+      {
+        "file": "native/audio/e84998f7715fe4b91cfc9d37.wav",
+        "gain": 0.16,
+        "loop": false
+      }
+    ],
+    "step-soft": [
+      {
+        "file": "native/audio/71cea63a0c4782780499ea3c.wav",
+        "gain": 0.14,
+        "loop": false
+      },
+      {
+        "file": "native/audio/98e730242ab9690b7411cab6.wav",
+        "gain": 0.14,
+        "loop": false
+      }
+    ],
+    "step-wood": [
+      {
+        "file": "native/audio/3a943e9b572880ee6b13a05a.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/c3c38ab5ebcf083b043e9db9.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/82bad74f5c2f54d6792f922b.wav",
+        "gain": 0.13,
+        "loop": false
+      },
+      {
+        "file": "native/audio/42bbfd8f5d3f133a7c99a5de.wav",
+        "gain": 0.13,
+        "loop": false
+      }
+    ],
+    "street": [
+      {
+        "file": "native/audio/1b5811bdd78a1e6fd09f2bc6.wav",
+        "gain": 0.18,
+        "loop": true
+      }
+    ],
+    "success": [
+      {
+        "file": "native/audio/53a92bcfd1c6c4b4520a8446.wav",
+        "gain": 0.16,
+        "loop": false
+      }
+    ],
+    "swing": [
+      {
+        "file": "native/audio/3ee607a0a6ac5b3dd45896d6.wav",
+        "gain": 0.18,
+        "loop": false
+      }
+    ],
+    "throw-cash": [
+      {
+        "file": "native/audio/322acd66f621eb536ed6ad8a.wav",
+        "gain": 0.23,
+        "loop": false
+      }
+    ],
+    "throw-food": [
+      {
+        "file": "native/audio/936d4aac0455bcd8db74cbce.wav",
+        "gain": 0.15,
+        "loop": false
+      }
+    ],
+    "wood-hit": [
+      {
+        "file": "native/audio/9e0452cb36fe3517be6d0d2a.wav",
+        "gain": 0.22,
+        "loop": false
+      }
+    ],
+    "wrong": [
+      {
+        "file": "native/audio/322acd66f621eb536ed6ad8a.wav",
+        "gain": 0.23,
+        "loop": false
+      }
+    ]
+  },
+  "files": {
+    "013fd0cf72d8a0c747758b04.wav": "6fe7842660ae7f5a2e8e37241797bfdd5ec71f929c32cbde75cd86bac29cd2e6",
+    "0577fe71c537109aa0d3efc8.wav": "e733209def33c2facfed2eea0f2389f3c87b7e7c9cb19b1ad6d3956d1fbb5470",
+    "162b4c9604f110ba0cdda83b.wav": "62a7aacde41a6bfa7c30978ecdd8a7e4d7778c7f60fce70155ff5c38fff1bdf6",
+    "1b5811bdd78a1e6fd09f2bc6.wav": "53d6388aa2daec2ecf8d9876c3bd2d542d7f04788a0160c575471fea43c20bf4",
+    "1e0a0bc1332516143906cc61.wav": "5973f6b63c00ac9f6460e13fe250ba053f1b93a26770c55f4baef2bbc90d964e",
+    "2656557d61cceac2ae26255a.wav": "2854deedfc418f7ca46cddaac6e9279ad1a909768b4e2a6a8b10b673f35e961b",
+    "2798e101d3d8d6e0045f3b62.wav": "2c052b4e6592b53fa7dfc5fecc94e74dc899cf7fcfc8816bb9160ce17a768b1e",
+    "296924cd39b0561651b92f13.wav": "0c3f4d1fa508a7f6d4971605975d1e906f55c87ded6838ef6045979018d39de0",
+    "2f5eaa3d923b5087b3579e09.wav": "0d8a31b2ae459f53dce4a41b580d1c0d06d872bb43498a2d0f3f1836d7e8a09b",
+    "3167f898549a8f07bd87b4ff.wav": "02d78faf8d6bd673d75f3af7392a2b17d69ea1064ad3d4a9ee88f5b7e783e5cc",
+    "32070920dfc2d2a4d7fd26ee.wav": "506a7d54bf80937f4b1562f34e06804812c9dd982413134985381a5e65e9f764",
+    "322acd66f621eb536ed6ad8a.wav": "fdf5abf93d15f82297d30f2a7dcc1832d1483c9f62a92450421d69b59bf17b20",
+    "39e84213e528844e6722e3cd.wav": "2fa93b3ab60d397804e54332a57cdb37c664489679916afe0f3436840818f100",
+    "3a943e9b572880ee6b13a05a.wav": "864b91c5064fd6fc19440e99c0bc7849cf7085d56f52ef5829f03ded73c8889c",
+    "3ee607a0a6ac5b3dd45896d6.wav": "666eb870132eec50f4551f8d9eb79e19e7e6ebcbc195fd7ffb1911e078655e27",
+    "42431e0f2e1a234110e97dd7.wav": "a858fa69a67d1fe87bc2eab695c5c1aa62463c293ba7c8fabf5520f6617f8b96",
+    "42bbfd8f5d3f133a7c99a5de.wav": "38ab1edb64f995beb744bdc5132da9186ef863c94865ce41b0e447f6787c8ddd",
+    "45e8d6e796689e45c49feff6.wav": "b236ceeabfef055a3eb577b76f2f2b4e63af710a91d92c90022aef943303fb3c",
+    "48cc10d87ce65234fca3151d.wav": "5a81fd23cbb08c1e1ae66e997aca55bfc1f1eaead7a3247c9e88f1ffb553835a",
+    "53a92bcfd1c6c4b4520a8446.wav": "05d4dd0ee56279cd717736d7ca7530894b102c6f46a7b1020e6d4df4b6b6a231",
+    "5dcdb96f80af133a87e5dcb0.wav": "610bdc07d0668b533109e251361d1b4aad17e8595c881db7963a9c95e66c9652",
+    "625abea5f360e787e40a1987.wav": "baba978cb2cabaa0cc30e87c8ee2aba7d163723636653142b40dc6f8c0100915",
+    "66f68447ee472b95b4140863.wav": "a48f2cbcdf627a96ef43b2a2284ed318583524504bd078aab74562d6233ea410",
+    "6852e0ec93cd970926c1ed2d.wav": "71a833b168864fbb45d9db524b70239c3fa6098a56a8e1289f5220400c59381b",
+    "71cea63a0c4782780499ea3c.wav": "b0178bd26ec0983d47769f716662aae7973fb57d1a02ec0e3a79176e0cec8862",
+    "737832bbd20a44313bae0d1c.wav": "74c798695e407f37914200882614ac625f79a5b38671af409ec763cdb46e60a3",
+    "78e1245bb4a5cfc5ada57744.wav": "62b89b91f1674383aa0d3461a1d17e6ce4cfc6bd1c599371b8c72b342684f612",
+    "7fb7f5a4a9c94eb0c622db72.wav": "2c432fbd8b87151c806d0de72e27dabe6239328caa3e1d410da1b83166426245",
+    "82bad74f5c2f54d6792f922b.wav": "b90545a602c3c8efbacc4b3cf3db1aea736f8aafeac66c0643be980535958a97",
+    "8578a1d36b01c2050a824733.wav": "ca49c3ba9540e4a45a29ea49515bad26097ed1c71f1399b515df590db30f42cc",
+    "8761e35a2deb08dde99ed37b.wav": "f693dea41d8b676351d3b0628bc9380cfe723d1b681a4fddcd2a11df536e5db9",
+    "89cb24655b84b72466d12f9b.wav": "120eca1a4b6da9a070f340e7396948b97a542cce44466506595406ce87950052",
+    "936d4aac0455bcd8db74cbce.wav": "6e80e0689b204a9e3dd68ec2e1a54481a190509f3b0cc57a779f4a2ac08055db",
+    "96cee162f5818cc9fa3c327e.wav": "412a8501ae8f1a48e7d46df967bc12a808b9a45e0d80f58470b5a5059a0770df",
+    "97c22b5f1f884cb1ce045def.wav": "de8e4ddf133b8cc83445ce022103d5add2520be8b6fe80935a1f9c007b1af59c",
+    "98e730242ab9690b7411cab6.wav": "d6cec7c6306fb334423c2413bb3eaa9fa225ddef3dfd3508166610c7d72ead81",
+    "9c863be26c6054613e23a079.wav": "a034325af5175ea2a731440e7056dc5f2c6366a701f8ebf31f375169dffcfa6e",
+    "9d6c136907a9c62432deec8d.wav": "720964b83058799045f596678f6311b4220a22fd2c3186411c22812f9f3a90ca",
+    "9e0452cb36fe3517be6d0d2a.wav": "2694fda10af37f71352ffe9957727f8cf98d82da3c3443b4b1dc7b4d3db686a4",
+    "a4c54e63413bc05de5ec04c1.wav": "c4e7d425c2b4f5f1acedea12f6c76e0ee0c4feda677126454ba82ddad0f1d0c1",
+    "a68d99734daaff34a5c27e85.wav": "9aa7123a9d339a04620746278b78e06932901bf51e403f654c81d9659b5772d2",
+    "aa177479143fd5ed91babc55.wav": "9a7c8b4ee85626a00eb49b4fe0d0a1364fcf3ae4172a9e943cb2738ad9920760",
+    "afe73e783fcec095d99a3369.wav": "4f07df20d747ea6963ed10fd5db917bd9778aeb6c7cb8eb16d2fe70a9e8157ea",
+    "b080d81fd47a007cac67a3f0.wav": "45c22b41a26e3dd6894cacef94f6ac6207c69e96c30757cb16d917e2741b3027",
+    "b0815f4b1730a592da896a68.wav": "f3c6bab706965d8e8d20ccc9e50219025cd19a995cdf721d3a3a8df4ae7d2b52",
+    "baee0cdf9d86443b69cab0f7.wav": "7a350ecda9e6a85ab9a1a44332666abb3725804ffca299c8040d829206a11401",
+    "bb17a41454479a7ebb339b9f.wav": "8373cc0d9b0a7f4279977fa10a795c1c9da6bbc5ed90572970757a327bd34f78",
+    "c0b870b5540cbb6557764e2c.wav": "c2ab9d3edc955688fe508ab7310a6fead39aa8462c5970181d4e655ddddee0d2",
+    "c0c0dfb7a9f826a11e29647d.wav": "5a9645595b7fcf92c6ff63fe04423894089292467de793a4494780c17fef064f",
+    "c1fc62f1813917f186800df2.wav": "c708d7fea6192808be96f8304395835e3a14895bf3a26b7b1c14d15609f4aa3d",
+    "c3c38ab5ebcf083b043e9db9.wav": "454444b0a5fa159837b02594210584e30f1930503773dd1b60d7c13e5fdd77cb",
+    "c4db254779768d54a18b915c.wav": "e41c89ce8326ebd5967c11cac7b9d60773b7b90d5f23e1af8991dc5a3007399a",
+    "c7614ff1459bee137ba44a66.wav": "2e1c489527246872db4cd1d5dfe8cc6db1da1a0974ba63cca7e1c79311b758ce",
+    "ca2f3cb7f54fa1df24918d45.wav": "d075386ea606a587c89b6bf6dcc67b97cca6fa0e9b1f528dd2855618fef64474",
+    "cc043e2d69082fabe63d2ff3.wav": "5e99c4365bf38b6da8008002d3a452dba4d468dddf31968a48411552ecb4b931",
+    "cc4c2abec70a5c380113f7fe.wav": "f4a4b4f2bb0db05b79fbdebddd3bd3d857a3e76a19475dae82638a39aa004d4c",
+    "cfe67792c58edf3d7ba7b73f.wav": "4eb2f6ce8c0a0e045f56045a80fc8d80ea823b9d83eec64b63ac44aecb8b9af7",
+    "d10a38b510633cc7a8ad333c.wav": "1fba7624e914f0a131ab3bc9e74be2efa21fba45f36a1a4c8159b66a3bcb41e3",
+    "d1e50eff861f41b66cdff631.wav": "22892d627a1fc1ee4235ccf0045316bb2357a496a6fa0a6bd0ac2881e39808d3",
+    "d792cf2c2d5af0f3c0c40370.wav": "8996ac69f6cef6d0521b808a7b07d2bf4c037eb0d8c2ca8533841c8da7818f4a",
+    "dc75542d0679e4a3808e7b9d.wav": "1a7403ee9a6138ae16152225cdb5b34e6e4d4ab9fe65b8e792b557edd3ac241e",
+    "df3737f08c8b8b5c610e30cc.wav": "186a4589994d724f4cba48fa7b728087355848fee42bf48aa125c0f3584dee17",
+    "e84998f7715fe4b91cfc9d37.wav": "59b61656e1608c9128aebdae9c60303a05caf7f2ffc3486272d91a3e56a0e783",
+    "e942b8e7f65afecfdcad4423.wav": "be3d9af8840063eb021183e338dd2296dba9c66cfb8c391c489ebfb24fec74ab",
+    "ec8587f03a5c443f3ff495c4.wav": "f9e46bc39a77c88db09fd964ad8c4d4f99b5101d43bd27842506988649b1d296",
+    "f12292876a0692fc9a2e9f8d.wav": "25f9be48d21a7f9175ef0155984045598250130e8250953162c82fe7b4ab28f3",
+    "f6848af7808e416b2266b8bb.wav": "d5bd0e08dc43315057115cef89cb3169b9684949c2777ad19d0ca3f2c4f83602",
+    "f7c4dc1b866002d0a13131f8.wav": "7250726d8433127b38d7131c17812c041087f73e6094a1ae5371c4043469b48b",
+    "fe53bad83feb01c00b6684f0.wav": "d8c643277a571f5f0e8db225e4efafd8b2743deda95dae34b15b8f03ff65d8fb"
+  },
+  "sampleFormat": "PCM16LE",
+  "sampleRate": 24000,
+  "sources": {
+    "bankSha256": "2b51b9227444f5f05baf500bcfd4510296283a92005e0733882b544ecf94bead",
+    "cuesSha256": "fec25d325507ffbe298d210b9ce79da31a1be8894e67260fd6064120f7e4ae9d"
+  },
+  "version": 1
+}

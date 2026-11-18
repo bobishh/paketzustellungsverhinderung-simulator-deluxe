@@ -9,6 +9,8 @@ mod dogs;
 mod elevation;
 mod jobs;
 mod map;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_audio;
 mod places;
 mod platform;
 mod press_scene;
@@ -125,6 +127,8 @@ fn main() {
         )
         .expect("the default font asset can be replaced");
     install_ride(&mut app);
+    #[cfg(not(target_arch = "wasm32"))]
+    native_audio::install(&mut app);
     if platform::arguments().iter().any(|a| a == "--press-shot") {
         press_scene::install(&mut app);
     }

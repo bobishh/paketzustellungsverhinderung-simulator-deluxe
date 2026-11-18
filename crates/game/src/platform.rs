@@ -109,7 +109,14 @@ mod browser {
 pub use browser::*;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn ui_event(_: &str, _: &str) {}
+pub fn ui_event(name: &str, text: &str) {
+    if !crate::native_audio::accepts(name) {
+        return;
+    }
+    if let Ok(value) = serde_json::from_str(text) {
+        crate::native_audio::event(name, &value);
+    }
+}
 #[cfg(not(target_arch = "wasm32"))]
 pub fn ui_commands() -> String {
     "[]".into()
