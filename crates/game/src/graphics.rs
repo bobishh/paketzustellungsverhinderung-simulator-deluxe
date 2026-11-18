@@ -1,15 +1,13 @@
 //! Render the adaptive street separately from the full-resolution game interface.
 use crate::{Mode, actors::FollowCamera};
 use bevy::{
-    camera::{CameraUpdateSystems, ImageRenderTarget, RenderTarget, visibility::RenderLayers},
+    camera::{CameraUpdateSystems, ImageRenderTarget, RenderTarget},
     image::ImageSampler,
     picking::Pickable,
     prelude::*,
     render::render_resource::{Extent3d, TextureFormat},
     window::PrimaryWindow,
 };
-
-const COMPOSITOR_LAYER: usize = 31;
 
 #[derive(Resource)]
 struct SceneSurface {
@@ -38,18 +36,25 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         Camera2d,
         Camera {
             order: 100,
-            clear_color: ClearColorConfig::None,
+            clear_color: ClearColorConfig::Default,
             ..default()
         },
         Msaa::Off,
         IsDefaultUiCamera,
-        RenderLayers::layer(COMPOSITOR_LAYER),
         Name::new("Full-resolution interface"),
     ));
+    // Composite through the same UI pass as the HUD, beneath all game widgets.
+    // Clearing the window each frame also prevents old loading artwork persisting.
     commands.spawn((
-        Sprite::from_image(image),
-        RenderLayers::layer(COMPOSITOR_LAYER),
-        Visibility::Hidden,
+        ImageNode::new(image),
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100),
+            height: percent(100),
+            display: Display::None,
+            ..default()
+        },
+        GlobalZIndex(-1000),
         Pickable::IGNORE,
         SceneImage,
         Name::new("Adaptive street composite"),
@@ -62,24 +67,16 @@ fn resize(
     mut surface: ResMut<SceneSurface>,
     mut images: ResMut<Assets<Image>>,
     mut cameras: Query<(&mut Camera, &mut RenderTarget), (With<Camera3d>, With<FollowCamera>)>,
-    mut composite: Query<(&mut Sprite, &mut Visibility), With<SceneImage>>,
+    mut composite: Query<&mut Node, With<SceneImage>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
     };
     let active = *mode.get() == Mode::Ride && cameras.iter().any(|(camera, _)| camera.is_active);
-    for (mut sprite, mut visibility) in &mut composite {
-        let size = Some(window.size());
-        if sprite.custom_size != size {
-            sprite.custom_size = size;
-        }
-        let desired = if active {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-        if *visibility != desired {
-            *visibility = desired;
+    for mut node in &mut composite {
+        let desired = if active { Display::Flex } else { Display::None };
+        if node.display != desired {
+            node.display = desired;
         }
     }
     if !active {
