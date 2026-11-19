@@ -76,17 +76,38 @@ test('Given an active shift, the route and instructions stay visible and a groun
 });
 
 
-test('Given a tall window, the route panel ends after its content instead of filling the screen', async ({page}) => {
-  await page.setViewportSize({width:1440,height:1500});
+test('the compact lower-left HUD keeps the route and instruction together', async ({page}) => {
+  await page.setViewportSize({width:1440,height:1000});
   await page.goto('/?lat=52.4895&lon=13.3908');
   await waitRide(page);
-  await expect.poll(async()=>{
-    const ui=await fact(page,'paket-ui-regions');
-    const panel=ui?.panels?.find((p:any)=>p.kind==='route');
-    const stops=ui?.regions.filter((r:any)=>r.label?.startsWith('Route stop '));
-    if(!panel||!stops?.length)return false;
-    const last=Math.max(...stops.map((r:any)=>r.y+r.height));
-    return panel.height<900&&panel.y+panel.height-last>=0&&panel.y+panel.height-last<90;
+  await expect.poll(async () => {
+    const ui = await fact(page, 'paket-ui-regions');
+    const panel = ui?.panels?.find((p:any) => p.kind === 'route');
+    const stops = ui?.regions.filter((r:any) => r.label?.startsWith('Route stop '));
+    const instruction = ui?.texts.find((t:any) => t.text.includes('Get the parcel'));
+    const radar = ui?.panels?.find((p:any) => p.kind === 'radar');
+    return Boolean(panel && stops?.length > 1 && instruction && radar &&
+      ui.panels.length === 2 && panel.x < 24 && panel.y > 490 &&
+      panel.width <= 320 && panel.height <= 460 && panel.y + panel.height > 925 &&
+      instruction.x >= panel.x && instruction.y >= panel.y &&
+      instruction.x + instruction.width <= panel.x + panel.width + 1 &&
+      instruction.y + instruction.height <= panel.y + panel.height + 1 && radar.width < 190);
   }).toBe(true);
-  await page.screenshot({path:test.info().outputPath('content-sized-route-panel.png')});
+  await page.screenshot({path:test.info().outputPath('compact-shift-hud.png')});
+});
+
+test('the navigation arrow sits directly above the driven van and points toward the selected stop', async ({page}) => {
+  await page.goto('/?lat=52.4895&lon=13.3908');
+  await waitRide(page);
+  await page.keyboard.press('v');
+  await expect.poll(async () => (await fact(page, 'paket-hud'))?.form).toBe('van');
+  await expect.poll(async () => await fact(page, 'paket-navigation')).toMatchObject({visible:true});
+  const arrow = await fact(page, 'paket-navigation');
+  const van = await fact(page, 'paket-radar');
+  expect(arrow.position[0]).toBeCloseTo(van.position[0], 2);
+  expect(arrow.position[2]).toBeCloseTo(van.position[1], 2);
+  expect(arrow.position[1] - van.altitude).toBeGreaterThan(1.2);
+  const dx = arrow.target[0] - arrow.position[0], dz = arrow.target[2] - arrow.position[2];
+  expect((dx * arrow.direction[0] + dz * arrow.direction[2]) / (Math.hypot(dx, dz) * Math.hypot(arrow.direction[0], arrow.direction[2]))).toBeGreaterThan(0.999);
+  await page.screenshot({path:test.info().outputPath('arrow-over-van.png')});
 });

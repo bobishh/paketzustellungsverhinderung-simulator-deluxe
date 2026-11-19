@@ -1,7 +1,7 @@
-//! Ground navigation uses Feed the Poor's arrow geometry, placement and orientation.
+//! Place the objective arrow on the ground or above the roof while driving.
 use crate::{
     Mode,
-    actors::{ParkedVan, Player},
+    actors::{FollowCamera, ParkedVan, Player},
     elevation::Elevation,
     jobs::Jobs,
     shift::Shift,
@@ -12,6 +12,7 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
+use paket_session::Avatar;
 
 #[derive(Component)]
 pub(crate) struct NavigationArrow;
@@ -22,6 +23,7 @@ pub(crate) fn update(
     shift: Res<Shift>,
     player: Query<(Entity, &Player, &Transform), Without<NavigationArrow>>,
     vans: Query<&Transform, (With<ParkedVan>, Without<NavigationArrow>)>,
+    camera: Query<&Transform, (With<FollowCamera>, Without<NavigationArrow>)>,
     elevation: Res<Elevation>,
     landscape: Option<Res<crate::terrain::Landscape>>,
     bridges: Option<Res<crate::bridges::Bridges>>,
@@ -43,7 +45,7 @@ pub(crate) fn update(
         });
         commands.spawn((
             NavigationArrow,
-            Name::new("Ground objective arrow"),
+            Name::new("Objective arrow"),
             Mesh3d(meshes.add(arrow_mesh())),
             MeshMaterial3d(material),
             Transform::default(),
@@ -65,33 +67,38 @@ pub(crate) fn update(
         else {
             continue;
         };
-        let forward = actor.forward().as_vec3().with_y(0.).normalize_or_zero();
-        let right = actor.right().as_vec3().with_y(0.).normalize_or_zero();
-        let filter = SpatialQueryFilter::from_excluded_entities([player_id]);
-        // Keep the marker off the silhouette and use the open side of narrow streets.
-        let point = [2., -2., 1.3, -1.3, 0.].into_iter().find_map(|side| {
-            let point = actor.translation + forward * 3. + right * side;
-            let deck = bridges
-                .as_ref()
-                .and_then(|bridges| bridges.height_at(point));
-            if deck.is_none()
-                && landscape
+        let point = if player.form == Avatar::Van {
+            // The van collider reaches the roof. Leave clearance for the mesh on slopes.
+            Some(actor.translation + Vec3::Y * (crate::actors::half_height(Avatar::Van) + 0.55))
+        } else {
+            let forward = actor.forward().as_vec3().with_y(0.).normalize_or_zero();
+            let right = actor.right().as_vec3().with_y(0.).normalize_or_zero();
+            let filter = SpatialQueryFilter::from_excluded_entities([player_id]);
+            // Keep the marker off the silhouette and use the open side of narrow streets.
+            [2., -2., 1.3, -1.3, 0.].into_iter().find_map(|side| {
+                let point = actor.translation + forward * 3. + right * side;
+                let deck = bridges
                     .as_ref()
-                    .is_some_and(|landscape| landscape.water_at(crate::east_north(point)))
-            {
-                return None;
-            }
-            let ground = elevation.heights.at(point);
-            let point = point.with_y(deck.unwrap_or(ground).max(ground) + 0.35);
-            let from = actor.translation + Vec3::Y * 0.35;
-            let offset = point + Vec3::Y * 0.35 - from;
-            let clear = Dir3::new(offset).is_ok_and(|direction| {
-                spatial
-                    .cast_ray(from, direction, offset.length(), true, &filter)
-                    .is_none()
-            });
-            clear.then_some(point)
-        });
+                    .and_then(|bridges| bridges.height_at(point));
+                if deck.is_none()
+                    && landscape
+                        .as_ref()
+                        .is_some_and(|landscape| landscape.water_at(crate::east_north(point)))
+                {
+                    return None;
+                }
+                let ground = elevation.heights.at(point);
+                let point = point.with_y(deck.unwrap_or(ground).max(ground) + 0.35);
+                let from = actor.translation + Vec3::Y * 0.35;
+                let offset = point + Vec3::Y * 0.35 - from;
+                let clear = Dir3::new(offset).is_ok_and(|direction| {
+                    spatial
+                        .cast_ray(from, direction, offset.length(), true, &filter)
+                        .is_none()
+                });
+                clear.then_some(point)
+            })
+        };
         let Some(point) = point else {
             projection = serde_json::json!({"visible":false,"reason":"obstructed","target":target.to_array()});
             continue;
@@ -102,7 +109,14 @@ pub(crate) fn update(
         }
         transform.translation = point;
         transform.scale = Vec3::splat(1.3);
-        transform.rotation = arrow_rotation(direction);
+        transform.rotation = if player.form == Avatar::Van {
+            camera.single().map_or_else(
+                |_| arrow_rotation(direction),
+                |camera| roof_arrow_rotation(direction, camera.translation - point),
+            )
+        } else {
+            arrow_rotation(direction)
+        };
         *visible = Visibility::Visible;
         projection = serde_json::json!({"visible":true,"position":point.to_array(),"target":target.to_array(),"direction":(transform.rotation*Vec3::Y).to_array()});
     }
@@ -115,6 +129,16 @@ pub(crate) fn update(
 fn arrow_rotation(direction: Vec3) -> Quat {
     Quat::from_rotation_y((-direction.x).atan2(-direction.z))
         * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+}
+
+fn roof_arrow_rotation(direction: Vec3, view: Vec3) -> Quat {
+    // Lift the tip when it points away from the camera so forward and back read clearly.
+    let pitch = -0.5 * direction.dot(view.with_y(0.).normalize_or_zero());
+    let head = (direction + Vec3::Y * pitch).normalize();
+    let Some(side) = head.cross(view).try_normalize() else {
+        return arrow_rotation(direction);
+    };
+    Quat::from_mat3(&Mat3::from_cols(side, head, side.cross(head)))
 }
 
 fn arrow_mesh() -> Mesh {

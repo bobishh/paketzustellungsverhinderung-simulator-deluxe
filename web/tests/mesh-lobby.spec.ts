@@ -68,6 +68,7 @@ test('failed raster tiles retry in the real map while neighbourhood selection re
   const pending=new Promise<void>(resolve=>{release=resolve;});
   let fail=true,requests=0;
   await page.route('**/api/meshes',route=>route.fulfill({json:[]}));
+  await page.route('https://tiles.openfreemap.org/styles/fiord', route => route.abort());
   await page.route('https://tile.openstreetmap.org/**/*.png',async route=>{
     requests++;
     if(fail){await pending;return route.fulfill({status:503});}
@@ -145,4 +146,38 @@ test('guest play needs no Identity portal, while the real profile offers optiona
   await clickUi(page,'Close · Esc');
   await expect.poll(async()=>Boolean(await region(page,'Sign in with Identity'))).toBe(false);
   expect(portalRequests).toEqual([]);
+});
+
+test('the vector basemap keeps the Bevy map and start controls interactive', async ({page}) => {
+  await page.route('https://tiles.openfreemap.org/styles/fiord', route => route.fulfill({json: {
+    version: 8,
+    sources: {district: {type: 'geojson', data: {
+      type: 'Feature', properties: {}, geometry: {type: 'Polygon',
+        coordinates: [[[13.2, 52.35], [13.6, 52.35], [13.6, 52.6], [13.2, 52.6], [13.2, 52.35]]]},
+    }}},
+    layers: [{id: 'land', type: 'fill', source: 'district', paint: {'fill-color': '#355d65'}}],
+  }}));
+  await page.route('**/api/meshes', route => route.fulfill({json: []}));
+  await page.goto('/');
+  await clickUi(page, 'Play');
+  await expect(page.locator('#lobby-map[data-ready] canvas')).toBeVisible();
+  const map = (await page.locator('#lobby-map').boundingBox())!;
+  // Sample the composed browser frame to catch an opaque game canvas hiding the map.
+  await expect.poll(async () => {
+    const shot = await page.screenshot({clip: {
+      x: Math.floor(map.x + map.width * 0.3), y: Math.floor(map.y + map.height * 0.3), width: 1, height: 1,
+    }});
+    return page.evaluate(async bytes => {
+      const image = await createImageBitmap(new Blob([new Uint8Array(bytes)], {type: 'image/png'}));
+      const canvas = new OffscreenCanvas(1, 1);
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    }, Array.from(shot));
+  }).toEqual([53, 93, 101, 255]);
+  const initial = await fact(page, 'paket-lobby');
+  await page.mouse.click(map.x + map.width * 0.68, map.y + map.height * 0.55, {delay: 80});
+  await expect.poll(async () => (await fact(page, 'paket-lobby'))?.lon).toBeGreaterThan(initial.lon + 0.0005);
+  await expect.poll(async () => Boolean(await region(page, 'Play solo'))).toBe(true);
+  await page.screenshot({path: test.info().outputPath('neighbourhood-picker.png')});
 });

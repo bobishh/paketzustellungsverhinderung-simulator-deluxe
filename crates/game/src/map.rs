@@ -30,7 +30,7 @@ use crate::{Mode, SessionResult, actors::Role, connect_session, start_ride};
 
 const TILE: f64 = 256.0;
 const TOOLBAR: f32 = 42.;
-const SIDEBAR: f32 = 380.;
+const SIDEBAR: f32 = 320.;
 const RIDE_SLOTS: usize = 4;
 pub(crate) const KREUZBERG: LatLon = LatLon {
     lat: FIXTURE_LAT,
@@ -94,6 +94,8 @@ pub(super) struct LobbyGroup(bool);
 pub struct MapStatus;
 #[derive(Component)]
 pub struct LocationLabel;
+#[derive(Component)]
+pub(super) struct PickerHint;
 #[derive(Component)]
 pub struct NearbyLabel;
 #[derive(Component)]
@@ -318,7 +320,6 @@ pub fn setup(mut commands: Commands) {
     crate::platform::ui_event("paket-mode", "\"map\"");
     crate::platform::service(&serde_json::json!({"kind":"refresh"}));
     let muted = Color::srgb(0.68, 0.76, 0.70);
-    commands.spawn((Camera2d, Msaa::Off, MapUi));
     commands
         .spawn((
             MapUi,
@@ -331,7 +332,6 @@ pub fn setup(mut commands: Commands) {
                 padding: UiRect::top(Val::Px(46.)),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.08, 0.13, 0.11)),
         ))
         .with_children(|root| {
             root.spawn((
@@ -361,41 +361,61 @@ pub fn setup(mut commands: Commands) {
                                 position_type: PositionType::Absolute,
                                 left: Val::Percent(50.),
                                 top: Val::Percent(50.),
-                                width: Val::Px(30.),
-                                height: Val::Px(30.),
+                                width: Val::Px(24.),
+                                height: Val::Px(24.),
                                 border: UiRect::all(Val::Px(2.)),
-                                border_radius: BorderRadius::MAX,
                                 ..default()
                             },
                             UiTransform::from_translation(Val2::percent(-50., -50.)),
                             BorderColor::all(Color::srgb(1., 0.45, 0.19)),
+                            BackgroundColor(Color::srgba(0.05, 0.08, 0.08, 0.68)),
+                            children![(
+                                Node {
+                                    width: px(6),
+                                    height: px(6),
+                                    margin: UiRect::all(Val::Auto),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(1., 0.45, 0.19)),
+                            )],
                             ZIndex(2),
                         ));
                     });
                 column
-                    .spawn(Node {
-                        height: Val::Px(TOOLBAR),
-                        flex_shrink: 0.,
-                        column_gap: Val::Px(6.),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::horizontal(Val::Px(6.)),
-                        ..default()
-                    })
+                    .spawn((
+                        BackgroundColor(Color::srgb(0.055, 0.085, 0.08)),
+                        Node {
+                            height: Val::Px(TOOLBAR),
+                            flex_shrink: 0.,
+                            column_gap: Val::Px(6.),
+                            align_items: AlignItems::Center,
+                            padding: UiRect::axes(px(10.), px(0.)),
+                            ..default()
+                        },
+                    ))
                     .with_children(|p| {
                         add_button(p, Action::ZoomOut, "−");
                         add_button(p, Action::ZoomIn, "+");
-                        p.spawn((
-                            crate::game_ui::Bound("map-loading"),
-                            label("Loading map…", 11., muted),
-                            Node {
-                                flex_grow: 1.,
-                                min_width: Val::Px(0.),
-                                ..default()
-                            },
-                        ));
+                        p.spawn(Node {
+                            flex_grow: 1.,
+                            min_width: px(0),
+                            flex_direction: FlexDirection::Column,
+                            overflow: Overflow::clip(),
+                            ..default()
+                        })
+                        .with_children(|p| {
+                            p.spawn((
+                                crate::game_ui::Bound("map-loading"),
+                                label("Loading map…", 11., muted),
+                            ));
+                            p.spawn((
+                                crate::game_ui::Bound("map-attribution"),
+                                label("© OpenStreetMap contributors", 10., muted),
+                            ));
+                        });
                         crate::game_ui::add_button(
                             p,
-                            serde_json::json!({"action":"retry-map"}),
+                            serde_json::json!({"action":"retry-map","map-toolbar":true}),
                             "Retry map",
                         );
                     });
@@ -404,6 +424,7 @@ pub fn setup(mut commands: Commands) {
                 Sidebar,
                 Node {
                     width: Val::Px(SIDEBAR),
+                    border: UiRect::left(px(1.)),
                     flex_shrink: 0.,
                     min_height: Val::Px(0.),
                     padding: UiRect::all(Val::Px(18.)),
@@ -411,9 +432,18 @@ pub fn setup(mut commands: Commands) {
                     flex_direction: FlexDirection::Column,
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.10, 0.17, 0.13)),
+                BackgroundColor(Color::srgb(0.075, 0.115, 0.10)),
+                BorderColor::all(Color::srgb(0.28, 0.37, 0.31)),
             ))
             .with_children(|p| {
+                p.spawn((
+                    LocationLabel,
+                    label("Choose a neighbourhood", 20., Color::srgb(0.96, 0.94, 0.86)),
+                    Node {
+                        flex_shrink: 0.,
+                        ..default()
+                    },
+                ));
                 p.spawn(Node {
                     column_gap: Val::Px(6.),
                     flex_shrink: 0.,
@@ -437,23 +467,34 @@ pub fn setup(mut commands: Commands) {
                     },
                 ))
                 .with_children(|p| {
-                    p.spawn((LocationLabel, label("", 14., Color::WHITE)));
-                    crate::game_ui::add_button(
-                        p,
-                        serde_json::json!({"action":"service","kind":"location"}),
-                        "My location",
-                    );
+                    p.spawn((
+                        PickerHint,
+                        label("Click or drag the map to set your start.", 12., muted),
+                    ));
+                    p.spawn(label("Street address or place", 12., muted));
+                    text_input(p, true);
+                    p.spawn(Node {
+                        column_gap: px(6),
+                        flex_shrink: 0.,
+                        ..default()
+                    })
+                    .with_children(|p| {
+                        crate::game_ui::add_button(
+                            p,
+                            serde_json::json!({"action":"service","kind":"search"}),
+                            "Find address or place",
+                        );
+                        crate::game_ui::add_button(
+                            p,
+                            serde_json::json!({"action":"service","kind":"location"}),
+                            "My location",
+                        );
+                    });
                     p.spawn(label(
                         "Only your rounded neighbourhood is shared.",
                         10.,
                         muted,
                     ));
-                    text_input(p, true);
-                    crate::game_ui::add_button(
-                        p,
-                        serde_json::json!({"action":"service","kind":"search"}),
-                        "Find address or place",
-                    );
                     p.spawn((
                         SearchResults,
                         Node {
@@ -493,20 +534,27 @@ pub fn setup(mut commands: Commands) {
                     },
                 ))
                 .with_children(|p| {
-                    crate::game_ui::add_button(
-                        p,
-                        serde_json::json!({"action":"service","kind":"resume"}),
-                        "Return to your mesh",
-                    );
                     p.spawn(label("Friend’s invitation", 13., muted));
                     text_input(p, false);
                     p.spawn(Node {
-                        column_gap: Val::Px(6.),
-                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: px(6.),
+                        flex_shrink: 0.,
                         ..default()
                     })
                     .with_children(|p| {
                         add_button(p, Action::Join, "Join shift");
+                        crate::game_ui::add_button(
+                            p,
+                            serde_json::json!({"action":"service","kind":"resume"}),
+                            "Return to your mesh",
+                        );
+                    });
+                    p.spawn(Node {
+                        column_gap: px(6.),
+                        flex_shrink: 0.,
+                        ..default()
+                    })
+                    .with_children(|p| {
                         add_button(p, Action::Copy, "Copy link");
                         add_button(p, Action::Start, "Enter mesh");
                     });
@@ -624,6 +672,7 @@ pub(crate) fn responsive(
         Has<MapPane>,
         Has<Sidebar>,
         Option<&LobbyGroup>,
+        Has<PickerHint>,
     )>,
 ) {
     let Ok(window) = windows.single() else {
@@ -631,7 +680,14 @@ pub(crate) fn responsive(
     };
     let portrait = window.width() < 600.;
     let header = crate::game_ui::header_height(window.width());
-    for (mut node, layout, pane, sidebar, group) in &mut nodes {
+    for (mut node, layout, pane, sidebar, group, hint) in &mut nodes {
+        if hint {
+            node.display = if window.height() < 560. {
+                Display::None
+            } else {
+                Display::Flex
+            };
+        }
         if layout {
             node.height = Val::Px(window.height());
             node.flex_direction = if portrait {
@@ -781,6 +837,7 @@ pub fn input(
     for command in external {
         match command["action"].as_str() {
             Some("retry-map") => map.failed.clear(),
+            Some("vector-map") => map.raster_map = false,
             Some("raster-map") => map.raster_map = true,
             Some("select") => {
                 if let (Some(lat), Some(lon)) = (command["lat"].as_f64(), command["lon"].as_f64()) {
@@ -1038,7 +1095,13 @@ pub fn update_lobby(
             format!(
                 "{}\n{}",
                 map.status,
-                services["status"].as_str().unwrap_or("")
+                services["status"]
+                    .as_str()
+                    .filter(|status| {
+                        map.friends
+                            || !(status.contains("public mesh") || status.contains("Mesh list"))
+                    })
+                    .unwrap_or("")
             )
         } else if nearby {
             if cfg!(target_arch = "wasm32") {
@@ -1090,7 +1153,9 @@ pub fn update_lobby(
             node.display = display;
         }
         let value = button_color(
-            matches!(action, Action::New | Action::Start)
+            matches!(action, Action::New if map.friends)
+                || matches!(action, Action::Solo if !map.friends)
+                || matches!(action, Action::Start)
                 || matches!(action,Action::LobbyTab(value) if *value==map.friends)
                 || matches!(action, Action::Role(role) if *role == map.role),
             interaction.0,
@@ -1119,18 +1184,66 @@ pub(crate) fn location_name(point: LatLon) -> String {
 
 pub fn tiles(
     mut loading: Local<Option<(Entity, bool, bool, bool)>>,
+    #[cfg(target_arch = "wasm32")] mut browser_viewport: Local<
+        Option<(Entity, Option<(Vec2, Vec2, DVec2, u8)>)>,
+    >,
+    #[cfg(target_arch = "wasm32")] ui: Res<crate::game_ui::Ui>,
     mut commands: Commands,
     mut map: ResMut<Map>,
     mut images: ResMut<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut viewports: Query<(Entity, &mut Node), (With<Viewport>, Without<ImageNode>)>,
+    mut viewports: Query<
+        (Entity, &mut Node, &mut BackgroundColor),
+        (With<Viewport>, Without<ImageNode>),
+    >,
     mut nodes: Query<(&mut Node, &mut ImageNode)>,
 ) {
-    let (Ok(window), Ok((viewport, mut node))) = (windows.single(), viewports.single_mut()) else {
+    let (Ok(window), Ok((viewport, _node, mut background))) =
+        (windows.single(), viewports.single_mut())
+    else {
         return;
     };
     let size = viewport_size(window);
+    #[cfg(target_arch = "wasm32")]
+    {
+        let visible = !ui.welcome_open();
+        let offset = Vec2::new(0., crate::game_ui::header_height(window.width()));
+        let view =
+            (visible && size.x > 0. && size.y > 0.).then_some((offset, size, map.center, map.zoom));
+        if *browser_viewport != Some((viewport, view)) {
+            *browser_viewport = Some((viewport, view));
+            let detail = view.map(|(offset, size, center, zoom)| {
+                let point = unproject(center, zoom);
+                serde_json::json!({"x":offset.x,"y":offset.y,"width":size.x,"height":size.y,
+                    "lat":point.lat,"lon":point.lon,"zoom":zoom})
+            });
+            crate::platform::ui_event(
+                "paket-map-viewport",
+                &serde_json::to_string(&detail).unwrap(),
+            );
+        }
+    }
+    let fill = if map.raster_map {
+        Color::srgb(0.17, 0.24, 0.23)
+    } else {
+        Color::NONE
+    };
+    if background.0 != fill {
+        background.0 = fill;
+        *loading = None;
+    }
     if !map.raster_map {
+        for (_, entity) in map.active.drain() {
+            commands.entity(entity).despawn();
+        }
+        let state = (viewport, true, false, false);
+        if *loading != Some(state) {
+            *loading = Some(state);
+            crate::platform::ui_event(
+                "paket-map-loading",
+                r#"{"ready":true,"pending":false,"failed":false,"vector":true}"#,
+            );
+        }
         return;
     }
     let finished: Vec<_> = map

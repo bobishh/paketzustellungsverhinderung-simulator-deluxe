@@ -84,6 +84,8 @@ fn main() {
                     canvas: Some("#game".into()),
                     #[cfg(target_arch = "wasm32")]
                     fit_canvas_to_parent: true,
+                    #[cfg(target_arch = "wasm32")]
+                    composite_alpha_mode: bevy::window::CompositeAlphaMode::PreMultiplied,
                     #[cfg(not(target_arch = "wasm32"))]
                     resize_constraints: bevy::window::WindowResizeConstraints {
                         min_width: 800.0,

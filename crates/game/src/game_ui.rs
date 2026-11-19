@@ -72,7 +72,6 @@ struct HeaderOffset(f32);
 #[derive(Component)]
 enum HudCard {
     Route,
-    Instruction,
     Radar,
 }
 
@@ -136,6 +135,10 @@ pub(crate) struct Ui {
     welcome: bool,
 }
 impl Ui {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn welcome_open(&self) -> bool {
+        self.welcome
+    }
     pub(crate) fn panel_open(&self) -> bool {
         !self.panel.is_empty() || self.welcome
     }
@@ -279,11 +282,21 @@ fn button_feedback(
             Has<welcome::Utility>,
             &mut BackgroundColor,
             &mut BorderColor,
+            &mut Visibility,
         ),
         Without<MapStop>,
     >,
 ) {
-    for (action, hovered, pressed, utility, mut background, mut border) in &mut buttons {
+    for (action, hovered, pressed, utility, mut background, mut border, mut visibility) in
+        &mut buttons
+    {
+        if action.0["map-toolbar"] == true {
+            *visibility = if ui.value("paket-map-loading")["failed"] == true {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            };
+        }
         let selected = action.0["action"] == "delivery"
             && action.0["index"] == ui.value("paket-hud")["selected"];
         let primary = action.0["action"] == "welcome-play";
@@ -301,11 +314,15 @@ fn button_feedback(
             Color::srgb(0.27, 0.14, 0.07)
         } else if hovered.get() {
             Color::srgb(0.20, 0.29, 0.23)
+        } else if action.0["manifest"] == true {
+            Color::NONE
         } else {
             PANEL
         };
         *border = BorderColor::all(if primary || selected || hovered.get() {
             ORANGE
+        } else if action.0["manifest"] == true {
+            Color::NONE
         } else {
             Color::srgb(0.23, 0.30, 0.25)
         });
@@ -338,77 +355,30 @@ fn responsive(
             node.top = Val::Px(header_height(window.width()) + offset.0);
         }
         if route_list {
-            let available =
-                window.height() - header_height(window.width()) - if portrait { 340. } else { 42. };
-            node.max_height = px((available - 256.).clamp(38., 480.));
+            let bottom = if portrait { 58. } else { 16. };
+            let available = window.height() - header_height(window.width()) - bottom - 194.;
+            node.max_height = px(available.clamp(28., 274.));
         }
         if let Some(card) = card {
             match card {
                 HudCard::Route => {
-                    node.width = px(if portrait {
-                        176.
-                    } else if short {
-                        220.
-                    } else {
-                        288.
-                    });
-                    node.left = px(if portrait || short { 12. } else { 24. });
-                    node.height = Val::Auto;
-                    node.max_height = px((window.height()
-                        - header_height(window.width())
-                        - if portrait { 340. } else { 42. })
-                    .max(180.));
-                    node.overflow = Overflow::clip();
-                    node.padding = UiRect::all(px(if portrait || short { 10. } else { 14. }));
-                    node.row_gap = px(if short { 5. } else { 10. });
-                }
-                HudCard::Instruction => {
-                    node.left = px(if portrait {
-                        12.
-                    } else if short {
-                        252.
-                    } else {
-                        332.
-                    });
-                    node.right = Val::Auto;
-                    node.width = px(if portrait {
-                        window.width() - 24.
-                    } else if short {
-                        window.width() - 452.
-                    } else {
-                        (window.width() - 356.).min(720.)
-                    });
-                    node.bottom = px(64);
-                    node.height = px(if portrait {
-                        240.
-                    } else if short {
-                        196.
-                    } else {
-                        220.
-                    });
+                    node.width = px((window.width() - 24.).min(if portrait { 282. } else { 306. }));
+                    node.left = px(if portrait || short { 12. } else { 16. });
+                    node.bottom = px(if portrait { 58. } else { 16. });
                 }
                 HudCard::Radar => {
-                    node.width = px(if portrait {
-                        138.
-                    } else if short {
-                        168.
-                    } else {
-                        248.
-                    });
-                    node.right = px(if portrait { 12. } else { 22. });
-                    node.padding = UiRect::all(px(if portrait { 7. } else { 12. }));
+                    node.width = px(if portrait || short { 126. } else { 168. });
+                    node.right = px(if portrait || short { 12. } else { 16. });
                 }
             }
         }
         if radar.is_some_and(|r| !r.overview) {
-            node.width = px(if portrait {
-                124.
-            } else if short {
-                144.
+            node.width = percent(100);
+            node.height = if portrait || short {
+                px(112.)
             } else {
-                224.
-            });
-            node.height = node.width;
+                px(154.)
+            };
         }
 
         if header {
@@ -559,129 +529,123 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
             root.spawn((
                 RideHud,
                 HudCard::Route,
-                HeaderOffset(18.),
                 Layer::Hud,
                 Node {
                     position_type: PositionType::Absolute,
-                    top: px(80),
-                    left: px(24),
-                    width: px(288),
-                    padding: UiRect::all(px(14)),
-                    row_gap: px(10),
+                    bottom: px(16),
+                    left: px(16),
+                    width: px(306),
+                    padding: UiRect::all(px(8.)),
+                    border: UiRect::left(px(2.)),
+                    row_gap: px(5.),
                     flex_direction: FlexDirection::Column,
                     ..default()
                 },
-                BackgroundColor(INK),
+                BackgroundColor(Color::srgba(0.045, 0.075, 0.065, 0.94)),
+                BorderColor::all(ORANGE),
             ))
             .with_children(|p| {
-                p.spawn((
-                    Bound("day"),
-                    colored_text("DAY 1 / SHIFT ENDS 17:00", 11., MUTED),
-                ));
                 p.spawn(Node {
                     justify_content: JustifyContent::SpaceBetween,
                     align_items: AlignItems::Center,
                     ..default()
                 })
                 .with_children(|p| {
-                    p.spawn((Bound("clock"), text("09:00", 28.)));
-                    p.spawn((Bound("score"), colored_text("0 KPI", 20., ORANGE)));
+                    p.spawn((Bound("clock"), text("09:00", 20.)));
+                    p.spawn((Bound("score"), colored_text("0 KPI", 14., ORANGE)));
+                    p.spawn(button_with_label(
+                        json!({"action":"ui-panel","panel":"route"}),
+                        "Map · M".into(),
+                        text("Map · M", 12.),
+                    ))
+                    .observe(clicked)
+                    .insert(Node {
+                        height: px(28.),
+                        padding: UiRect::horizontal(px(7.)),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    });
                 });
-                p.spawn(row()).with_children(|p| {
-                    add_button(p, json!({"action":"ui-panel","panel":"route"}), "Map · M");
-                    p.spawn(colored_text("Tab / Shift+Tab", 11., MUTED));
+                p.spawn(Node {
+                    justify_content: JustifyContent::SpaceBetween,
+                    column_gap: px(6.),
+                    ..default()
+                })
+                .with_children(|p| {
+                    p.spawn((Bound("route-progress"), colored_text("Route", 11., MUTED)));
+                    p.spawn((Bound("day"), colored_text("Day 1 · Ends 17:00", 11., MUTED)));
                 });
-                p.spawn((
-                    Bound("route-progress"),
-                    colored_text("YOUR ROUTE", 11., MUTED),
-                ));
                 p.spawn((
                     RouteList,
                     bevy::ui_widgets::ScrollArea,
                     Node {
                         min_height: px(0),
                         overflow: Overflow::scroll_y(),
-                        ..block()
+                        flex_direction: FlexDirection::Column,
+                        ..default()
                     },
                 ))
                 .with_children(|p| {
-                    p.spawn((Dynamic("manifest"), block()));
+                    p.spawn((
+                        Dynamic("manifest"),
+                        Node {
+                            row_gap: px(1.),
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        },
+                    ));
                 });
                 p.spawn((
-                    Bound("dispatcher"),
-                    colored_text("", 12., ORANGE),
                     Node {
-                        height: px(48),
-                        flex_shrink: 0.,
-                        overflow: Overflow::clip(),
+                        flex_direction: FlexDirection::Column,
+                        min_height: px(100.),
+                        padding: UiRect::axes(px(7.), px(5.)),
+                        row_gap: px(2.),
                         ..default()
                     },
-                ));
-            });
-            root.spawn((
-                RideHud,
-                HudCard::Instruction,
-                Layer::Hud,
-                Node {
-                    position_type: PositionType::Absolute,
-                    bottom: px(24),
-                    left: px(332),
-                    right: px(24),
-                    height: px(220),
-                    padding: UiRect::all(px(14)),
-                    border: UiRect::left(px(3)),
-                    row_gap: px(6),
-                    overflow: Overflow::clip(),
-                    ..block()
-                },
-                BackgroundColor(INK),
-                BorderColor::all(ORANGE),
-            ))
-            .with_children(|p| {
-                p.spawn((
-                    Bound("stop-label"),
-                    colored_text("CURRENT DELIVERY", 11., ORANGE),
-                ));
-                p.spawn((Bound("stop-address"), text("Finding addresses…", 20.)));
-                p.spawn((Bound("stop-recipient"), colored_text("", 13., MUTED)));
-                p.spawn((Bound("delivery"), text("", 14.)));
-                p.spawn((
-                    Bound("status"),
-                    colored_text("", 13., ORANGE),
-                    Node {
-                        min_height: px(32),
-                        ..default()
-                    },
-                ));
+                    BackgroundColor(Color::srgb(0.09, 0.13, 0.11)),
+                ))
+                .with_children(|p| {
+                    p.spawn((
+                        Bound("stop-label"),
+                        colored_text("CURRENT DELIVERY", 10., ORANGE),
+                    ));
+                    p.spawn((Bound("stop-address"), text("Finding addresses…", 15.)));
+                    p.spawn((Bound("stop-recipient"), colored_text("", 11., MUTED)));
+                    p.spawn((Bound("delivery"), text("", 12.)));
+                    p.spawn((Bound("status"), colored_text("", 11., ORANGE)));
+                    p.spawn((Bound("dispatcher"), colored_text("", 11., ORANGE)));
+                });
             });
             root.spawn((
                 RideHud,
                 HudCard::Radar,
-                HeaderOffset(18.),
+                HeaderOffset(10.),
                 Layer::Hud,
                 Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(54.),
-                    right: Val::Px(22.),
-                    width: Val::Px(248.),
-                    padding: UiRect::all(px(12)),
+                    right: px(16.),
+                    width: px(168.),
+                    padding: UiRect::all(px(7.)),
+                    row_gap: px(4.),
                     ..block()
                 },
                 BackgroundColor(INK),
             ))
             .with_children(|p| {
-                p.spawn(colored_text("NEARBY / N ↑", 11., MUTED));
+                p.spawn(colored_text("N ↑", 10., MUTED));
                 p.spawn((
                     Radar { overview: false },
                     Node {
-                        width: Val::Px(224.),
-                        height: Val::Px(224.),
+                        width: percent(100),
+                        height: px(154.),
                         overflow: Overflow::clip(),
                         ..default()
                     },
                     BackgroundColor(Color::srgb(0.10, 0.21, 0.16)),
                 ));
-                p.spawn(colored_text("▲ You   ◆ Stop   ● Van", 11., MUTED));
+                p.spawn(colored_text("▲ You   ◆ Stop   ● Van", 9., MUTED));
                 p.spawn((Dynamic("peers"), block()));
             });
             root.spawn((
@@ -762,18 +726,6 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                     left: Val::Percent(26.),
                     max_width: Val::Percent(50.),
                     min_height: Val::Px(20.),
-                    ..default()
-                },
-            ));
-            root.spawn((
-                text(
-                    "Map data © OpenStreetMap contributors · Elevation: Mapzen · Search: Photon",
-                    10.,
-                ),
-                Node {
-                    position_type: PositionType::Absolute,
-                    bottom: Val::Px(2.),
-                    left: Val::Px(6.),
                     ..default()
                 },
             ));
@@ -1036,6 +988,13 @@ fn paint(
             }
         }
         let next = match binding.0 {
+            "map-attribution" => {
+                if ui.value("paket-map-loading")["vector"] == true {
+                    "OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors".into()
+                } else {
+                    "© OpenStreetMap contributors · Mapzen · Photon".into()
+                }
+            }
             "map-loading" => {
                 if ui.value("paket-map-loading")["failed"] == true {
                     "Some map tiles failed. Retry.".into()
@@ -1046,7 +1005,7 @@ fn paint(
                 }
             }
             "clock" => format!("{:02}:{:02}", minute / 60, minute % 60),
-            "day" => format!("DAY {} / SHIFT ENDS 17:00", h["day"].as_u64().unwrap_or(1)),
+            "day" => format!("Day {} · Ends 17:00", h["day"].as_u64().unwrap_or(1)),
             "score" => format!("{} KPI", h["score"].as_i64().unwrap_or(0)),
             "stop-label" => format!(
                 "DELIVERY {} / {}  ·  {:.0} m",
@@ -1069,14 +1028,15 @@ fn paint(
                     .flatten()
                     .filter(|r| matches!(r["state"].as_str(), Some("filed" | "handed")))
                     .count();
-                format!(
-                    "YOUR ROUTE  /  {done} OF {} DELIVERED",
-                    routes.map_or(0, Vec::len)
-                )
+                format!("Route · {done}/{} delivered", routes.map_or(0, Vec::len))
             }
             "dispatcher" => {
                 let d = &h["dispatcher"];
-                format!("{}\n{}", value_text(d, "message"), value_text(d, "timer"))
+                [value_text(d, "message"), value_text(d, "timer")]
+                    .into_iter()
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · ")
             }
             "peers" => ui
                 .value("paket-members")
@@ -1235,12 +1195,25 @@ fn dynamic(
                                 route_state(value_text(route, "state"))
                             )
                         };
-                        p.spawn((button(
-                            json!({"action":"delivery","index":route["index"]}),
-                            title,
-                        ),))
-                            .observe(clicked)
-                            .insert(AccessibleLabel::new(format!("Route stop {index}")));
+                        let manifest = kind.0 == "manifest";
+                        let label = format!("Route stop {index}");
+                        let mut button = p.spawn(button_with_label(
+                            json!({"action":"delivery","index":route["index"],"manifest":manifest}),
+                            label,
+                            text(title, if manifest { 12. } else { 14. }),
+                        ));
+                        if manifest {
+                            button.insert(Node {
+                                height: px(21.),
+                                flex_shrink: 0.,
+                                border: UiRect::left(px(2.)),
+                                padding: UiRect::horizontal(px(6.)),
+                                align_items: AlignItems::Center,
+                                overflow: Overflow::clip(),
+                                ..default()
+                            });
+                        }
+                        button.observe(clicked);
                     }
                 }
             }
@@ -1334,9 +1307,6 @@ fn dynamic(
                         },
                         TextColor(peer_color(slot)),
                     ));
-                }
-                if count == 0 {
-                    p.spawn(text("No other players", 12.));
                 }
             }
             "profile" => {
@@ -1947,7 +1917,6 @@ fn input_regions(
             }
             let kind = match card {
                 HudCard::Route => "route",
-                HudCard::Instruction => "instructions",
                 HudCard::Radar => "radar",
             };
             let size = node.size() * node.inverse_scale_factor();

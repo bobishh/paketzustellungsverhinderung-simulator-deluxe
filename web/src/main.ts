@@ -1,4 +1,5 @@
 import './style.css';
+import {installMapLayer} from './map-layer';
 import './mouse';
 import './audio';
 import {setSoftwareRendering} from './render-quality';
@@ -6,7 +7,7 @@ import {initGameAnalytics} from './analytics';
 import {initProfile} from './profile';
 import {restoreIdentity} from './identity';
 import {mesh} from './mesh';
-import {initServices,publish,setPhotoDownload} from './services';
+import {initServices,publish,send,setPhotoDownload} from './services';
 declare global {var paketArgs:string[];var paketMesh:typeof mesh;var paketPhoto:(bytes:Uint8Array,index:number)=>void;}
 const callbackHash=location.pathname==='/identity/return'?location.hash:null;
 if(callbackHash!==null)history.replaceState(null,'','/identity/return');
@@ -15,6 +16,7 @@ initGameAnalytics();
 const ready=restoreIdentity(callbackHash).then(async path=>{if(path?.startsWith('/')&&!path.startsWith('//'))history.replaceState(null,'',path);await initProfile();}).catch(error=>{paketNotify(`Identity: ${error.message}`);throw error;});
 void ready.catch(()=>undefined);
 initServices(ready);
+installMapLayer(active => send({action: active ? 'vector-map' : 'raster-map'}));
 let photoUrl:string|undefined,photoName='';
 globalThis.paketPhoto=(bytes,index)=>{if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=URL.createObjectURL(new Blob([bytes.slice().buffer],{type:'image/png'}));photoName=`delivery-${index+1}-${Date.now()}.png`;publish('paket-photo',{ready:true});paketNotify('Photo filed. Open Photo to download.');};
 setPhotoDownload(()=>{if(!photoUrl){paketNotify('Take a delivery photo first.');return;}const link=document.createElement('a');link.href=photoUrl;link.download=photoName;link.click();});

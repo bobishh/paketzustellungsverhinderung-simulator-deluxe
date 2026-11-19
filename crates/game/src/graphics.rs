@@ -36,6 +36,9 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         Camera2d,
         Camera {
             order: 100,
+            #[cfg(target_arch = "wasm32")]
+            clear_color: ClearColorConfig::Custom(Color::NONE),
+            #[cfg(not(target_arch = "wasm32"))]
             clear_color: ClearColorConfig::Default,
             ..default()
         },

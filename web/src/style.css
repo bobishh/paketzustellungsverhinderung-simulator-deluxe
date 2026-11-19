@@ -1,3 +1,10 @@
 :root{font-family:system-ui,sans-serif;color:#f5f1de;background:#15251e;color-scheme:dark}*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}.game-viewport{position:fixed;inset:0}canvas#game{display:block;width:100%;height:100%;outline:0;touch-action:none}#bootstrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#15251e;color:#f5f1de;font:20px system-ui,sans-serif;text-align:center;padding:24px}#boot-retry{padding:12px 24px;background:#ef7d32;color:#15251e;border:0;font:inherit}.spinner{width:42px;height:42px;border:4px solid #ef7d3244;border-top-color:#ef7d32;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}[hidden]{display:none!important}
 
 #bootstrap.failed .spinner{animation:none;border-color:#ef7d32;opacity:.45}
+
+.game-viewport{position:fixed;inset:0;isolation:isolate}
+#game{position:relative;z-index:1}
+#lobby-map{position:absolute;overflow:hidden;visibility:hidden;pointer-events:none}
+#lobby-map[data-ready]{visibility:visible}
+#lobby-map canvas{position:absolute;inset:0}
+#bootstrap{z-index:2}
