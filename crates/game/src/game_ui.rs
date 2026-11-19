@@ -1,6 +1,7 @@
 //! Portable game interface. Browser code supplies services, never game widgets.
 #[path = "ui_click.rs"]
 mod click;
+mod welcome;
 use crate::Mode;
 use bevy::{
     prelude::*,
@@ -15,6 +16,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use welcome::Welcome;
 
 static EVENTS: Mutex<Vec<(String, Value)>> = Mutex::new(Vec::new());
 static PHOTO: Mutex<Option<Image>> = Mutex::new(None);
@@ -60,8 +62,6 @@ pub(crate) enum Layer {
     Welcome,
 }
 #[derive(Component)]
-struct Welcome;
-#[derive(Component)]
 struct Header;
 #[derive(Component)]
 struct HeaderBrand;
@@ -69,14 +69,6 @@ struct HeaderBrand;
 struct HeaderAction;
 #[derive(Component)]
 struct HeaderOffset(f32);
-#[derive(Component)]
-struct WelcomeArt;
-#[derive(Component)]
-struct WelcomeCopy;
-#[derive(Component)]
-struct WelcomeTitle;
-#[derive(Component)]
-struct WelcomeDescription;
 #[derive(Component)]
 enum HudCard {
     Route,
@@ -171,10 +163,13 @@ fn colored_text(value: impl Into<String>, size: f32, color: Color) -> impl Bundl
 }
 pub(crate) fn button(value: Value, title: impl Into<String>) -> impl Bundle {
     let title = title.into();
+    button_with_label(value, title.clone(), text(title, 14.))
+}
+fn button_with_label(value: Value, title: String, label: impl Bundle) -> impl Bundle {
     (
         Button,
         bevy::picking::hover::Hovered::default(),
-        AccessibleLabel::new(title.clone()),
+        AccessibleLabel::new(title),
         Action(value),
         Node {
             min_height: Val::Px(38.),
@@ -186,7 +181,7 @@ pub(crate) fn button(value: Value, title: impl Into<String>) -> impl Bundle {
         },
         BackgroundColor(PANEL),
         BorderColor::all(Color::srgb(0.23, 0.30, 0.25)),
-        children![text(title, 14.)],
+        children![label],
     )
 }
 fn clicked(event: On<Activate>, actions: Query<&Action>) {
@@ -268,6 +263,7 @@ pub(crate) fn install(app: &mut App) {
                 settings_labels,
                 button_feedback,
                 responsive,
+                welcome::responsive,
                 dynamic,
             )
                 .chain(),
@@ -280,13 +276,14 @@ fn button_feedback(
             &Action,
             &bevy::picking::hover::Hovered,
             Has<bevy::ui::Pressed>,
+            Has<welcome::Utility>,
             &mut BackgroundColor,
             &mut BorderColor,
         ),
         Without<MapStop>,
     >,
 ) {
-    for (action, hovered, pressed, mut background, mut border) in &mut buttons {
+    for (action, hovered, pressed, utility, mut background, mut border) in &mut buttons {
         let selected = action.0["action"] == "delivery"
             && action.0["index"] == ui.value("paket-hud")["selected"];
         let primary = action.0["action"] == "welcome-play";
@@ -298,6 +295,8 @@ fn button_feedback(
             } else {
                 ORANGE
             }
+        } else if utility {
+            Color::srgba(0.09, 0.07, 0.055, if hovered.get() { 0.90 } else { 0.66 })
         } else if selected {
             Color::srgb(0.27, 0.14, 0.07)
         } else if hovered.get() {
@@ -313,28 +312,20 @@ fn button_feedback(
     }
 }
 fn responsive(
+    ui: Res<Ui>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut nodes: Query<(
         &mut Node,
         Has<Header>,
         Has<HeaderBrand>,
-        Has<Welcome>,
-        Has<WelcomeArt>,
-        Has<WelcomeCopy>,
         Option<&HeaderOffset>,
         Option<&HudCard>,
-        Has<WelcomeDescription>,
         Option<&Radar>,
         Has<HeaderAction>,
         Has<RouteList>,
     )>,
     actions: Query<(&Action, &Children), With<HeaderAction>>,
-    mut texts: Query<(
-        &mut Text,
-        &mut TextFont,
-        Has<HeaderBrand>,
-        Has<WelcomeTitle>,
-    )>,
+    mut texts: Query<(&mut Text, &mut TextFont, Has<HeaderBrand>)>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -342,21 +333,7 @@ fn responsive(
     let compact = window.width() < 1000.;
     let portrait = window.width() < 600.;
     let short = window.height() < 560.;
-    for (
-        mut node,
-        header,
-        brand,
-        welcome,
-        art,
-        copy,
-        offset,
-        card,
-        description,
-        radar,
-        header_action,
-        route_list,
-    ) in &mut nodes
-    {
+    for (mut node, header, brand, offset, card, radar, header_action, route_list) in &mut nodes {
         if let Some(offset) = offset {
             node.top = Val::Px(header_height(window.width()) + offset.0);
         }
@@ -364,13 +341,6 @@ fn responsive(
             let available =
                 window.height() - header_height(window.width()) - if portrait { 340. } else { 42. };
             node.max_height = px((available - 256.).clamp(38., 480.));
-        }
-        if description {
-            node.display = if portrait || short {
-                Display::None
-            } else {
-                Display::Flex
-            };
         }
         if let Some(card) = card {
             match card {
@@ -442,6 +412,11 @@ fn responsive(
         }
 
         if header {
+            node.display = if ui.welcome && ui.mode != "ride" {
+                Display::None
+            } else {
+                Display::Flex
+            };
             node.height = Val::Px(header_height(window.width()));
             node.padding = UiRect::axes(px(if compact { 12. } else { 20. }), px(10));
         }
@@ -457,31 +432,10 @@ fn responsive(
             node.height = if portrait { Val::Px(22.) } else { Val::Auto };
             node.flex_grow = if portrait { 0. } else { 1. };
         }
-        if welcome {
-            node.top = Val::Px(header_height(window.width()));
-        }
-        if art {
-            node.left = if portrait { Val::Px(0.) } else { Val::Auto };
-            node.top = if portrait {
-                Val::Percent(48.)
-            } else {
-                Val::Px(0.)
-            };
-            node.width = Val::Percent(if portrait { 100. } else { 65. });
-            node.height = Val::Percent(if portrait { 52. } else { 100. });
-        }
-        if copy {
-            node.width = Val::Percent(if portrait { 100. } else { 44. });
-            node.height = Val::Percent(if portrait { 48. } else { 100. });
-            node.padding = UiRect::all(Val::Px(if portrait { 18. } else { 28. }));
-        }
     }
-    for (_, mut font, brand, title) in &mut texts {
+    for (_, mut font, brand) in &mut texts {
         if brand {
             font.font_size = FontSize::Px(if compact { 16. } else { 18. });
-        }
-        if title {
-            font.font_size = FontSize::Px(if portrait { 24. } else { 34. });
         }
     }
     for (action, children) in &actions {
@@ -595,48 +549,110 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 });
                 p.spawn((
                     HeaderAction,
-                    button(json!({"action":"service","kind":"fullscreen"}), "Fullscreen"),
+                    button(
+                        json!({"action":"service","kind":"fullscreen"}),
+                        "Fullscreen",
+                    ),
                 ))
                 .observe(clicked);
             });
             root.spawn((
-                RideHud, HudCard::Route, HeaderOffset(18.), Layer::Hud,
+                RideHud,
+                HudCard::Route,
+                HeaderOffset(18.),
+                Layer::Hud,
                 Node {
-                    position_type:PositionType::Absolute, top:px(80), left:px(24),
-                    width:px(288), padding:UiRect::all(px(14)), row_gap:px(10),
-                    flex_direction:FlexDirection::Column, ..default()
+                    position_type: PositionType::Absolute,
+                    top: px(80),
+                    left: px(24),
+                    width: px(288),
+                    padding: UiRect::all(px(14)),
+                    row_gap: px(10),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
                 },
                 BackgroundColor(INK),
-            )).with_children(|p| {
-                p.spawn((Bound("day"),colored_text("DAY 1 / SHIFT ENDS 17:00",11.,MUTED)));
-                p.spawn(Node{justify_content:JustifyContent::SpaceBetween,align_items:AlignItems::Center,..default()}).with_children(|p| {
-                    p.spawn((Bound("clock"),text("09:00",28.)));
-                    p.spawn((Bound("score"),colored_text("0 KPI",20.,ORANGE)));
+            ))
+            .with_children(|p| {
+                p.spawn((
+                    Bound("day"),
+                    colored_text("DAY 1 / SHIFT ENDS 17:00", 11., MUTED),
+                ));
+                p.spawn(Node {
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|p| {
+                    p.spawn((Bound("clock"), text("09:00", 28.)));
+                    p.spawn((Bound("score"), colored_text("0 KPI", 20., ORANGE)));
                 });
                 p.spawn(row()).with_children(|p| {
-                    add_button(p,json!({"action":"ui-panel","panel":"route"}),"Map · M");
-                    p.spawn(colored_text("Tab / Shift+Tab",11.,MUTED));
+                    add_button(p, json!({"action":"ui-panel","panel":"route"}), "Map · M");
+                    p.spawn(colored_text("Tab / Shift+Tab", 11., MUTED));
                 });
-                p.spawn((Bound("route-progress"),colored_text("YOUR ROUTE",11.,MUTED)));
-                p.spawn((RouteList,bevy::ui_widgets::ScrollArea,Node {
-                    min_height:px(0),overflow:Overflow::scroll_y(),..block()
-                })).with_children(|p| {p.spawn((Dynamic("manifest"),block()));});
-                p.spawn((Bound("dispatcher"),colored_text("",12.,ORANGE),Node{height:px(48),flex_shrink:0.,overflow:Overflow::clip(),..default()}));
+                p.spawn((
+                    Bound("route-progress"),
+                    colored_text("YOUR ROUTE", 11., MUTED),
+                ));
+                p.spawn((
+                    RouteList,
+                    bevy::ui_widgets::ScrollArea,
+                    Node {
+                        min_height: px(0),
+                        overflow: Overflow::scroll_y(),
+                        ..block()
+                    },
+                ))
+                .with_children(|p| {
+                    p.spawn((Dynamic("manifest"), block()));
+                });
+                p.spawn((
+                    Bound("dispatcher"),
+                    colored_text("", 12., ORANGE),
+                    Node {
+                        height: px(48),
+                        flex_shrink: 0.,
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                ));
             });
             root.spawn((
-                RideHud, HudCard::Instruction, Layer::Hud,
+                RideHud,
+                HudCard::Instruction,
+                Layer::Hud,
                 Node {
-                    position_type:PositionType::Absolute,bottom:px(24),left:px(332),right:px(24),
-                    height:px(220),padding:UiRect::all(px(14)),border:UiRect::left(px(3)),
-                    row_gap:px(6),overflow:Overflow::clip(),..block()
+                    position_type: PositionType::Absolute,
+                    bottom: px(24),
+                    left: px(332),
+                    right: px(24),
+                    height: px(220),
+                    padding: UiRect::all(px(14)),
+                    border: UiRect::left(px(3)),
+                    row_gap: px(6),
+                    overflow: Overflow::clip(),
+                    ..block()
                 },
-                BackgroundColor(INK),BorderColor::all(ORANGE),
-            )).with_children(|p| {
-                p.spawn((Bound("stop-label"),colored_text("CURRENT DELIVERY",11.,ORANGE)));
-                p.spawn((Bound("stop-address"),text("Finding addresses…",20.)));
-                p.spawn((Bound("stop-recipient"),colored_text("",13.,MUTED)));
-                p.spawn((Bound("delivery"),text("",14.)));
-                p.spawn((Bound("status"),colored_text("",13.,ORANGE),Node{min_height:px(32),..default()}));
+                BackgroundColor(INK),
+                BorderColor::all(ORANGE),
+            ))
+            .with_children(|p| {
+                p.spawn((
+                    Bound("stop-label"),
+                    colored_text("CURRENT DELIVERY", 11., ORANGE),
+                ));
+                p.spawn((Bound("stop-address"), text("Finding addresses…", 20.)));
+                p.spawn((Bound("stop-recipient"), colored_text("", 13., MUTED)));
+                p.spawn((Bound("delivery"), text("", 14.)));
+                p.spawn((
+                    Bound("status"),
+                    colored_text("", 13., ORANGE),
+                    Node {
+                        min_height: px(32),
+                        ..default()
+                    },
+                ));
             });
             root.spawn((
                 RideHud,
@@ -654,7 +670,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 BackgroundColor(INK),
             ))
             .with_children(|p| {
-                p.spawn(colored_text("NEARBY / N ↑",11.,MUTED));
+                p.spawn(colored_text("NEARBY / N ↑", 11., MUTED));
                 p.spawn((
                     Radar { overview: false },
                     Node {
@@ -665,7 +681,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                     },
                     BackgroundColor(Color::srgb(0.10, 0.21, 0.16)),
                 ));
-                p.spawn(colored_text("▲ You   ◆ Stop   ● Van",11.,MUTED));
+                p.spawn(colored_text("▲ You   ◆ Stop   ● Van", 11., MUTED));
                 p.spawn((Dynamic("peers"), block()));
             });
             root.spawn((
@@ -686,60 +702,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 );
                 add_button(p, json!({"action":"ui-panel","panel":"photo"}), "Photo");
             });
-            root.spawn((
-                Welcome,
-                Layer::Welcome,
-                ZIndex(25),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(62.),
-                    left: Val::Px(0.),
-                    width: Val::Percent(100.),
-                    bottom: Val::Px(0.),
-                    ..default()
-                },
-                BackgroundColor(INK),
-            ))
-            .with_children(|p| {
-                p.spawn((
-                    WelcomeArt,
-                    ImageNode::new(assets.load("landing/delivery-day.png")),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(0.),
-                        top: Val::Px(0.),
-                        width: Val::Percent(65.),
-                        height: Val::Percent(100.),
-                        ..default()
-                    },
-                ));
-                p.spawn((
-                    WelcomeCopy,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(0.),
-                        top: Val::Px(0.),
-                        width: Val::Percent(44.),
-                        height: Val::Percent(100.),
-                        justify_content: JustifyContent::Center,
-                        padding: UiRect::all(Val::Px(28.)),
-                        ..block()
-                    },
-                    BackgroundColor(INK),
-                ))
-                .with_children(|p| {
-                    p.spawn((
-                        WelcomeDescription,
-                        ImageNode::new(assets.load("branding/drehlss-van.png")),
-                        Node{width:percent(100),aspect_ratio:Some(2.5),padding:UiRect::all(px(10)),..default()},
-                        BackgroundColor(PAPER),
-                    ));
-                    p.spawn((WelcomeTitle, text("Paketzustellungs\nverhinderung", 34.)));
-                    p.spawn(colored_text("Simulator Deluxe",22.,MUTED));
-                    p.spawn((WelcomeDescription,text("Drive your neighbourhood. Deliver parcels.\nTake photos of your questionable work.",16.),Node{margin:UiRect::vertical(px(18)),..default()}));
-                    add_button(p, json!({"action":"welcome-play"}), "Play");
-                });
-            });
+            welcome::spawn(root, &assets);
             root.spawn((
                 WorldLoading,
                 Layer::Loading,
@@ -2150,7 +2113,8 @@ fn layer_visible(
             return false;
         };
         if let Some(layer) = layer {
-            return *layer == top || (*layer == Layer::Header && top != Layer::Loading);
+            return *layer == top
+                || (*layer == Layer::Header && top != Layer::Loading && !ui.welcome);
         }
         let Some(parent) = parent else {
             return false;

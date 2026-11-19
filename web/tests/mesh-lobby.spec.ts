@@ -109,15 +109,25 @@ test('a failed neighbourhood offers retry and starts the same shift after recove
 test('the Bevy welcome artwork and Play remain inside desktop and phone screens',async({page})=>{
   await page.route('**/api/meshes',route=>route.fulfill({json:[]}));
   await page.goto('/');
-  for(const size of [{width:1440,height:900},{width:390,height:720},{width:360,height:600}]) {
+  for(const size of [{width:1800,height:916},{width:1440,height:900},{width:844,height:390},{width:768,height:1024},{width:390,height:720},{width:360,height:600}]) {
     await page.setViewportSize(size);
     await expect.poll(async()=>{
-      const play=await region(page,'Play');
-      return Boolean(play&&play.x>=0&&play.y>=0&&play.x+play.width<=size.width&&play.y+play.height<=size.height);
+      const view=await ui(page);
+      const play=view?.regions.find((r:any)=>r.label==='Play');
+      const art=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('landing/delivery-day.png'));
+      const logo=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('branding/drehlss-van.png'));
+      return Boolean(play&&play.x>=0&&play.y>=0&&play.x+play.width<=size.width&&play.y+play.height<=size.height&&
+        play.width<=220&&art?.width===size.width&&art?.height===size.height&&logo?.width<=190&&
+        !view.regions.some((r:any)=>['Profile','Share mesh','Fullscreen'].includes(r.label)));
     }).toBe(true);
-    await expect.poll(async()=>(await ui(page))?.images.some((image:any)=>image.loaded&&image.path?.endsWith('landing/delivery-day.png'))).toBe(true);
     expect(await page.evaluate(()=>[document.documentElement.scrollWidth-innerWidth,document.documentElement.scrollHeight-innerHeight])).toEqual([0,0]);
+    await page.screenshot({path:test.info().outputPath(`welcome-${size.width}x${size.height}.png`)});
   }
+  await clickUi(page,'Settings');
+  await expect.poll(async()=>(await ui(page))?.panel).toBe('settings');
+  await clickUi(page,'Close · Esc');
+  await clickUi(page,'Play');
+  await expect.poll(async()=>Boolean(await region(page,'Play solo'))).toBe(true);
   await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href','/favicon.svg?v=cardboard-transparent');
   const icon=await page.request.get('/favicon.svg');expect(icon.ok()).toBe(true);
   expect(icon.headers()['content-type']).toContain('image/svg+xml');
