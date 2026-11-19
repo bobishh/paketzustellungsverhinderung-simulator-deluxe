@@ -955,6 +955,8 @@ fn stream_tiles(
                         position,
                         direction,
                     );
+                } else if tile == origin_tile {
+                    platform::ui_event("paket-ride-loading", "\"empty\"");
                 }
             }
         }

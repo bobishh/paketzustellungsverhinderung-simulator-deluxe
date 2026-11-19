@@ -30,7 +30,7 @@ use crate::{Mode, SessionResult, actors::Role, connect_session, start_ride};
 
 const TILE: f64 = 256.0;
 const TOOLBAR: f32 = 42.;
-const SIDEBAR: f32 = 350.;
+const SIDEBAR: f32 = 380.;
 const RIDE_SLOTS: usize = 4;
 pub(crate) const KREUZBERG: LatLon = LatLon {
     lat: FIXTURE_LAT,
@@ -294,7 +294,8 @@ fn button(action: Action, title: &str, primary: bool) -> impl Bundle {
         action,
         AccessibleLabel::new(title),
         Node {
-            min_height: Val::Px(36.),
+            min_height: Val::Px(38.),
+            border_radius: BorderRadius::all(px(7)),
             flex_shrink: 0.,
             justify_content: JustifyContent::Center,
             padding: UiRect::axes(Val::Px(11.0), Val::Px(8.0)),
@@ -307,9 +308,9 @@ fn button(action: Action, title: &str, primary: bool) -> impl Bundle {
 
 fn button_color(primary: bool, hovered: bool) -> Color {
     match (primary, hovered) {
-        (true, false) => Color::srgb(0.69, 0.30, 0.11),
+        (true, false) => Color::srgb(0.85, 0.34, 0.09),
         (true, true) => Color::srgb(0.80, 0.37, 0.15),
-        (false, false) => Color::srgb(0.19, 0.27, 0.26),
+        (false, false) => Color::srgb(0.15, 0.22, 0.18),
         (false, true) => Color::srgb(0.26, 0.37, 0.35),
     }
 }
@@ -406,8 +407,8 @@ pub fn setup(mut commands: Commands) {
                     width: Val::Px(SIDEBAR),
                     flex_shrink: 0.,
                     min_height: Val::Px(0.),
-                    padding: UiRect::all(Val::Px(10.)),
-                    row_gap: Val::Px(6.),
+                    padding: UiRect::all(Val::Px(18.)),
+                    row_gap: Val::Px(10.),
                     flex_direction: FlexDirection::Column,
                     ..default()
                 },
@@ -601,7 +602,8 @@ fn text_input(parent: &mut ChildSpawnerCommands, address: bool) {
         Node {
             width: Val::Percent(100.),
             height: Val::Px(36.),
-            min_height: Val::Px(36.),
+            min_height: Val::Px(38.),
+            border_radius: BorderRadius::all(px(7)),
             flex_shrink: 0.,
             padding: UiRect::all(Val::Px(7.)),
             overflow: Overflow::clip(),
@@ -656,6 +658,9 @@ pub(crate) fn responsive(
             node.flex_shrink = if portrait { 0. } else { 1. };
         }
         if sidebar {
+            let short = window.height() < 560.;
+            node.padding = UiRect::all(px(if short { 8. } else { 18. }));
+            node.row_gap = px(if short { 4. } else { 10. });
             node.width = if portrait {
                 Val::Percent(100.)
             } else {

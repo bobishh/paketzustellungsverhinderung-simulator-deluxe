@@ -20,11 +20,26 @@ globalThis.paketPhoto=(bytes,index)=>{if(photoUrl)URL.revokeObjectURL(photoUrl);
 setPhotoDownload(()=>{if(!photoUrl){paketNotify('Take a delivery photo first.');return;}const link=document.createElement('a');link.href=photoUrl;link.download=photoName;link.click();});
 const boot=document.querySelector<HTMLElement>('#bootstrap')!,bootStatus=document.querySelector<HTMLElement>('#boot-status')!,retry=document.querySelector<HTMLButtonElement>('#boot-retry')!;
 let bootTimer:ReturnType<typeof setTimeout>|undefined;
-window.addEventListener('paket-bootstrap-error',event=>{clearTimeout(bootTimer);boot.hidden=false;bootStatus.textContent=String((event as CustomEvent).detail);retry.hidden=false;});
-window.addEventListener('paket-ui-ready',()=>{clearTimeout(bootTimer);boot.hidden=true;document.querySelector<HTMLCanvasElement>('#game')!.focus({preventScroll:true});});
+let bootReady=false;
+function bootError(message:string){
+ clearTimeout(bootTimer);
+ boot.hidden=false;
+ boot.classList.add('failed');
+ bootStatus.textContent=message;
+ retry.hidden=false;
+}
+window.addEventListener('paket-bootstrap-error',event=>bootError(String((event as CustomEvent).detail)));
+window.addEventListener('paket-ui-ready',()=>{
+ bootReady=true;
+ clearTimeout(bootTimer);
+ boot.hidden=true;
+ document.querySelector<HTMLCanvasElement>('#game')!.focus({preventScroll:true});
+});
+window.addEventListener('error',event=>{if(!bootReady)bootError(event.message||'The renderer stopped. Retry loading the game.');});
+window.addEventListener('unhandledrejection',event=>{if(!bootReady)bootError(event.reason instanceof Error?event.reason.message:String(event.reason));});
 retry.onclick=()=>location.reload();
 async function start(){
- bootTimer=setTimeout(()=>{bootStatus.textContent='Loading is taking longer than expected. Retry if it does not finish.';retry.hidden=false;},90000);
+ bootTimer=setTimeout(()=>bootError('The renderer did not start within 90 seconds. Retry loading the game.'),90000);
  try{
   const gpu=(navigator as Navigator&{gpu?:{requestAdapter():Promise<{info?:{isFallbackAdapter?:boolean}}|null>}}).gpu;
   const adapter=await gpu?.requestAdapter();if(!adapter)throw new Error('WebGPU is unavailable. Enable hardware graphics or use a supported browser.');
@@ -35,6 +50,6 @@ async function start(){
   if(query.has('press-shot')){paketArgs.push('--press-shot');document.body.classList.add('press-shot');}
   if(query.has('inspect-courier'))paketArgs.push('--inspect-courier');
   const url='/game/paket_game.js';const{default:init}=await import(/* @vite-ignore */url);await init();document.querySelector<HTMLCanvasElement>('#game')!.focus();
- }catch(error){clearTimeout(bootTimer);boot.hidden=false;bootStatus.textContent=error instanceof Error?error.message:String(error);retry.hidden=false;}
+ }catch(error){bootError(error instanceof Error?error.message:String(error));}
 }
 void start();

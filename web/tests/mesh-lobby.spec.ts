@@ -76,7 +76,7 @@ test('failed raster tiles retry in the real map while neighbourhood selection re
   await page.goto('/');await clickUi(page,'Play');
   try {
     await expect.poll(async()=>(await fact(page,'paket-map-loading'))?.pending).toBe(true);
-    expect((await region(page,'Play solo')).height).toBeGreaterThan(0);
+    await expect.poll(async()=>(await region(page,'Play solo'))?.height??0).toBeGreaterThan(0);
     release();
     await expect.poll(async()=>(await fact(page,'paket-map-loading'))?.failed).toBe(true);
     await expect.poll(()=>text(page)).toContain('Some map tiles failed. Retry.');

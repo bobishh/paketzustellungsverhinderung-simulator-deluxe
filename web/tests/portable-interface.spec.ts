@@ -76,8 +76,9 @@ for (const viewport of [{width:390,height:780},{width:844,height:390}]) {
    const header=view?.regions.filter((r:any)=>['Profile','Share mesh','How to play','Settings'].includes(r.label));
    const headerBottom=header?.length ? Math.max(...header.map((r:any)=>r.y+r.height)) : Infinity;
    const map=view?.regions.find((r:any)=>r.label==='Map · M');
-   const clock=view?.texts.find((r:any)=>r.text.includes('KPI')&&r.text.includes('Day'));
-   return Boolean(map&&clock&&map.y>=headerBottom&&clock.y>=headerBottom);
+   const clock=view?.texts.find((r:any)=>r.text==='09:00'||r.text.startsWith('09:'));
+   const delivery=view?.texts.find((r:any)=>r.text.startsWith('DELIVERY '));
+   return Boolean(map&&clock&&delivery&&map.y>=headerBottom&&clock.y>=headerBottom&&delivery.y>=map.y+map.height);
   }).toBe(true);
  });
 }
