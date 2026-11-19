@@ -115,9 +115,9 @@ test('the Bevy welcome artwork and Play remain inside desktop and phone screens'
       const view=await ui(page);
       const play=view?.regions.find((r:any)=>r.label==='Play');
       const art=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('landing/delivery-day.png'));
-      const logo=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('branding/drehlss-van.png'));
+      const logo=view?.images.some((image:any)=>image.path?.endsWith('branding/drehlss-van.png'));
       return Boolean(play&&play.x>=0&&play.y>=0&&play.x+play.width<=size.width&&play.y+play.height<=size.height&&
-        play.width<=220&&art?.width===size.width&&art?.height===size.height&&logo?.width<=190&&
+        play.width<=220&&art?.width===size.width&&art?.height===size.height&&!logo&&
         !view.regions.some((r:any)=>['Profile','Share mesh','Fullscreen'].includes(r.label)));
     }).toBe(true);
     expect(await page.evaluate(()=>[document.documentElement.scrollWidth-innerWidth,document.documentElement.scrollHeight-innerHeight])).toEqual([0,0]);

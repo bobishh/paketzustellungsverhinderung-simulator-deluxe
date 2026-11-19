@@ -22,7 +22,6 @@ pub(super) struct Scrim;
 #[derive(Component)]
 pub(super) enum Layout {
     Toolbar,
-    Logo,
     Copy,
 }
 
@@ -59,48 +58,28 @@ pub(super) fn spawn(parent: &mut ChildSpawnerCommands, assets: &AssetServer) {
                         top: px(28),
                         left: px(48),
                         right: px(48),
-                        column_gap: px(10),
-                        justify_content: JustifyContent::SpaceBetween,
+                        column_gap: px(6),
+                        justify_content: JustifyContent::End,
                         align_items: AlignItems::Center,
                         ..default()
                     },
                 ))
-                .with_children(|bar| {
-                    bar.spawn((
-                        Layout::Logo,
-                        ImageNode::new(assets.load("branding/drehlss-van.png")),
-                        Node {
-                            width: px(180),
-                            aspect_ratio: Some(2.5),
-                            padding: UiRect::all(px(7)),
-                            flex_shrink: 0.,
-                            ..default()
-                        },
-                        BackgroundColor(PAPER),
-                    ));
-                    bar.spawn(Node {
-                        column_gap: px(6),
-                        justify_content: JustifyContent::End,
-                        flex_wrap: FlexWrap::Wrap,
-                        ..default()
-                    })
-                    .with_children(|links| {
-                        for (panel, label) in [("help", "How to play"), ("settings", "Settings")] {
-                            links
-                                .spawn((
-                                    Utility,
-                                    button(json!({"action":"ui-panel","panel":panel}), label),
-                                ))
-                                .insert(Node {
-                                    min_height: px(40),
-                                    padding: UiRect::horizontal(px(10)),
-                                    align_items: AlignItems::Center,
-                                    justify_content: JustifyContent::Center,
-                                    ..default()
-                                })
-                                .observe(clicked);
-                        }
-                    });
+                .with_children(|links| {
+                    for (panel, label) in [("help", "How to play"), ("settings", "Settings")] {
+                        links
+                            .spawn((
+                                Utility,
+                                button(json!({"action":"ui-panel","panel":panel}), label),
+                            ))
+                            .insert(Node {
+                                min_height: px(40),
+                                padding: UiRect::horizontal(px(10)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            })
+                            .observe(clicked);
+                    }
                 });
 
             screen
@@ -214,7 +193,6 @@ pub(super) fn responsive(
         return;
     }
     let portrait = viewport.x < 620. || viewport.x < viewport.y * 0.95;
-    let narrow = viewport.x < 360.;
     let short = viewport.y < 500.;
     let inset = if portrait {
         20.
@@ -247,15 +225,6 @@ pub(super) fn responsive(
                 next.left = px(inset);
                 next.right = px(inset);
                 next.top = px(if short || portrait { 16. } else { 30. });
-            }
-            Layout::Logo => {
-                next.width = px(if narrow {
-                    100.
-                } else if portrait || short {
-                    126.
-                } else {
-                    176.
-                })
             }
             Layout::Copy => {
                 next.left = px(inset);
