@@ -2,7 +2,7 @@ import {expect,type Page} from '@playwright/test';
 export type Region={x:number;y:number;width:number;height:number;label?:string;action?:string;capture?:boolean};
 export async function observeGame(page:Page){await page.addInitScript(()=>{
  const facts:Record<string,unknown>={};(globalThis as any).paketObserved=facts;
- for(const name of ['paket-mode','paket-lobby','paket-hud','paket-radar','paket-members','paket-session','paket-notice','paket-map-loading','paket-ride-loading','paket-ui-regions','paket-services','paket-profile'])window.addEventListener(name,e=>{
+ for(const name of ['paket-navigation','paket-mode','paket-lobby','paket-hud','paket-radar','paket-members','paket-session','paket-notice','paket-map-loading','paket-ride-loading','paket-ui-regions','paket-services','paket-profile'])window.addEventListener(name,e=>{
   const value=(e as CustomEvent).detail;
   if(name==='paket-mode'&&value!=='ride')delete facts['paket-hud'];
   facts[name]=value;

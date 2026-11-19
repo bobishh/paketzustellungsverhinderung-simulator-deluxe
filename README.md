@@ -1,6 +1,6 @@
 # Paketzustellungsverhinderung Simulator Deluxe
 
-A neighbourhood courier game. DREHLSS is the fictional delivery company.
+A neighbourhood courier game. DREHLSS is the fictional delivery company: **Deutscher Regionaler Expressdienst für hoffentlich lieferbare Sendungen und Sperrgut**. The courier logo and this full name appear on both sides of the delivery van.
 
 ## Browser build
 
@@ -37,7 +37,7 @@ The host fills one shared route of up to 12 unique delivery stops as neighbourin
 
 The ground uses Mapzen elevation around the ride origin. The game uses one set of heights for physics, roads, buildings and scenery. This is terrain relief at the scale of a neighbourhood, with a smooth return to flat ground beyond the sampled area. The game starts with flat ground if the elevation tiles are unavailable.
 
-The Bevy HUD shows the shift clock, KPI, current delivery, a route panel and context controls. A compact arrow points to the current objective relative to the player’s heading. The game measures frame times after the street loads and adjusts the separate 3D render texture. It remembers the result for a similar viewport. Bevy UI uses the full window resolution at every scene quality. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
+The Bevy HUD keeps the shift clock, KPI, route and current delivery instructions visible. Completed stops and the selected stop stay marked in the route list. A ground arrow uses the same geometry and placement as Feed the Poor: it sits beside the courier, points toward the current objective and disappears nearby, during delivery dialogs, in menus and in camera mode. The game measures frame times after the street loads and adjusts the separate 3D render texture. It remembers the result for a similar viewport. Bevy UI uses the full window resolution at every scene quality. F1 opens settings with mouse sensitivity, difficulty and the full controls list.
 
 The host owns the shared 09:00–17:00 clock (48 real minutes). Guests receive the current clock when joining. F2 selects Trainee, Courier or Express before the first doorbell. Resident names stay consistent within a ride. Residents have different away slots and response delays. Dispatcher SMS clues open optional neighbor handover challenges. Ring the marked neighbor, choose what to say and hand over the parcel for a bonus. The bonus starts falling 45 seconds after the first ring. A dog can take a dropped challenge parcel back to the correct door. Ring the marked recipient with R before leaving a parcel. The intercom offers an all-bells timed bonus; encounters open a timed name dialogue. A rare broken-intercom opportunity lets the courier collect the remaining batch from their van and dump it at the marked destination once per shift.
 

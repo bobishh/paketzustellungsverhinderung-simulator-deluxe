@@ -295,7 +295,6 @@ fn button(action: Action, title: &str, primary: bool) -> impl Bundle {
         AccessibleLabel::new(title),
         Node {
             min_height: Val::Px(38.),
-            border_radius: BorderRadius::all(px(7)),
             flex_shrink: 0.,
             justify_content: JustifyContent::Center,
             padding: UiRect::axes(Val::Px(11.0), Val::Px(8.0)),
@@ -603,7 +602,6 @@ fn text_input(parent: &mut ChildSpawnerCommands, address: bool) {
             width: Val::Percent(100.),
             height: Val::Px(36.),
             min_height: Val::Px(38.),
-            border_radius: BorderRadius::all(px(7)),
             flex_shrink: 0.,
             padding: UiRect::all(Val::Px(7.)),
             overflow: Overflow::clip(),

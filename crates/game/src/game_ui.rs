@@ -79,8 +79,8 @@ struct WelcomeTitle;
 struct WelcomeDescription;
 #[derive(Component)]
 enum HudCard {
-    Clock,
-    Delivery,
+    Route,
+    Instruction,
     Radar,
 }
 
@@ -96,11 +96,11 @@ struct Modal;
 #[derive(Component)]
 struct RideHud;
 #[derive(Component)]
+struct RouteList;
+#[derive(Component)]
 struct WorldLoading;
 #[derive(Component)]
 struct Spinner;
-#[derive(Component)]
-struct Direction;
 #[derive(Component)]
 pub(crate) struct Bound(pub(crate) &'static str);
 #[derive(Component)]
@@ -179,7 +179,6 @@ pub(crate) fn button(value: Value, title: impl Into<String>) -> impl Bundle {
         Node {
             min_height: Val::Px(38.),
             border: UiRect::all(px(1)),
-            border_radius: BorderRadius::all(px(7)),
             padding: UiRect::axes(Val::Px(12.), Val::Px(8.)),
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
@@ -265,7 +264,6 @@ pub(crate) fn install(app: &mut App) {
                     .before(crate::browser_ui::input),
                 photo,
                 paint,
-                prompt_visibility,
                 panels,
                 settings_labels,
                 button_feedback,
@@ -275,18 +273,8 @@ pub(crate) fn install(app: &mut App) {
                 .chain(),
         );
 }
-fn prompt_visibility(mut labels: Query<(&Bound, &Text, &mut Node)>) {
-    for (bound, text, mut node) in &mut labels {
-        if bound.0 == "prompt" {
-            node.display = if text.0.trim().is_empty() {
-                Display::None
-            } else {
-                Display::Flex
-            };
-        }
-    }
-}
 fn button_feedback(
+    ui: Res<Ui>,
     mut buttons: Query<
         (
             &Action,
@@ -299,6 +287,8 @@ fn button_feedback(
     >,
 ) {
     for (action, hovered, pressed, mut background, mut border) in &mut buttons {
+        let selected = action.0["action"] == "delivery"
+            && action.0["index"] == ui.value("paket-hud")["selected"];
         let primary = action.0["action"] == "welcome-play";
         background.0 = if primary {
             if pressed {
@@ -308,12 +298,14 @@ fn button_feedback(
             } else {
                 ORANGE
             }
+        } else if selected {
+            Color::srgb(0.27, 0.14, 0.07)
         } else if hovered.get() {
             Color::srgb(0.20, 0.29, 0.23)
         } else {
             PANEL
         };
-        *border = BorderColor::all(if primary || hovered.get() {
+        *border = BorderColor::all(if primary || selected || hovered.get() {
             ORANGE
         } else {
             Color::srgb(0.23, 0.30, 0.25)
@@ -334,6 +326,7 @@ fn responsive(
         Has<WelcomeDescription>,
         Option<&Radar>,
         Has<HeaderAction>,
+        Has<RouteList>,
     )>,
     actions: Query<(&Action, &Children), With<HeaderAction>>,
     mut texts: Query<(
@@ -361,13 +354,19 @@ fn responsive(
         description,
         radar,
         header_action,
+        route_list,
     ) in &mut nodes
     {
         if let Some(offset) = offset {
             node.top = Val::Px(header_height(window.width()) + offset.0);
         }
+        if route_list {
+            let available =
+                window.height() - header_height(window.width()) - if portrait { 340. } else { 42. };
+            node.max_height = px((available - 256.).clamp(38., 480.));
+        }
         if description {
-            node.display = if portrait {
+            node.display = if portrait || short {
                 Display::None
             } else {
                 Display::Flex
@@ -375,17 +374,48 @@ fn responsive(
         }
         if let Some(card) = card {
             match card {
-                HudCard::Clock => {
-                    node.width = px(if portrait { 208. } else { 302. });
-                    node.left = px(if portrait { 12. } else { 22. });
-                    node.padding = UiRect::all(px(if portrait || short { 12. } else { 18. }));
+                HudCard::Route => {
+                    node.width = px(if portrait {
+                        176.
+                    } else if short {
+                        220.
+                    } else {
+                        288.
+                    });
+                    node.left = px(if portrait || short { 12. } else { 24. });
+                    node.height = Val::Auto;
+                    node.max_height = px((window.height()
+                        - header_height(window.width())
+                        - if portrait { 340. } else { 42. })
+                    .max(180.));
+                    node.overflow = Overflow::clip();
+                    node.padding = UiRect::all(px(if portrait || short { 10. } else { 14. }));
                     node.row_gap = px(if short { 5. } else { 10. });
                 }
-                HudCard::Delivery => {
-                    node.width = px(if portrait { window.width() - 24. } else { 302. });
-                    node.left = px(if portrait { 12. } else { 22. });
-                    node.max_height =
-                        px((window.height() - header_height(window.width()) - 220.).max(140.));
+                HudCard::Instruction => {
+                    node.left = px(if portrait {
+                        12.
+                    } else if short {
+                        252.
+                    } else {
+                        332.
+                    });
+                    node.right = Val::Auto;
+                    node.width = px(if portrait {
+                        window.width() - 24.
+                    } else if short {
+                        window.width() - 452.
+                    } else {
+                        (window.width() - 356.).min(720.)
+                    });
+                    node.bottom = px(64);
+                    node.height = px(if portrait {
+                        240.
+                    } else if short {
+                        196.
+                    } else {
+                        220.
+                    });
                 }
                 HudCard::Radar => {
                     node.width = px(if portrait {
@@ -570,87 +600,44 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 .observe(clicked);
             });
             root.spawn((
-                RideHud, HudCard::Clock, HeaderOffset(18.), Layer::Hud,
-                Node {position_type:PositionType::Absolute, top:px(80), left:px(22),
-                    width:px(302), padding:UiRect::all(px(18)), border_radius:BorderRadius::all(px(12)),
-                    row_gap:px(10), ..block()},
+                RideHud, HudCard::Route, HeaderOffset(18.), Layer::Hud,
+                Node {
+                    position_type:PositionType::Absolute, top:px(80), left:px(24),
+                    width:px(288), padding:UiRect::all(px(14)), row_gap:px(10),
+                    flex_direction:FlexDirection::Column, ..default()
+                },
                 BackgroundColor(INK),
             )).with_children(|p| {
                 p.spawn((Bound("day"),colored_text("DAY 1 / SHIFT ENDS 17:00",11.,MUTED)));
-                p.spawn(Node{justify_content:JustifyContent::SpaceBetween,align_items:AlignItems::Center,..default()}).with_children(|p|{
-                    p.spawn((Bound("clock"),text("09:00",36.)));
-                    p.spawn((Bound("score"),colored_text("0 KPI",24.,ORANGE)));
+                p.spawn(Node{justify_content:JustifyContent::SpaceBetween,align_items:AlignItems::Center,..default()}).with_children(|p| {
+                    p.spawn((Bound("clock"),text("09:00",28.)));
+                    p.spawn((Bound("score"),colored_text("0 KPI",20.,ORANGE)));
                 });
                 p.spawn(row()).with_children(|p| {
                     add_button(p,json!({"action":"ui-panel","panel":"route"}),"Map · M");
-                    add_button(p,json!({"action":"ui-panel","panel":"deliveries"}),"Deliveries");
+                    p.spawn(colored_text("Tab / Shift+Tab",11.,MUTED));
                 });
+                p.spawn((Bound("route-progress"),colored_text("YOUR ROUTE",11.,MUTED)));
+                p.spawn((RouteList,bevy::ui_widgets::ScrollArea,Node {
+                    min_height:px(0),overflow:Overflow::scroll_y(),..block()
+                })).with_children(|p| {p.spawn((Dynamic("manifest"),block()));});
+                p.spawn((Bound("dispatcher"),colored_text("",12.,ORANGE),Node{height:px(48),flex_shrink:0.,overflow:Overflow::clip(),..default()}));
             });
             root.spawn((
-                RideHud, HudCard::Delivery, bevy::ui_widgets::ScrollArea, Layer::Hud,
-                Node {overflow:Overflow::scroll_y(),position_type:PositionType::Absolute,bottom:px(42),left:px(22),width:px(302),
-                    padding:UiRect::all(px(18)),border:UiRect::left(px(3)),border_radius:BorderRadius::all(px(10)),
-                    row_gap:px(9),..block()},
+                RideHud, HudCard::Instruction, Layer::Hud,
+                Node {
+                    position_type:PositionType::Absolute,bottom:px(24),left:px(332),right:px(24),
+                    height:px(220),padding:UiRect::all(px(14)),border:UiRect::left(px(3)),
+                    row_gap:px(6),overflow:Overflow::clip(),..block()
+                },
                 BackgroundColor(INK),BorderColor::all(ORANGE),
             )).with_children(|p| {
-                p.spawn((Bound("stop-label"),colored_text("YOUR ROUTE",11.,ORANGE)));
-                p.spawn((Bound("stop-address"),text("Finding addresses…",22.)));
-                p.spawn((Bound("stop-recipient"),colored_text("",14.,MUTED)));
-                p.spawn((Node{height:px(1),margin:UiRect::vertical(px(4)),..default()},BackgroundColor(PANEL)));
+                p.spawn((Bound("stop-label"),colored_text("CURRENT DELIVERY",11.,ORANGE)));
+                p.spawn((Bound("stop-address"),text("Finding addresses…",20.)));
+                p.spawn((Bound("stop-recipient"),colored_text("",13.,MUTED)));
                 p.spawn((Bound("delivery"),text("",14.)));
-                p.spawn((Bound("dispatcher"),colored_text("",13.,ORANGE)));
-                p.spawn(colored_text("Tab / Shift+Tab: browse stops",11.,MUTED));
+                p.spawn((Bound("status"),colored_text("",13.,ORANGE),Node{min_height:px(32),..default()}));
             });
-            root.spawn((
-                Direction,
-                HeaderOffset(12.),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(58.),
-                    left: Val::Percent(48.),
-                    width: Val::Px(32.),
-                    height: Val::Px(38.),
-                    ..default()
-                },
-                UiTransform::default(),
-            ))
-            .with_children(|p| {
-                for (left, top, width, height, angle) in [
-                    (12., 13., 8., 24., 0.),
-                    (6., 2., 8., 22., 0.7854),
-                    (18., 2., 8., 22., -0.7854),
-                ] {
-                    p.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(left),
-                            top: Val::Px(top),
-                            width: Val::Px(width),
-                            height: Val::Px(height),
-                            border_radius: BorderRadius::all(Val::Px(2.)),
-                            ..default()
-                        },
-                        UiTransform {
-                            rotation: Rot2::radians(angle),
-                            ..default()
-                        },
-                        BackgroundColor(ORANGE),
-                    ));
-                }
-            });
-            root.spawn((
-                RideHud,
-                Layer::Hud,
-                HeaderOffset(24.),
-                Bound("direction-distance"),
-                text("", 14.),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(70.),
-                    left: Val::Percent(52.),
-                    ..default()
-                },
-            ));
             root.spawn((
                 RideHud,
                 HudCard::Radar,
@@ -662,7 +649,6 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                     right: Val::Px(22.),
                     width: Val::Px(248.),
                     padding: UiRect::all(px(12)),
-                    border_radius: BorderRadius::all(px(12)),
                     ..block()
                 },
                 BackgroundColor(INK),
@@ -682,22 +668,6 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                 p.spawn(colored_text("▲ You   ◆ Stop   ● Van",11.,MUTED));
                 p.spawn((Dynamic("peers"), block()));
             });
-            root.spawn((
-                RideHud,
-                Layer::Hud,
-                Bound("prompt"),
-                text("", 16.),
-                Node {
-                    position_type: PositionType::Absolute,
-                    bottom: Val::Px(60.),
-                    left: Val::Percent(36.),
-                    max_width: Val::Percent(50.),
-                    padding: UiRect::all(Val::Px(12.)),
-                    border_radius: BorderRadius::all(px(8)),
-                    ..default()
-                },
-                BackgroundColor(INK),
-            ));
             root.spawn((
                 RideHud,
                 Layer::Hud,
@@ -758,7 +728,12 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
                     BackgroundColor(INK),
                 ))
                 .with_children(|p| {
-                    p.spawn(colored_text("DREHLSS / DELIVERY OPERATIONS",12.,ORANGE));
+                    p.spawn((
+                        WelcomeDescription,
+                        ImageNode::new(assets.load("branding/drehlss-van.png")),
+                        Node{width:percent(100),aspect_ratio:Some(2.5),padding:UiRect::all(px(10)),..default()},
+                        BackgroundColor(PAPER),
+                    ));
                     p.spawn((WelcomeTitle, text("Paketzustellungs\nverhinderung", 34.)));
                     p.spawn(colored_text("Simulator Deluxe",22.,MUTED));
                     p.spawn((WelcomeDescription,text("Drive your neighbourhood. Deliver parcels.\nTake photos of your questionable work.",16.),Node{margin:UiRect::vertical(px(18)),..default()}));
@@ -1029,6 +1004,17 @@ fn actions(
         }
     }
 }
+fn route_state(state: &str) -> &str {
+    match state {
+        "in-van" => "At van",
+        "carrying" => "Carrying",
+        "in-flight" => "In flight",
+        "set-aside" => "Set aside",
+        "photo-due" => "Photo needed",
+        "filed" | "handed" => "Delivered",
+        _ => state,
+    }
+}
 fn value_text<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or("")
 }
@@ -1038,26 +1024,8 @@ fn paint(
     mut labels: Query<(&Bound, &mut Text, Option<&mut BackgroundColor>)>,
     mut hud: Query<&mut Node, (With<RideHud>, Without<WorldLoading>, Without<Welcome>)>,
     mut loader: Query<&mut Node, (With<WorldLoading>, Without<RideHud>, Without<Welcome>)>,
-    mut welcome: Query<
-        &mut Node,
-        (
-            With<Welcome>,
-            Without<RideHud>,
-            Without<WorldLoading>,
-            Without<Direction>,
-        ),
-    >,
+    mut welcome: Query<&mut Node, (With<Welcome>, Without<RideHud>, Without<WorldLoading>)>,
     mut spins: Query<(&mut UiTransform, &mut Visibility), With<Spinner>>,
-    mut directions: Query<
-        (&mut UiTransform, &mut Node),
-        (
-            With<Direction>,
-            Without<Spinner>,
-            Without<WorldLoading>,
-            Without<RideHud>,
-            Without<Welcome>,
-        ),
-    >,
 ) {
     let ride = ui.mode == "ride";
     for mut node in &mut welcome {
@@ -1090,19 +1058,6 @@ fn paint(
             Visibility::Inherited
         };
     }
-    for (mut transform, mut node) in &mut directions {
-        node.display = if ride && h["navigation"].is_object() {
-            Display::Flex
-        } else {
-            Display::None
-        };
-        transform.rotation = Rot2::radians(
-            h["navigation"]["bearing"]
-                .as_f64()
-                .unwrap_or(0.)
-                .to_radians() as f32,
-        );
-    }
     let route = h["routes"]
         .as_array()
         .and_then(|r| r.get(h["selected"].as_u64().unwrap_or(0) as usize));
@@ -1118,10 +1073,6 @@ fn paint(
             }
         }
         let next = match binding.0 {
-            "direction-distance" => h["navigation"]["distance"]
-                .as_f64()
-                .map(|v| format!("{v:.0} m"))
-                .unwrap_or_default(),
             "map-loading" => {
                 if ui.value("paket-map-loading")["failed"] == true {
                     "Some map tiles failed. Retry.".into()
@@ -1147,16 +1098,19 @@ fn paint(
             "stop-recipient" => route.map(|r| value_text(r, "name")).unwrap_or("").into(),
             "delivery" => crate::ui_guidance::delivery(h),
             "sensitivity" => format!("Mouse sensitivity: {:.4}", ui.sensitivity),
-            "prompt" => format!(
-                "{}{}{}",
-                value_text(h, "prompt"),
-                if value_text(h, "status").is_empty() {
-                    ""
-                } else {
-                    "\n"
-                },
-                value_text(h, "status")
-            ),
+            "status" => value_text(h, "status").into(),
+            "route-progress" => {
+                let routes = h["routes"].as_array();
+                let done = routes
+                    .into_iter()
+                    .flatten()
+                    .filter(|r| matches!(r["state"].as_str(), Some("filed" | "handed")))
+                    .count();
+                format!(
+                    "YOUR ROUTE  /  {done} OF {} DELIVERED",
+                    routes.map_or(0, Vec::len)
+                )
+            }
             "dispatcher" => {
                 let d = &h["dispatcher"];
                 format!("{}\n{}", value_text(d, "message"), value_text(d, "timer"))
@@ -1239,7 +1193,7 @@ fn panels(
         },
         BackgroundColor(Color::srgba(0.015, 0.025, 0.02, 0.72)),
     ));
-    commands.spawn((Modal,HeaderOffset(18.),Layer::Dialog,bevy::ui_widgets::ScrollArea,GlobalZIndex(40),Node {position_type:PositionType::Absolute,left:Val::Percent(7.),top:Val::Px(80.),width:Val::Percent(86.),max_height:Val::Percent(82.),padding:UiRect::all(Val::Px(24.)),border:UiRect::all(px(1)),border_radius:BorderRadius::all(px(14)),row_gap:px(12),overflow:Overflow::scroll_y(),..block()},BorderColor::all(Color::srgb(0.25,0.32,0.27)),BackgroundColor(INK))).with_children(|p|{
+    commands.spawn((Modal,HeaderOffset(18.),Layer::Dialog,bevy::ui_widgets::ScrollArea,GlobalZIndex(40),Node {position_type:PositionType::Absolute,left:Val::Percent(7.),top:Val::Px(80.),width:Val::Percent(86.),max_height:Val::Percent(82.),padding:UiRect::all(Val::Px(24.)),border:UiRect::all(px(1)),row_gap:px(12),overflow:Overflow::scroll_y(),..block()},BorderColor::all(Color::srgb(0.25,0.32,0.27)),BackgroundColor(INK))).with_children(|p|{
         panel(match selected.as_str(){"help"=>"How to deliver","settings"=>"Settings","profile"=>"Your career","share"=>"Share this mesh","photo"=>"Delivery photo","vote"=>"Day complete",_=>"Your route"},p);
         match selected.as_str(){
             "help"=>{p.spawn(text("WASD: move or drive · Shift: run · V: enter/leave van\nE: collect, exchange or hand over parcel · Q: return to van · X: set aside\nTab / Shift+Tab: choose delivery · R: intercom\nRing the named recipient before leaving a parcel. E places it; T throws it.\nF: camera. Centre the settled parcel within 9 m, then Space to photograph.\nDogs: E bite, Space jump, G mark van, B bark.\nM: route map · F1: settings · Esc: release cursor.\nThe shift continues while panels are open. Correct deliveries earn 0 KPI; questionable evidence earns more.",16.));}
@@ -1257,7 +1211,7 @@ fn panels(
             "vote"=>{p.spawn((Dynamic("vote"),block()));}
             "route"=>{
                 p.spawn(colored_text("Select a numbered stop. M or Esc returns to your shift.",14.,MUTED));
-                p.spawn((Radar{overview:true},Node {width:percent(100),height:Val::Vh(46.),min_height:px(180),flex_shrink:0.,border_radius:BorderRadius::all(px(10)),overflow:Overflow::clip(),..default()},BackgroundColor(Color::srgb(0.10,0.21,0.16))));
+                p.spawn((Radar{overview:true},Node {width:percent(100),height:Val::Vh(46.),min_height:px(180),flex_shrink:0.,overflow:Overflow::clip(),..default()},BackgroundColor(Color::srgb(0.10,0.21,0.16))));
                 p.spawn((Dynamic("routes"),row()));
             }
             _=>{p.spawn((Dynamic("routes"),block()));}
@@ -1278,14 +1232,14 @@ fn dynamic(
 ) {
     for (entity, kind, children) in &regions {
         let data = match kind.0 {
-            "routes" => &ui.value("paket-hud")["routes"],
+            "routes" | "manifest" => &ui.value("paket-hud")["routes"],
             "vote" => &ui.value("paket-hud")["vote"],
             "profile" => ui.value("paket-profile"),
             "share" => ui.value("paket-session"),
             "peers" => ui.value("paket-members"),
             _ => &Value::Null,
         };
-        let signature = if kind.0 == "routes" {
+        let signature = if matches!(kind.0, "routes" | "manifest") {
             data.as_array().map(|routes|routes.iter().map(|r|json!({"index":r["index"],"address":r["address"],"state":r["state"]})).collect::<Vec<_>>()).map(|v|json!(v).to_string()).unwrap_or_default()
         } else {
             data.to_string()
@@ -1300,19 +1254,30 @@ fn dynamic(
             }
         }
         commands.entity(entity).with_children(|p| match kind.0 {
-            "routes" => {
+            "routes" | "manifest" => {
                 if let Some(routes) = data.as_array() {
                     for route in routes {
-                        add_button(
-                            p,
-                            json!({"action":"delivery","index":route["index"]}),
+                        let index = route["index"].as_u64().unwrap_or(0) + 1;
+                        let done = matches!(route["state"].as_str(), Some("filed" | "handed"));
+                        let title = if kind.0 == "manifest" {
                             format!(
-                                "{} · {} · {}",
-                                route["index"].as_u64().unwrap_or(0) + 1,
+                                "{index:02}  {}{}",
+                                if done { "[x] " } else { "" },
+                                value_text(route, "address")
+                            )
+                        } else {
+                            format!(
+                                "{index} · {} · {}",
                                 value_text(route, "address"),
-                                value_text(route, "state")
-                            ),
-                        );
+                                route_state(value_text(route, "state"))
+                            )
+                        };
+                        p.spawn((button(
+                            json!({"action":"delivery","index":route["index"]}),
+                            title,
+                        ),))
+                            .observe(clicked)
+                            .insert(AccessibleLabel::new(format!("Route stop {index}")));
                     }
                 }
             }
@@ -1855,6 +1820,7 @@ fn input_regions(
     )>,
     parents: Query<(Option<&ChildOf>, Option<&Layer>)>,
     press: Option<Res<crate::press_scene::Scene>>,
+    cards: Query<(&HudCard, &ComputedNode, &UiGlobalTransform)>,
 ) {
     let mut regions = Vec::new();
     hit_regions.0.clear();
@@ -2010,7 +1976,23 @@ fn input_regions(
             },
         )
         .collect::<Vec<_>>();
-    let value=json!({"captureAllowed":ui.mode=="ride"&&ui.value("paket-hud")["ready"]==true&&ui.panel.is_empty()&&ui.value("paket-hud")["interaction"]!=true,"regions":regions,"mode":ui.mode,"panel":ui.panel,"status":ui.value("paket-services")["status"],"texts":drawn_texts,"images":drawn_images,"markers":drawn_markers}).to_string();
+    let drawn_panels = cards
+        .iter()
+        .filter_map(|(card, node, transform)| {
+            if ui.mode != "ride" || node.size().min_element() <= 0. {
+                return None;
+            }
+            let kind = match card {
+                HudCard::Route => "route",
+                HudCard::Instruction => "instructions",
+                HudCard::Radar => "radar",
+            };
+            let size = node.size() * node.inverse_scale_factor();
+            let start = transform.translation * node.inverse_scale_factor() - size * 0.5;
+            Some(json!({"kind":kind,"x":start.x,"y":start.y,"width":size.x,"height":size.y}))
+        })
+        .collect::<Vec<_>>();
+    let value=json!({"captureAllowed":ui.mode=="ride"&&ui.value("paket-hud")["ready"]==true&&ui.panel.is_empty()&&ui.value("paket-hud")["interaction"]!=true,"regions":regions,"mode":ui.mode,"panel":ui.panel,"status":ui.value("paket-services")["status"],"texts":drawn_texts,"images":drawn_images,"markers":drawn_markers,"panels":drawn_panels}).to_string();
     if *last != value {
         *last = value.clone();
         crate::platform::ui_event("paket-ui-regions", &value);

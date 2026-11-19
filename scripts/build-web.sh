@@ -10,9 +10,10 @@ cp assets/fonts/NotoSansJP-Variable.ttf assets/fonts/NotoSansJP-LICENSE web/publ
 cp assets/street/*.glb web/public/assets/street/
 mkdir -p web/public/assets
 cp assets/audio/* web/public/assets/
-mkdir -p web/public/assets/native/audio web/public/assets/landing
+mkdir -p web/public/assets/native/audio web/public/assets/landing web/public/assets/branding
 cp assets/native/audio/*.png web/public/assets/native/audio/
 cp assets/landing/delivery-day.png web/public/assets/landing/
+cp assets/branding/drehlss-van.png web/public/assets/branding/
 if [ -f assets/landing/delivery-day.webp ]; then cp assets/landing/delivery-day.webp web/public/assets/; fi
 cp ../mesh/packages/mesh-transport/transport-wasm/meta_mesh.js ../mesh/packages/mesh-transport/transport-wasm/meta_mesh_bg.wasm web/public/mesh/
 # Public OSM geometry for curated starter cities avoids first-load Overpass delays.

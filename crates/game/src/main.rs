@@ -13,6 +13,7 @@ mod jobs;
 mod map;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_audio;
+mod navigation;
 mod places;
 mod platform;
 mod press_scene;
@@ -218,6 +219,9 @@ fn install_ride(app: &mut App) {
                     photo_reticle,
                 )
                     .chain(),
+                navigation::update
+                    .after(actors::camera_follow)
+                    .after(jobs::courier),
                 jobs::settle_thrown.before(jobs::residents),
                 invite_control,
                 dogs::walk.after(jobs::courier),

@@ -63,38 +63,3 @@ pub(crate) fn lit(mut mesh: Mesh) -> Mesh {
     }
     mesh
 }
-
-/// One mesh for the deliberately utilitarian delivery-company stencil.
-pub(crate) fn company_mark() -> Mesh {
-    let letters = [
-        [30, 17, 17, 17, 17, 17, 30], // D
-        [30, 17, 17, 30, 20, 18, 17], // R
-        [31, 16, 16, 30, 16, 16, 31], // E
-        [17, 17, 17, 31, 17, 17, 17], // H
-        [16, 16, 16, 16, 16, 16, 31], // L
-        [15, 16, 16, 14, 1, 1, 30],   // S
-        [15, 16, 16, 14, 1, 1, 30],   // S
-    ];
-    let pixel = Mesh::from(Cuboid::new(0.040, 0.040, 0.006));
-    let mut combined: Option<Mesh> = None;
-    for (letter, rows) in letters.iter().enumerate() {
-        for (y, row) in rows.iter().enumerate() {
-            for x in 0..5 {
-                if row & (1 << (4 - x)) == 0 {
-                    continue;
-                }
-                let mesh = pixel.clone().transformed_by(Transform::from_xyz(
-                    (letter as f32 * 6.0 + x as f32 - 20.0) * 0.039,
-                    (3.0 - y as f32) * 0.039,
-                    0.0,
-                ));
-                if let Some(combined) = &mut combined {
-                    combined.merge(&mesh).unwrap();
-                } else {
-                    combined = Some(mesh);
-                }
-            }
-        }
-    }
-    combined.unwrap()
-}

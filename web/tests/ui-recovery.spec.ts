@@ -44,3 +44,49 @@ test('Given no streets at the chosen point, loading ends with a working neighbou
   await expect.poll(async () => (await fact(page, 'paket-ui-regions'))?.mode).toBe('map');
   await clickUi(page, 'Berlin');
 });
+
+
+test('Given an active shift, the route and instructions stay visible and a ground arrow follows the selected objective', async ({page}) => {
+  await page.goto('/?lat=52.4895&lon=13.3908');
+  await waitRide(page);
+  await expect.poll(async () => (await fact(page, 'paket-ui-regions'))?.regions.filter((r:any) => r.label?.startsWith('Route stop ')).length).toBeGreaterThan(1);
+  const routes=(await fact(page, 'paket-hud')).routes;
+  const target=routes.reduce((best:any,route:any)=>route.distance>best.distance?route:best);
+  await clickUi(page, `Route stop ${target.index+1}`);
+  await expect.poll(async () => (await fact(page, 'paket-hud'))?.selected).toBe(target.index);
+  // Step back from the parked van so the marker has an unobstructed place on the road.
+  const origin=(await fact(page,'paket-radar')).position;
+  await page.keyboard.down('s');
+  try {await expect.poll(async()=>{
+    const at=(await fact(page,'paket-radar')).position;
+    return Math.hypot(at[0]-origin[0],at[1]-origin[1]);
+  }).toBeGreaterThan(3);} finally {await page.keyboard.up('s');}
+
+  await expect.poll(async () => await fact(page, 'paket-navigation')).toMatchObject({visible:true});
+  const marker=await fact(page,'paket-navigation');
+  const dx=marker.target[0]-marker.position[0],dz=marker.target[2]-marker.position[2];
+  expect((dx*marker.direction[0]+dz*marker.direction[2])/Math.hypot(dx,dz)).toBeGreaterThan(0.999);
+
+  await expect.poll(async () => (await fact(page, 'paket-ui-regions'))?.texts.some((t:any) => t.text.includes('Get the parcel'))).toBe(true);
+  await page.screenshot({path:test.info().outputPath('route-instructions-and-ground-arrow.png')});
+  await clickUi(page, 'Settings');
+  await expect.poll(async () => (await fact(page, 'paket-navigation'))?.visible).toBe(false);
+  await clickUi(page, 'Close · Esc');
+  await expect.poll(async () => await fact(page, 'paket-navigation')).toMatchObject({visible:true});
+});
+
+
+test('Given a tall window, the route panel ends after its content instead of filling the screen', async ({page}) => {
+  await page.setViewportSize({width:1440,height:1500});
+  await page.goto('/?lat=52.4895&lon=13.3908');
+  await waitRide(page);
+  await expect.poll(async()=>{
+    const ui=await fact(page,'paket-ui-regions');
+    const panel=ui?.panels?.find((p:any)=>p.kind==='route');
+    const stops=ui?.regions.filter((r:any)=>r.label?.startsWith('Route stop '));
+    if(!panel||!stops?.length)return false;
+    const last=Math.max(...stops.map((r:any)=>r.y+r.height));
+    return panel.height<900&&panel.y+panel.height-last>=0&&panel.y+panel.height-last<90;
+  }).toBe(true);
+  await page.screenshot({path:test.info().outputPath('content-sized-route-panel.png')});
+});

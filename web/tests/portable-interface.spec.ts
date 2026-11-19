@@ -78,7 +78,7 @@ for (const viewport of [{width:390,height:780},{width:844,height:390}]) {
    const map=view?.regions.find((r:any)=>r.label==='Map · M');
    const clock=view?.texts.find((r:any)=>r.text==='09:00'||r.text.startsWith('09:'));
    const delivery=view?.texts.find((r:any)=>r.text.startsWith('DELIVERY '));
-   return Boolean(map&&clock&&delivery&&map.y>=headerBottom&&clock.y>=headerBottom&&delivery.y>=map.y+map.height);
+   return Boolean(map&&clock&&delivery&&map.y>=headerBottom&&clock.y>=headerBottom&&(delivery.y>=map.y+map.height||delivery.x>=map.x+map.width));
   }).toBe(true);
  });
 }

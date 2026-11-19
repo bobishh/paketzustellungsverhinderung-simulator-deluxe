@@ -83,7 +83,8 @@ pub(crate) const PARCEL_HALF_SIZE: Vec3 = Vec3::new(0.24, 0.15, 0.185);
 #[derive(Resource)]
 pub(crate) struct Models {
     box_mesh: Handle<Mesh>,
-    mark: Handle<Mesh>,
+    decal: Handle<Mesh>,
+    branding: Handle<StandardMaterial>,
     pub citizens: crate::characters::Kit,
     delivery_van: Handle<WorldAsset>,
     fabric: Handle<StandardMaterial>,
@@ -106,7 +107,13 @@ impl Models {
         use crate::surfaces::{Surface, material, matte};
         Self {
             box_mesh: meshes.add(crate::shapes::rounded_box(Vec3::ONE, 0.065)),
-            mark: meshes.add(crate::shapes::company_mark()),
+            decal: meshes.add(Rectangle::new(1.8, 0.72)),
+            branding: materials.add(StandardMaterial {
+                base_color_texture: Some(assets.load("branding/drehlss-van.png")),
+                alpha_mode: AlphaMode::Blend,
+                perceptual_roughness: 0.8,
+                ..default()
+            }),
             citizens,
             delivery_van: assets
                 .load(GltfAssetLabel::Scene(0).from_asset("street/delivery-van.glb")),
@@ -269,11 +276,10 @@ impl Models {
             self.part(
                 commands,
                 body,
-                &self.mark,
-                &self.dark,
-                Transform::from_xyz(side * 0.934, 1.17, 0.82)
-                    .with_rotation(Quat::from_rotation_y(side * std::f32::consts::FRAC_PI_2))
-                    .with_scale(Vec3::splat(0.53)),
+                &self.decal,
+                &self.branding,
+                Transform::from_xyz(side * 0.936, 1.35, 0.90)
+                    .with_rotation(Quat::from_rotation_y(side * std::f32::consts::FRAC_PI_2)),
             );
         }
     }
