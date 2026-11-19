@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
+import { deploymentClient } from './deployment-client';
 const apiOrigin = process.env.PAKET_API_ORIGIN || 'http://127.0.0.1:8788';
 export default defineConfig({
+  plugins: [{
+    name: 'deployment-browser-client',
+    transformIndexHtml() { return deploymentClient(process.env); },
+  }],
   build: { target: 'esnext' },
   server: {
     port: 4188, strictPort: true,

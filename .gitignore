@@ -10,3 +10,5 @@
 !/web/public/favicon.svg
 /web/dist/
 /web/.wrangler/
+/web/.env*
+!/web/.env.example

@@ -99,6 +99,10 @@ jobs:
           cargo install wasm-bindgen-cli --version "$version" --locked
       - name: Build the browser game and Worker assets
         run: ./scripts/build-web.sh
+        env:
+          ANALYTICS_CLIENT_URL: ${{ vars.ANALYTICS_CLIENT_URL }}
+          ANALYTICS_PROJECT: ${{ vars.ANALYTICS_PROJECT }}
+          ANALYTICS_BROWSER_TOKEN: ${{ vars.ANALYTICS_BROWSER_TOKEN }}
       - name: Test browser loading and player navigation
         working-directory: paket/web
         run: |

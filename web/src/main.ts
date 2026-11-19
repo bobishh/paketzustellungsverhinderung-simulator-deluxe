@@ -3,7 +3,6 @@ import {installMapLayer} from './map-layer';
 import './mouse';
 import './audio';
 import {setSoftwareRendering} from './render-quality';
-import {initGameAnalytics} from './analytics';
 import {initProfile} from './profile';
 import {restoreIdentity} from './identity';
 import {mesh} from './mesh';
@@ -12,7 +11,6 @@ declare global {var paketArgs:string[];var paketMesh:typeof mesh;var paketPhoto:
 const callbackHash=location.pathname==='/identity/return'?location.hash:null;
 if(callbackHash!==null)history.replaceState(null,'','/identity/return');
 globalThis.paketNotify=text=>publish('paket-notice',text);
-initGameAnalytics();
 const ready=restoreIdentity(callbackHash).then(async path=>{if(path?.startsWith('/')&&!path.startsWith('//'))history.replaceState(null,'',path);await initProfile();}).catch(error=>{paketNotify(`Identity: ${error.message}`);throw error;});
 void ready.catch(()=>undefined);
 initServices(ready);

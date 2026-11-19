@@ -97,7 +97,7 @@ GitHub Actions runs these checks on pushes to `main`, pull requests and manual d
 
 The CI artifact contains the Worker and browser assets, but does not fetch live city geometry during tests. Run both cache scripts before a public release to include the six starter neighbourhoods; uncached places use the runtime map endpoint.
 
-Aggregate visits and game events use TinSink with a dedicated project and an exact production-origin allowlist. See [analytics configuration](docs/analytics.md) for events, privacy boundaries and CORS checks.
+Optional browser extensions are attached by the hosting deployment. The game source contains no collector client; see [deployment configuration](docs/analytics.md).
 
 For the native distribution gaps and Steam publication steps, see [the Steam release plan](docs/steam.md).
 
