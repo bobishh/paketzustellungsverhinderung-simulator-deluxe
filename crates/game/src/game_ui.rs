@@ -971,6 +971,7 @@ fn paint(
     let route = h["routes"]
         .as_array()
         .and_then(|r| r.get(h["selected"].as_u64().unwrap_or(0) as usize));
+    let batch = h["bulk"].as_bool();
     let minute = h["minute"].as_u64().unwrap_or(540);
     for (binding, mut text, mut background) in &mut labels {
         if binding.0 == "notice" {
@@ -1002,16 +1003,20 @@ fn paint(
             "clock" => format!("{:02}:{:02}", minute / 60, minute % 60),
             "day" => format!("Day {} · Ends 17:00", h["day"].as_u64().unwrap_or(1)),
             "score" => format!("{} KPI", h["score"].as_i64().unwrap_or(0)),
+            "stop-label" if batch.is_some() => "SPECIAL DELIVERY".into(),
             "stop-label" => format!(
                 "DELIVERY {} / {}  ·  {:.0} m",
                 h["selected"].as_u64().unwrap_or(0) + 1,
                 h["routes"].as_array().map_or(0, Vec::len),
                 route.and_then(|r| r["distance"].as_f64()).unwrap_or(0.)
             ),
+            "stop-address" if batch == Some(true) => "Batch drop site".into(),
+            "stop-address" if batch == Some(false) => "Your van".into(),
             "stop-address" => route
                 .map(|r| value_text(r, "address"))
                 .unwrap_or("Finding addresses…")
                 .into(),
+            "stop-recipient" if batch.is_some() => String::new(),
             "stop-recipient" => route.map(|r| value_text(r, "name")).unwrap_or("").into(),
             "delivery" => crate::ui_guidance::delivery(h),
             "sensitivity" => format!("Mouse sensitivity: {:.4}", ui.sensitivity),
@@ -1126,7 +1131,12 @@ fn panels(
             "share"=>{p.spawn((Dynamic("share"),block()));}
             "profile"=>{p.spawn((Dynamic("profile"),block()));add_button(p,json!({"action":"service","kind":"new-face"}),"New portrait");if *mode.get()!=Mode::Ride {add_button(p,json!({"action":"service","kind":"signin"}),"Sign in with Identity");}}
             "photo"=>{if let Some(image)=&photo.0{p.spawn((ImageNode::new(image.clone()),Node{width:Val::Percent(100.),max_height:Val::Px(340.),..default()}));}p.spawn(text("A saved delivery photo is available for download after you file evidence.",16.));add_button(p,json!({"action":"service","kind":"download-photo"}),"Download photo");}
-            "vote"=>{p.spawn((Dynamic("vote"),block()));}
+            "vote"=>{
+                if ui.value("paket-hud")["batchDelivered"] == true {
+                    p.spawn(colored_text(crate::jobs::BATCH_COMPLETE, 14., ORANGE));
+                }
+                p.spawn((Dynamic("vote"),block()));
+            }
             "route"=>{
                 p.spawn(colored_text("Select a numbered stop. M or Esc returns to your shift.",14.,MUTED));
                 p.spawn((Radar{overview:true},Node {width:percent(100),height:Val::Vh(46.),min_height:px(180),flex_shrink:0.,overflow:Overflow::clip(),..default()},BackgroundColor(Color::srgb(0.10,0.21,0.16))));

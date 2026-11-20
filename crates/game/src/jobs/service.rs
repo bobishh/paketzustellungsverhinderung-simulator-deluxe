@@ -198,7 +198,7 @@ impl Jobs {
                 }
                 if *rare && self.service.visited.contains(address) {
                     options
-                        .push(serde_json::json!({"kind":"fault","label":"Report broken intercom"}));
+                        .push(serde_json::json!({"kind":"fault","label":"Broken intercom · Start batch delivery"}));
                 }
                 match started {
                     Some(start) => format!(
@@ -218,7 +218,7 @@ impl Jobs {
             }
             ModalKind::Dialogue { name, expires, .. } => {
                 for (i, label) in [
-                    format!("1 · {name}. Here you go."),
+                    format!("E / 1 · {name}. Here you go."),
                     format!(
                         "2 · {}… Schnaffel?",
                         name.split_whitespace().next().unwrap_or("Er")
@@ -321,8 +321,6 @@ pub(crate) fn service_update(
     player: Query<(Entity, &Player, &Transform)>,
     buildings: Query<&BuildingLink>,
     residents: Query<(Entity, &Resident, &Transform)>,
-    vans: Query<&Transform, With<ParkedVan>>,
-    models: Res<Models>,
     street: Res<crate::StreetMaterials>,
     spatial: SpatialQuery,
 ) {
@@ -360,6 +358,9 @@ pub(crate) fn service_update(
         jobs.service.modal.as_ref().map(|m| &m.kind),
         Some(ModalKind::Dialogue { .. })
     ) {
+        if keys.just_pressed(KeyCode::KeyE) {
+            action = Some(Action::Reply(0));
+        }
         for (i, key) in [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3]
             .iter()
             .enumerate()
@@ -507,7 +508,7 @@ pub(crate) fn service_update(
                     if let Some(target) = target {
                         jobs.service.rare_used = true;
                         jobs.service.bulk = Some((target, false));
-                        jobs.status = "NO ACCESS · Collect the whole batch at your van [E].".into();
+                        jobs.status = "Broken intercom reported. Collect the batch at your van.".into();
                         keep = false;
                     }
                 }
@@ -523,48 +524,7 @@ pub(crate) fn service_update(
     if jobs.service.modal.is_some() {
         return;
     }
-    if let Some((target, collected)) = jobs.service.bulk {
-        if keys.just_pressed(KeyCode::KeyE) {
-            if !collected
-                && player
-                    .parked
-                    .and_then(|e| vans.get(e).ok())
-                    .is_some_and(|v| {
-                        actors::horizontal_distance(v.translation, actor.translation) < 3.7
-                    })
-            {
-                jobs.service.bulk = Some((target, true));
-                jobs.status =
-                    "Whole batch loaded. Follow the orange marker to the dumping spot.".into();
-            } else if collected && actors::horizontal_distance(target, actor.translation) < 3.4 {
-                for (i, parcel) in jobs.parcels.iter_mut().enumerate() {
-                    if !matches!(parcel.state, ParcelState::Filed(_) | ParcelState::Handed(_)) {
-                        if let Some(prop) = parcel.prop.take() {
-                            commands.entity(prop).despawn();
-                        }
-                        let root = commands
-                            .spawn((
-                                Transform::from_translation(
-                                    target
-                                        + Vec3::new(
-                                            (i % 2) as f32 * 0.6,
-                                            0.17,
-                                            (i / 2) as f32 * 0.5,
-                                        ),
-                                ),
-                                Visibility::default(),
-                                DespawnOnExit(Mode::Ride),
-                            ))
-                            .id();
-                        models.parcel(&mut commands, root);
-                        parcel.state = ParcelState::Filed(0);
-                    }
-                }
-                jobs.service.bonus += 500;
-                jobs.service.bulk = None;
-                jobs.status = "DELIVERY OF THE DAY · Whole batch abandoned · +500 KPI".into();
-            }
-        }
+    if jobs.service.bulk.is_some() {
         return;
     }
     let Some(parcel) = jobs.parcels.get(jobs.selected) else {
@@ -583,6 +543,7 @@ pub(crate) fn service_update(
         _ => true,
     };
     if active
+        && !keys.just_pressed(KeyCode::KeyE)
         && in_reach
         && jobs.dog_parcel.is_none()
         && jobs.service.attempts.get(&address).is_none_or(|attempt| {
@@ -682,6 +643,61 @@ pub(crate) fn service_update(
     }
 }
 
+pub(super) fn deliver_batch(
+    commands: &mut Commands,
+    jobs: &mut Jobs,
+    models: &Models,
+    position: Vec3,
+    at_van: bool,
+    use_pressed: bool,
+) {
+    let Some((target, loaded)) = jobs.service.bulk else {
+        return;
+    };
+    let at_drop_site = actors::horizontal_distance(target, position) <= DROP_DISTANCE;
+    jobs.prompt = match (loaded, at_van, at_drop_site) {
+        (false, true, _) => "E · Collect the batch",
+        (false, false, _) => "Return to your van",
+        (true, _, true) => "E · Leave all remaining parcels here",
+        (true, _, false) => "Follow the marker to the drop site",
+    }
+    .into();
+    if !use_pressed {
+        return;
+    }
+    if !loaded && at_van {
+        jobs.service.bulk = Some((target, true));
+        jobs.status = "Batch loaded.".into();
+        jobs.prompt = "Follow the marker to the drop site".into();
+    } else if loaded && at_drop_site {
+        for (i, parcel) in jobs.parcels.iter_mut().enumerate() {
+            if matches!(parcel.state, ParcelState::Filed(_) | ParcelState::Handed(_)) {
+                continue;
+            }
+            if let Some(prop) = parcel.prop.take() {
+                commands.entity(prop).try_despawn();
+            }
+            let root = commands
+                .spawn((
+                    BatchParcel,
+                    Transform::from_translation(
+                        target + Vec3::new((i % 2) as f32 * 0.6, 0.17, (i / 2) as f32 * 0.5),
+                    ),
+                    Visibility::default(),
+                    DespawnOnExit(Mode::Ride),
+                ))
+                .id();
+            models.parcel(commands, root);
+            parcel.state = ParcelState::Filed(0);
+        }
+        jobs.proof_pending = None;
+        jobs.service.bonus += 500;
+        jobs.service.bulk = None;
+        jobs.prompt.clear();
+        jobs.status = BATCH_COMPLETE.into();
+    }
+}
+
 fn nearest_neighbor<'a>(
     jobs: &'a Jobs,
     parcel: &Parcel,
@@ -743,7 +759,8 @@ pub(crate) fn service_ui(
     mut panels: Query<(Entity, &mut Visibility), With<Panel>>,
     mut timers: Query<&mut Text, With<TimerLabel>>,
     mut last: Local<Option<u64>>,
-    player: Query<&Transform, With<Player>>,
+    player: Query<(&Player, &Transform)>,
+    vans: Query<&Transform, With<ParkedVan>>,
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     residents: Query<(&Resident, &Transform)>,
     mut markers: Query<(&Marker, &mut Node, &mut Text), (Without<TimerLabel>, Without<Panel>)>,
@@ -823,10 +840,14 @@ pub(crate) fn service_ui(
                                 );
                             }
                             if *rare && jobs.service.visited.contains(address) {
+                                p.spawn(text(
+                                    "Leave all remaining parcels at one marked spot for +500 KPI.",
+                                    14.,
+                                ));
                                 button(
                                     p,
                                     Action::Fault,
-                                    "★ Report broken intercom · special delivery".into(),
+                                    "Broken intercom · Start batch delivery".into(),
                                     false,
                                 );
                             }
@@ -844,7 +865,7 @@ pub(crate) fn service_ui(
                             button(
                                 p,
                                 Action::Reply(0),
-                                format!("1  {name}. Here you go."),
+                                format!("E / 1 · {name}. Here you go."),
                                 false,
                             );
                             button(
@@ -907,7 +928,7 @@ pub(crate) fn service_ui(
             ));
         }
     }
-    let (Ok((camera, ct)), Ok(actor), Some(parcel)) = (
+    let (Ok((camera, ct)), Ok((player, actor)), Some(parcel)) = (
         camera.single(),
         player.single(),
         jobs.parcels.get(jobs.navigation),
@@ -916,7 +937,25 @@ pub(crate) fn service_ui(
     };
     for (kind, mut node, mut label) in &mut markers {
         let citizen = jobs.citizen(&parcel.address);
-        let (position, value) = if kind.0 == 0 {
+        let (position, value) = if let Some((_, loaded)) = jobs.service.bulk {
+            let van = player.parked.and_then(|id| vans.get(id).ok());
+            let Some(target) = jobs.navigation_target(player, van).filter(|_| kind.0 == 0) else {
+                node.display = Display::None;
+                continue;
+            };
+            let description = if loaded {
+                "Batch drop site"
+            } else {
+                "Collect batch at your van"
+            };
+            (
+                target + Vec3::Y * 2.7,
+                format!(
+                    "{description} · {:.0} m",
+                    actors::horizontal_distance(target, actor.translation)
+                ),
+            )
+        } else if kind.0 == 0 {
             let active = jobs.active_attempt();
             let target = jobs.current_target().unwrap_or(parcel.point);
             let description = if let Some((parcel, attempt, label)) = active {

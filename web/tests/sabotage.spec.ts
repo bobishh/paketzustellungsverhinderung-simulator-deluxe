@@ -8,13 +8,16 @@ const scenarios = [
   {name:'sleeping baby', id:15, clue:'sleeping baby', reply:'Say the parcel is for them'},
   {name:'picky recipient', id:14, clue:'Set the box against', reply:'Say the parcel is for them'},
   {name:'dog return', id:10, clue:'A dog may take it back', reply:null},
+  {name:'batch delivery', id:16, clue:'Their hall is full', reply:null},
+  {name:'recipient handover', id:30, clue:null, reply:null},
 ] as const;
 
 for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dispatcher scenario`, async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU game.');
   test.setTimeout(180_000);
   await observeGame(page);
-  await page.setViewportSize({width: 640, height: 480});
+  const deliveryFlow = scenario.name === 'batch delivery' || scenario.name === 'recipient handover';
+  await page.setViewportSize(deliveryFlow ? {width: 960, height: 760} : {width: 640, height: 480});
   await page.addInitScript(() => {
     (globalThis as any).hudFrames = 0;
     addEventListener('paket-hud', () => (globalThis as any).hudFrames++);
@@ -28,21 +31,25 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   });
   const fixture = {elements: [
     {type:'way', id:1, tags:{highway:'residential', name:'Test Street'}, geometry:[ll(-90,0),ll(90,0)]},
-    ...[0, 12].map((x, i) => ({
+    ...[0, scenario.name === 'batch delivery' ? 20 : 12].map((x, i) => ({
       type:'way', id:[scenario.id,31][i], tags:{building:'yes','building:levels':'2','addr:street':'Test Street','addr:housenumber':String(i+1)},
       geometry:[ll(x-4,8),ll(x+4,8),ll(x+4,17),ll(x-4,17),ll(x-4,8)],
     })),
   ]};
   await page.route('**/elevation/**', r => r.fulfill({status:503}));
-  await page.route('**/api/osm?*', r => r.fulfill({json:fixture}));
+  await page.route('**/api/osm?*', r => {
+    const query = new URL(r.request().url()).searchParams;
+    return r.fulfill({json:query.get('x') === '0' && query.get('y') === '0' && !query.has('landscape')
+      ? fixture : {elements:[]}});
+  });
   await page.goto('/?lat=0&lon=0');
   await waitRide(page);
   const canvas = page.locator('#game');
   const key = (k: string) => page.keyboard.press(k, {delay:130});
-  const walkToMarker = async (tolerance: number) => {
+  const walkToMarker = async (tolerance: number, marker: 'target' | 'van' = 'target') => {
     await canvas.click({position:{x:320,y:225}});
     for (let i=0; i<45; i++) {
-      const {position, target, heading} = await page.evaluate(() => (globalThis as any).radar);
+      const {position, [marker]: target, heading} = await page.evaluate(() => (globalThis as any).radar);
       const dx = target[0]-position[0], dz = target[1]-position[1];
       if (Math.hypot(dx,dz)<tolerance) return;
       const forward = -Math.sin(heading)*dx-Math.cos(heading)*dz;
@@ -58,10 +65,11 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
   };
   await expect.poll(async()=>(await selected(page))?.state,{timeout:90_000}).toBe('in-van');
 
-  const stops=(await hud(page)).routes as {name:string}[];expect(stops).toHaveLength(2);
+  const stops=(await hud(page)).routes as {name:string;address:string;index:number}[];expect(stops).toHaveLength(2);
   const names=stops.map(stop=>stop.name);expect(new Set(names.map(name=>name.split(' ').at(-1))).size).toBe(2);
-  await clickUi(page,'Deliveries');await clickUi(page,/Test Street 1/);await clickUi(page,'Close · Esc');
-  expect((await selected(page)).address).toBe('Test Street 1');
+  const stop = stops.find(stop => stop.address === 'Test Street 1')!;
+  await clickUi(page,`Route stop ${stop.index + 1}`);
+  await expect.poll(async () => (await selected(page)).address).toBe('Test Street 1');
   await canvas.focus();
   await key('e');
   const parcelState=async()=>(await selected(page))?.state;
@@ -107,6 +115,34 @@ for (const scenario of scenarios) test(`a courier plays the ${scenario.name} dis
     await key('r');
   }
   await clickUi(page,`Ring recipient · ${recipient}`);
+  if (scenario.name === 'recipient handover') {
+    await clickUi(page,'Close · Esc');
+    await expect.poll(async () => (await intercom())?.options.map((option: {label: string}) => option.label),
+      {timeout:20_000}).toContain(`E / 1 · ${recipient}. Here you go.`);
+    await key('e');
+    await expect.poll(async () => (await hud(page)).routes[stop.index].state).toBe('handed');
+    await expect.poll(intercom).toBeNull();
+    return;
+  }
+  if (scenario.name === 'batch delivery') {
+    const visibleText = async () => (await fact(page,'paket-ui-regions'))?.texts.map((item: {text: string}) => item.text).join('\n');
+    await clickUi(page,'Broken intercom · Start batch delivery');
+    await expect.poll(visibleText).toContain('Return to your van');
+    await key('e');
+    expect((await hud(page)).bulk).toBe(false);
+    await walkToMarker(3, 'van');
+    await expect.poll(visibleText).toContain('E · Collect the batch');
+    await key('e');
+    await expect.poll(visibleText).toContain('Batch drop site');
+    await walkToMarker(2.8);
+    await expect.poll(visibleText).toContain('E · Leave all remaining parcels here');
+    const scoreBeforeDrop = (await hud(page)).score;
+    await key('e');
+    await expect.poll(async () => (await fact(page,'paket-ui-regions'))?.panel).toBe('vote');
+    await expect.poll(visibleText).toContain('Delivery of the Day complete · +500 KPI');
+    await expect.poll(async () => (await hud(page)).score).toBeGreaterThanOrEqual(scoreBeforeDrop + 500);
+    return;
+  }
   await expect.poll(async()=>(await hud(page)).dispatcher?.message).toContain(scenario.clue);
   await expect.poll(async()=>(await hud(page)).dispatcher?.timer).toContain('KPI');
   await clickUi(page,'Close · Esc');

@@ -30,28 +30,28 @@ pub(crate) fn delivery(h: &Value) -> String {
             "E: bite / scratch · Space: jump · G: mark van".into(),
         );
     }
+    if let Some(loaded) = h["bulk"].as_bool() {
+        return format(
+            "Delivery of the Day · +500 KPI",
+            if loaded {
+                "Leave all remaining parcels at the marked spot."
+            } else {
+                "Collect the remaining parcels at your van."
+            }
+            .into(),
+            if h["form"] == "van" {
+                "V · Leave van"
+            } else {
+                h["prompt"].as_str().unwrap_or_default()
+            }
+            .into(),
+        );
+    }
     if h["form"] == "van" {
         return format(
             "1 / 4 · Get the parcel",
             "Park at the orange marker, exit and collect the box beside your van.".into(),
             "V · Leave van, then E · Collect parcel".into(),
-        );
-    }
-    if let Some(loaded) = h["bulk"].as_bool() {
-        return format(
-            "Delivery of the day",
-            if loaded {
-                "Follow the marker to abandon the batch."
-            } else {
-                "Return to your van to load the whole batch."
-            }
-            .into(),
-            if loaded {
-                "E · Abandon the batch"
-            } else {
-                "E · Collect the whole batch"
-            }
-            .into(),
         );
     }
     let active = h["active"].as_u64().unwrap_or(0) as usize;

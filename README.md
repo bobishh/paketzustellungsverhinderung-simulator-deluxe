@@ -74,7 +74,7 @@ The header has no home navigation. During a shift, Identity sign-in is hidden an
 ## Controls
 
 - WASD: walk or drive; V: enter/leave the van.
-- R: recipient intercom; click bells. 1–3: timed delivery dialogue.
+- R: recipient intercom; click bells. 1–3: timed delivery dialogue. E chooses the first reply and hands over the parcel.
 - Tab / Shift+Tab: next / previous delivery while the game is focused. In forms and dialogs Tab keeps normal focus navigation.
 - T: throw the held parcel after ringing the recipient. Wait for it to land, then photograph it or pick it back up.
 - E beside your van: collect a parcel or exchange it for the selected one. Q returns the held parcel.
