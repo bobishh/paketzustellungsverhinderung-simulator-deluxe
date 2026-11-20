@@ -1,8 +1,11 @@
 // Shared recording player for Job Hunt, Paket and Feed the Poor. No synthesis.
 import {sampleCues} from '/assets/job-audio-cues.js';
 
-export function createSampleAudio({target=document,storageKey,initialVolume=50}={}) {
-  let context,master,bank,loading,volume=initialVolume;
+export function createSampleAudio({target=document,storageKey,initialVolume=50,recordings={}}={}) {
+  let context,master,volume=initialVolume;
+  const bankUrl='/assets/job-audio-bank.mp3';
+  const buffers=new Map(),loading=new Set();
+  const recordingUrls=new Set(Object.values(recordings).flatMap(cues=>cues.map(cue=>cue.url)));
   let desired={active:false,effects:[],loops:[]};
   const voices=new Set(),loops=new Map(),variants=new Map();
   const clamp=(value,max=1)=>Math.max(0,Math.min(max,Number(value)||0));
@@ -15,16 +18,18 @@ export function createSampleAudio({target=document,storageKey,initialVolume=50}=
     } catch {voice.source.onended();}
   };
   const stop=()=>{for(const voice of [...voices])stopVoice(voice);loops.clear();};
-  const audible=()=>desired.active&&!document.hidden&&volume>0&&context?.state==='running'&&bank;
+  const audible=()=>desired.active&&!document.hidden&&volume>0&&context?.state==='running';
   const choose=(name,variant)=>{
-    const list=sampleCues[name];if(!list)return null;
+    const list=recordings[name]??sampleCues[name];if(!list)return null;
     const index=variants.get(name)||0;variants.set(name,index+1);
     return list[(Number.isInteger(variant)?Math.abs(variant):index)%list.length];
   };
-  const start=(name,cue,settings={})=>{
+  const start=(cue,settings={})=>{
+    const buffer=buffers.get(cue.url??bankUrl);
+    if(!buffer)return;
     const source=context.createBufferSource(),gain=context.createGain();
     const pan=typeof context.createStereoPanner==='function'?context.createStereoPanner():null;
-    source.buffer=bank;
+    source.buffer=buffer;
     source.playbackRate.value=clamp(settings.rate||1,2);
     gain.gain.value=cue.loop?0:cue.gain*clamp(settings.gain??1);
     if(pan)pan.pan.value=Math.max(-1,Math.min(1,Number(settings.pan)||0));
@@ -37,7 +42,7 @@ export function createSampleAudio({target=document,storageKey,initialVolume=50}=
     if(cue.loop){
       source.loop=true;source.loopStart=cue.offset;source.loopEnd=cue.offset+cue.duration;
       source.start(context.currentTime,cue.offset);
-    }else source.start(context.currentTime,cue.offset,cue.duration);
+    }else source.start(context.currentTime,cue.offset??0,cue.duration??buffer.duration);
     return voice;
   };
   const refreshLoops=()=>{
@@ -46,28 +51,33 @@ export function createSampleAudio({target=document,storageKey,initialVolume=50}=
     for(const [name,voice] of loops)if(!wanted.has(name)){stopVoice(voice);loops.delete(name);}
     for(const [name,settings] of wanted){
       let voice=loops.get(name);
-      if(!voice){voice=start(name,sampleCues[name][0],settings);loops.set(name,voice);}
+      if(!voice){
+        voice=start(sampleCues[name][0],settings);
+        if(!voice)continue;
+        loops.set(name,voice);
+      }
       voice.gain.gain.setTargetAtTime(voice.cue.gain*clamp(settings.gain??1),context.currentTime,.12);
       voice.source.playbackRate.setTargetAtTime(Math.max(.5,clamp(settings.rate||1,2)),context.currentTime,.12);
       voice.pan?.pan.setTargetAtTime(Math.max(-1,Math.min(1,Number(settings.pan)||0)),context.currentTime,.12);
     }
   };
-  const load=()=>{
-    if(loading||bank||!context)return;
-    loading=(async()=>{
+  const load=async url=>{
+    if(loading.has(url)||buffers.has(url)||!context)return;
+    loading.add(url);
+    try{
       for(let attempt=0;attempt<3;attempt++){
         try{
-          const response=await fetch('/assets/job-audio-bank.mp3',{signal:AbortSignal.timeout(12000)});
+          const response=await fetch(url,{signal:AbortSignal.timeout(12000)});
           if(!response.ok)throw new Error('Audio unavailable');
           const bytes=await response.arrayBuffer();
           if(bytes.byteLength>4_000_000)throw new Error('Audio bank exceeds its budget');
-          bank=await context.decodeAudioData(bytes);
+          buffers.set(url,await context.decodeAudioData(bytes));
           refreshLoops();return;
         }catch{
           if(attempt<2)await new Promise(resolve=>setTimeout(resolve,[800,2400][attempt]));
         }
       }
-    })().finally(()=>{loading=undefined;});
+    }finally{loading.delete(url);}
   };
   const unlock=()=>{
     try{
@@ -76,7 +86,8 @@ export function createSampleAudio({target=document,storageKey,initialVolume=50}=
         context=new Audio();master=context.createGain();master.gain.value=desired.active&&!document.hidden?volume/100:0;master.connect(context.destination);
       }
       if(context.state==='suspended'||context.state==='interrupted')void context.resume().then(refreshLoops).catch(()=>{});
-      load();
+      void load(bankUrl);
+      for(const url of recordingUrls)void load(url);
     }catch{ /* Missing audio never blocks gameplay. */ }
   };
   target.addEventListener('pointerdown',unlock,{capture:true});
@@ -101,7 +112,7 @@ export function createSampleAudio({target=document,storageKey,initialVolume=50}=
         const name=settings.name,cue=choose(name,settings.variant);if(!cue||cue.loop)continue;
         // Keep bursts bounded without delaying an effect until it loses meaning.
         if(voices.size>=16)continue;
-        start(name,cue,settings);
+        start(cue,settings);
       }
     }
   };

@@ -45,8 +45,9 @@ A bite causes a brief shock: one jump, flailing arms, a small camera jolt and bl
 
 ## Browser sound
 
-Recorded footsteps follow travelled ground distance. The street ambience, nearby
-traffic, parcel handling, intercom, camera and dog interactions use the shared
+Recorded footsteps follow travelled ground distance. Dogs use short recordings
+of paws on stone. The street ambience, nearby traffic, parcel handling, intercom,
+camera and dog interactions use the shared
 recording bank in `assets/audio/`. The van mixes recordings of idle, low and high
 engine speeds. Pedal input controls load; road speed supplies a gear-relative RPM
 curve. Gain, pitch and stereo position change gradually rather than restarting
@@ -56,8 +57,9 @@ The settings sound switch persists across visits. Menus and hidden tabs silence
 playback. Audio loads independently with three bounded attempts; missing audio
 never prevents a shift. `browser_ui::sound` owns the browser motion contract,
 `web/src/street-sound.ts` owns the street mix, and the shared sample player owns
-Web Audio resources. Keep the sample player and bank identical to Job Hunt and
-Feed the Poor. Credits and licenses are in `assets/audio/job-audio-credits.txt`.
+Web Audio resources. The recording bank is shared with Job Hunt and Feed the Poor.
+Paket loads its paw recordings separately. Credits and licenses are in
+`assets/audio/job-audio-credits.txt`.
 
 NPC dogs warn for 2.8 seconds before jumping at a nearby visible courier. Leaving their range or sight avoids the attack; a jump is followed by an 8-second cooldown. Player dogs jump with Space and leap when biting with E. G marks another player's van.
 

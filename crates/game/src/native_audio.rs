@@ -82,6 +82,16 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>, mut audio: ResMut<Aud
             .collect();
         audio.cues.insert(name.clone(), cues);
     }
+    audio.cues.insert(
+        "dog-paw".into(),
+        (1..=3)
+            .map(|index| Cue {
+                source: assets.load(format!("audio/dog-paw-{index}.wav")),
+                gain: 0.14,
+                looping: false,
+            })
+            .collect(),
+    );
     audio.foreground = true;
     audio.mixer.muted = std::env::var("FEED_GAME_SOUND").is_ok_and(|value| value == "off");
     commands.spawn((SpatialListener::new(2.), Transform::default()));

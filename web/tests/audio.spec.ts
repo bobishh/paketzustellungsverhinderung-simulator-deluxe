@@ -1,7 +1,20 @@
-import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
-import {test,expect} from '@playwright/test';
+import {observeGame,clickUi,fact,hud,waitRide} from './bevy-ui';
+import {test,expect,type Page} from '@playwright/test';
 
 test.beforeEach(async({page})=>{await observeGame(page);});
+async function muteInSettings(page: Page) {
+  await clickUi(page, 'Settings');
+  let control: {x: number; y: number; width: number; height: number} | undefined;
+  await expect.poll(async () => {
+    control = (await fact(page, 'paket-ui-regions'))?.regions.find((region: {label: string; y: number}) =>
+      region.label === 'Sound: on' && region.y > 80);
+    return Boolean(control);
+  }).toBe(true);
+  const {x, y, width, height} = control!;
+  await page.mouse.click(x + width / 2, y + height / 2, {delay: 60});
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('paket.sound'))).toBe('off');
+}
+
 test('a real shift plays recorded footsteps and a throttle-driven engine, and settings silence it',async({page})=>{
  test.skip(!process.env.PAKET_REAL_GAME,'Requires the real WebGPU game.');
  test.setTimeout(120_000);
@@ -41,8 +54,7 @@ test('a real shift plays recorded footsteps and a throttle-driven engine, and se
   await expect.poll(()=>page.evaluate(()=>(globalThis as any).streetAudio.some((state:any)=>state.form==='van'&&state.throttle===1&&state.speed>5))).toBeTruthy();
   await expect.poll(()=>page.evaluate(()=>(globalThis as any).audioRates.some((value:number)=>value>1.05))).toBeTruthy();
  }finally{await page.keyboard.up('w');}
- await clickUi(page,'Settings');
- await clickUi(page,'Sound: on');
+ await muteInSettings(page);
  const muted=await page.evaluate(()=>(globalThis as any).audioStarts.length);
  await clickUi(page,'Close · Esc');
  await page.keyboard.press('w',{delay:600});
@@ -50,4 +62,53 @@ test('a real shift plays recorded footsteps and a throttle-driven engine, and se
  expect(await page.evaluate(()=>localStorage.getItem('paket.sound'))).toBe('off');
  expect(await page.evaluate(()=>(globalThis as any).audioStops)).toBeGreaterThan(0);
  await page.screenshot({path:test.info().outputPath('recorded-street-audio.png')});
+});
+
+test('a running dog plays recorded paw taps and stays quiet at rest', async ({page}) => {
+  test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU game.');
+  await page.addInitScript(() => {
+    const starts: {loop: boolean; bufferLength: number}[] = [];
+    Reflect.set(window, 'pawAudioStarts', starts);
+    const createBufferSource = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const source = createBufferSource.call(this);
+      const start = source.start.bind(source);
+      source.start = (...args) => {
+        starts.push({loop: source.loop, bufferLength: source.buffer?.duration ?? 0});
+        start(...args);
+      };
+      return source;
+    };
+  });
+  await page.route('**/elevation/**', route => route.fulfill({status: 503}));
+  await page.route('**/api/osm?*', route => {
+    const query = new URL(route.request().url()).searchParams;
+    return query.get('x') === '0' && query.get('y') === '0' && !query.has('landscape')
+      ? route.fulfill({path: new URL('../../fixtures/kreuzberg.json', import.meta.url).pathname, contentType: 'application/json'})
+      : route.fulfill({json: {elements: []}});
+  });
+  await page.goto('/');
+  await clickUi(page, 'Play');
+  await clickUi(page, 'Dog');
+  await clickUi(page, 'Start shift');
+  await expect.poll(async () => (await hud(page)).form, {timeout: 25_000}).toBe('dog');
+  const effects = () => page.evaluate(() => (Reflect.get(window, 'pawAudioStarts') as {
+    loop: boolean; bufferLength: number;
+  }[]).filter(start => !start.loop));
+  expect(await effects()).toEqual([]);
+  await page.keyboard.down('Shift');
+  try {
+    await page.keyboard.press('w', {delay: 500});
+    await page.keyboard.press('s', {delay: 700});
+  } finally {
+    await page.keyboard.up('Shift');
+  }
+  await expect.poll(async () => (await effects()).length).toBeGreaterThanOrEqual(3);
+  await expect.poll(async () => new Set((await effects()).map(effect => effect.bufferLength)).size).toBeGreaterThan(1);
+  for (const effect of await effects()) expect(effect.bufferLength).toBeLessThan(0.2);
+  await muteInSettings(page);
+  const muted = (await effects()).length;
+  await clickUi(page, 'Close · Esc');
+  await page.keyboard.press('w', {delay: 650});
+  expect(await effects()).toHaveLength(muted);
 });

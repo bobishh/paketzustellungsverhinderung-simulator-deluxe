@@ -72,10 +72,11 @@ impl Mixer {
                     let delta = (position[0] - previous[0]).hypot(position[2] - previous[2]);
                     if moving_on_foot && delta.is_finite() && delta <= 3. {
                         self.distance += delta;
-                        let stride = if value["form"] == "dog" { 0.48 } else { 0.8 };
+                        let dog = value["form"] == "dog";
+                        let stride = if dog { 0.48 } else { 0.8 };
                         if self.distance >= stride {
                             self.distance %= stride;
-                            self.push(Sound::named("step-pavement"));
+                            self.push(Sound::named(if dog { "dog-paw" } else { "step-pavement" }));
                         }
                     } else {
                         self.distance = 0.;
@@ -311,6 +312,27 @@ mod tests {
         let mut air = street(101., 5.);
         air["verticalSpeed"] = json!(3.);
         mix.event("street-audio", &air, 0.5);
+        assert!(mix.frame(true).effects.is_empty());
+    }
+    #[test]
+    fn dog_movement_uses_paw_recordings_and_stops_when_stationary() {
+        let mut mix = Mixer::default();
+        mix.event("paket-mode", &json!("ride"), 0.);
+        let dog = |position, vertical_speed| {
+            let mut state = street(position, 18.);
+            state["form"] = json!("dog");
+            state["verticalSpeed"] = json!(vertical_speed);
+            state
+        };
+        mix.event("street-audio", &dog(0., 0.), 0.);
+        assert!(mix.frame(true).effects.is_empty());
+        mix.event("street-audio", &dog(0.5, 0.), 0.1);
+        let effects = mix.frame(true).effects;
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0].name, "dog-paw");
+        mix.event("street-audio", &dog(0.5, 0.), 0.2);
+        assert!(mix.frame(true).effects.is_empty());
+        mix.event("street-audio", &dog(1., 3.), 0.3);
         assert!(mix.frame(true).effects.is_empty());
     }
     #[test]

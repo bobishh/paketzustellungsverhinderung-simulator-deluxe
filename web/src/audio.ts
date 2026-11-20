@@ -12,7 +12,8 @@ function refresh(effects:Effect[]=[]){
 window.addEventListener('paket-sound-setting',((event:CustomEvent<boolean>)=>{enabled=event.detail;refresh();})as EventListener);
 const audioModule='/assets/job-sample-audio.js';
 void import(/* @vite-ignore */audioModule).then(module=>{
- player=module.createSampleAudio({target:document});refresh();
+ const paws=[1,2,3].map(index=>({url:`/assets/dog-paw-${index}.wav`,gain:.14}));
+ player=module.createSampleAudio({target:document,recordings:{'dog-paw':paws}});refresh();
 }).catch(()=>{ /* Audio downloads never prevent a shift. */ });
 window.addEventListener('paket-mode',event=>{
  ride=(event as CustomEvent<string>).detail==='ride';state=undefined;routes=new Map();photo=false;steps.reset();refresh();
@@ -20,7 +21,8 @@ window.addEventListener('paket-mode',event=>{
 window.addEventListener('street-audio',event=>{
  state=(event as CustomEvent<StreetState>).detail;
  const effects:Effect[]=[];
- if(state.active&&ride&&state.form!=='van'&&steps.advance(state.position,Math.abs(state.verticalSpeed)>1.5,state.form==='dog'))effects.push('step-pavement');
+ const dog=state.form==='dog';
+ if(state.active&&ride&&state.form!=='van'&&steps.advance(state.position,Math.abs(state.verticalSpeed)>1.5,dog))effects.push(dog?'dog-paw':'step-pavement');
  if(state.form==='van')steps.reset();
  refresh(effects);
 });
