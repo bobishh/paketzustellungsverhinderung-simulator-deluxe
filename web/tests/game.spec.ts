@@ -49,7 +49,7 @@ test('Given a real mesh peer, the WASM game interpolates sparse poses and expire
     expect((await selected(guest)).address).toBe('Mesh stop B');expect((await hud(guest)).score).toBe(0);
     await clickUi(guest,'Deliveries');await clickUi(guest,/1 · Mesh stop A · handed/);await clickUi(guest,/2 · Mesh stop B ·/);await clickUi(guest,'Close · Esc');
     await clickUi(guest,'Share mesh');
-    await expect.poll(async()=>(await fact(guest,'paket-ui-regions'))?.texts?.some((t:any)=>t.text===link)).toBe(true);
+    await expect.poll(async()=>(await fact(guest,'paket-ui-regions'))?.regions?.some((r:any)=>r.label==='Invitation link'&&r.value===link)).toBe(true);
     await clickUi(guest,'Close · Esc');
     await guest.waitForFunction(()=>(globalThis as any).hudFrames>120,{},{timeout:60_000});
     await host.evaluate(()=>{(globalThis as any).walkAt=performance.now();});

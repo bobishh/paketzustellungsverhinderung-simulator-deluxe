@@ -6,7 +6,7 @@ use crate::Mode;
 use bevy::{
     prelude::*,
     text::EditableText,
-    ui_widgets::{Activate, Button},
+    ui_widgets::{Activate, Button, Checkbox},
 };
 use serde_json::{Value, json};
 use std::{
@@ -130,7 +130,6 @@ pub(crate) struct Ui {
     notice_until: f32,
     sensitivity: f64,
     sound: bool,
-    public: bool,
     mode_since: f32,
     welcome: bool,
 }
@@ -898,10 +897,6 @@ fn actions(
                             .unwrap_or_default()
                     );
                 }
-                if kind == "public" {
-                    ui.public = !ui.public;
-                    request["listed"] = json!(ui.public);
-                }
                 if kind == "sound" {
                     ui.sound = !ui.sound;
                     request["enabled"] = json!(ui.sound);
@@ -1248,14 +1243,21 @@ fn dynamic(
             }
             "share" => {
                 let link = value_text(data, "link");
-                p.spawn(text(
-                    if link.is_empty() {
-                        "Play with friends to create an invitation."
+                if link.is_empty() {
+                    let status = if data["pending"] == true {
+                        "Preparing invitation…"
+                    } else if data["failed"] == true {
+                        "Could not prepare an invitation."
+                    } else if ui.mode == "map" {
+                        "Start a shift to get an invitation."
                     } else {
-                        link
-                    },
-                    14.,
-                ));
+                        "Invitations are unavailable for this shift."
+                    };
+                    p.spawn(text(status, 14.));
+                    if data["retry"] == true {
+                        add_button(p, json!({"action":"retry-invite"}), "Retry invitation");
+                    }
+                }
                 if !link.is_empty() {
                     p.spawn((
                         bevy::ui_widgets::TextInput,
@@ -1276,12 +1278,12 @@ fn dynamic(
                         },
                         BackgroundColor(Color::srgb(0.04, 0.08, 0.06)),
                     ));
+                    add_button(
+                        p,
+                        json!({"action":"service","kind":"copy-invite"}),
+                        "Copy invitation",
+                    );
                 }
-                add_button(
-                    p,
-                    json!({"action":"service","kind":"copy-invite"}),
-                    "Copy invitation",
-                );
             }
             "peers" => {
                 let own = ui.value("paket-session")["device"].as_str().unwrap_or("");
@@ -1690,7 +1692,6 @@ pub(crate) fn native_service(value: &Value) {
         }
         "sound"=>crate::native_audio::event("paket-sound-setting",&value["enabled"]),
         "location"=>record("paket-notice",&json!("Location permission is unavailable on this platform. Search an address or choose on the map.").to_string()),
-        "public"=>record("paket-notice",&json!("Native meshes use local discovery. Share the invitation to connect.").to_string()),
         "resume"=>record("paket-notice",&json!("Paste your saved invitation to return to a native mesh.").to_string()),
         "signin"=>record("paket-notice",&json!("Identity sign-in is available in the web version.").to_string()),
 
@@ -1714,8 +1715,14 @@ fn input_regions(
             Option<&bevy::text::TextReadWriteMode>,
             Has<crate::map::AddressInput>,
             Has<crate::map::InviteInput>,
+            Has<Checkbox>,
+            Has<bevy::ui::Checked>,
         ),
-        Or<(With<Button>, With<bevy::ui_widgets::TextInput>)>,
+        Or<(
+            With<Button>,
+            With<Checkbox>,
+            With<bevy::ui_widgets::TextInput>,
+        )>,
     >,
     texts: Query<(
         Entity,
@@ -1770,6 +1777,8 @@ fn input_regions(
         read_mode,
         address,
         invite,
+        checkbox,
+        checked,
     ) in &nodes
     {
         if !layer_visible(&ui, entity, &parents) {
@@ -1827,7 +1836,7 @@ fn input_regions(
             read_mode.is_some_and(|mode| *mode != bevy::text::TextReadWriteMode::Editable);
 
         hit_regions.0.push(Rect::from_corners(start, start + size));
-        regions.push(json!({"x":start.x,"y":start.y,"width":size.x,"height":size.y,"capture":capture,"label":label,"action":action_name,"field":field,"value":value,"selection":selection,"readOnly":read_only}));
+        regions.push(json!({"x":start.x,"y":start.y,"width":size.x,"height":size.y,"capture":capture,"label":label,"action":action_name,"field":field,"value":value,"selection":selection,"readOnly":read_only,"checked":checkbox.then_some(checked)}));
     }
     if time.elapsed_secs() - *last_emit < 0.1 {
         return;
@@ -1946,7 +1955,6 @@ fn settings_labels(
     for (entity, action, label, children) in &buttons {
         let title = match action.0["kind"].as_str() {
             Some("sound") => format!("Sound: {}", if ui.sound { "on" } else { "off" }),
-            Some("public") => format!("Public mesh: {}", if ui.public { "on" } else { "off" }),
             Some("location") => if ui.value("paket-services")["locationPending"] == true {
                 "Locating…"
             } else {

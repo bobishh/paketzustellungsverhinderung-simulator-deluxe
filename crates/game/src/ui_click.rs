@@ -8,7 +8,7 @@ use bevy::{
     },
     prelude::*,
     ui::{InteractionDisabled, Pressed},
-    ui_widgets::{Activate, ActivateOnPress, Button},
+    ui_widgets::{Activate, ActivateOnPress, Button, Checkbox},
 };
 
 pub(super) fn install(app: &mut App) {
@@ -29,7 +29,7 @@ fn reconcile_completed_ui_click(
     mut inputs: MessageReader<PointerInput>,
     current: Res<HoverMap>,
     mut previous: ResMut<PreviousHoverMap>,
-    buttons: Query<(Has<Node>, Has<InteractionDisabled>), With<Button>>,
+    widgets: Query<(Has<Node>, Has<InteractionDisabled>), Or<(With<Button>, With<Checkbox>)>>,
     parents: Query<&ChildOf>,
 ) {
     let mut presses = std::collections::HashMap::<PointerId, Location>::new();
@@ -64,7 +64,7 @@ fn reconcile_completed_ui_click(
                 for (hit, data) in hits {
                     let mut ancestor = *hit;
                     for _ in 0..32 {
-                        if let Ok((ui, disabled)) = buttons.get(ancestor) {
+                        if let Ok((ui, disabled)) = widgets.get(ancestor) {
                             if ui && !disabled {
                                 previous
                                     .entry(input.pointer_id)

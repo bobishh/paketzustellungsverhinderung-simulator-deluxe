@@ -1,5 +1,5 @@
 import {expect,test,type Page} from '@playwright/test';
-import {observeGame,clickUi,fillUi,fact} from './bevy-ui';
+import {observeGame,clickUi,fillUi,fact,waitRide} from './bevy-ui';
 
 const ui=(page:Page)=>fact(page,'paket-ui-regions');
 const text=async(page:Page)=>((await ui(page))?.texts??[]).map((value:{text:string})=>value.text).join('\n');
@@ -22,11 +22,11 @@ test('opening the real lobby loads the directory and keeps setup controls fixed 
     else if(requests===2)await route.fulfill({json:[]});
     else await route.fulfill({json:[invitation,{...invitation,room:'c'.repeat(64)}]});
   });
-  await page.goto('/');await clickUi(page,'Play');await clickUi(page,'Friends');
+  await page.goto('/');await clickUi(page,'Play');
   try {
     await expect.poll(()=>text(page)).toContain('Looking for public meshes');
     await expect.poll(async()=>Boolean(await region(page,'Refreshing…'))).toBe(true);
-    const setup=['Invitation link','Join shift','Return to your mesh','Play solo','Play with friends'];
+    const setup=['Invitation link','Join shift','Return to your mesh','Make public','Start shift'];
     const before=await Promise.all(setup.map(async label=>bounds(await region(page,label))));
     release();
     await expect.poll(()=>text(page)).toContain('Mesh list unavailable');
@@ -39,17 +39,17 @@ test('opening the real lobby loads the directory and keeps setup controls fixed 
     await expect.poll(async()=>(await ui(page))?.regions.filter((value:{label:string})=>value.label.includes('aaaaaa')||value.label.includes('cccccc')).length).toBe(2);
     expect(await Promise.all(setup.map(async label=>bounds(await region(page,label))))).toEqual(before);
     expect(requests).toBe(3);
-    await clickUi(page,'Neighbourhood');
-    await expect.poll(async()=>Boolean(await region(page,'My location'))).toBe(true);
-    await expect.poll(async()=>Boolean(await region(page,'Street address or place'))).toBe(true);
-    await expect.poll(async()=>Boolean(await region(page,'Find address or place'))).toBe(true);
-    expect(await Promise.all(['Play solo','Play with friends'].map(async label=>bounds(await region(page,label))))).toEqual(before.slice(-2));
+    for (const label of ['My location', 'Street address or place', 'Find address or place']) {
+      expect(await region(page,label)).toBeDefined();
+    }
+    expect(await region(page,'Neighbourhood')).toBeUndefined();
+    expect(await region(page,'Friends')).toBeUndefined();
   } finally {release();}
 });
 
 test('a rejected invitation remains editable next to the real join error',async({page})=>{
   await page.route('**/api/meshes',route=>route.fulfill({json:[]}));
-  await page.goto('/');await clickUi(page,'Play');await clickUi(page,'Friends');
+  await page.goto('/');await clickUi(page,'Play');
   const invalid='https://example.test/#join=invalid';
   await fillUi(page,'Invitation link',invalid);
   await expect.poll(async()=>(await region(page,'Invitation link'))?.value).toBe(invalid);
@@ -77,7 +77,7 @@ test('failed raster tiles retry in the real map while neighbourhood selection re
   await page.goto('/');await clickUi(page,'Play');
   try {
     await expect.poll(async()=>(await fact(page,'paket-map-loading'))?.pending).toBe(true);
-    await expect.poll(async()=>(await region(page,'Play solo'))?.height??0).toBeGreaterThan(0);
+    await expect.poll(async()=>(await region(page,'Start shift'))?.height??0).toBeGreaterThan(0);
     release();
     await expect.poll(async()=>(await fact(page,'paket-map-loading'))?.failed).toBe(true);
     await expect.poll(()=>text(page)).toContain('Some map tiles failed. Retry.');
@@ -128,7 +128,7 @@ test('the Bevy welcome artwork and Play remain inside desktop and phone screens'
   await expect.poll(async()=>(await ui(page))?.panel).toBe('settings');
   await clickUi(page,'Close · Esc');
   await clickUi(page,'Play');
-  await expect.poll(async()=>Boolean(await region(page,'Play solo'))).toBe(true);
+  await expect.poll(async()=>Boolean(await region(page,'Start shift'))).toBe(true);
   await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href','/favicon.svg?v=cardboard-transparent');
   const icon=await page.request.get('/favicon.svg');expect(icon.ok()).toBe(true);
   expect(icon.headers()['content-type']).toContain('image/svg+xml');
@@ -178,6 +178,99 @@ test('the vector basemap keeps the Bevy map and start controls interactive', asy
   const initial = await fact(page, 'paket-lobby');
   await page.mouse.click(map.x + map.width * 0.68, map.y + map.height * 0.55, {delay: 80});
   await expect.poll(async () => (await fact(page, 'paket-lobby'))?.lon).toBeGreaterThan(initial.lon + 0.0005);
-  await expect.poll(async () => Boolean(await region(page, 'Play solo'))).toBe(true);
+  await expect.poll(async () => Boolean(await region(page, 'Start shift'))).toBe(true);
   await page.screenshot({path: test.info().outputPath('neighbourhood-picker.png')});
+});
+
+const meshModule = `
+export default async function init() {}
+export class WasmIngressBudgetProfile {}
+export class BrowserNode {
+  static async start() {
+    return {
+      endpointId: 'b'.repeat(64),
+      waitForRelayUrl: () => Promise.resolve('https://relay.example.test/'),
+      accept: async () => ({accept: () => new Promise(() => {})}),
+      close: async () => {},
+    };
+  }
+}
+`;
+
+for (const listed of [false, true]) {
+  test(`Start shift always creates an invitation and publishes it only when checked (${listed})`, async ({page}) => {
+    let releaseRelay!: () => void;
+    const relay = new Promise<void>(resolve => {releaseRelay = resolve;});
+    const listings: unknown[] = [];
+    await page.route('**/mesh/meta_mesh.js', async route => {
+      await relay;
+      await route.fulfill({contentType: 'text/javascript', body: meshModule});
+    });
+    await page.route('**/api/meshes', route => {
+      if (route.request().method() === 'PUT') listings.push(route.request().postDataJSON());
+      return route.fulfill({json: []});
+    });
+    await page.route('**/elevation/**', route => route.fulfill({status: 503}));
+    await page.route('**/api/osm?*', route => route.fulfill({json: {
+      elements: [{type: 'way', id: 1, tags: {highway:'residential'}, geometry: [
+        {lat: 40.7265, lon: -73.983}, {lat: 40.7265, lon: -73.98},
+      ]}],
+    }}));
+    await page.goto('/');
+    await clickUi(page, 'Play');
+    await clickUi(page, 'New York');
+    expect((await region(page, 'Make public')).checked).toBe(false);
+    if (listed) {
+      await clickUi(page, 'Make public');
+      await expect.poll(async () => (await region(page,'Make public'))?.checked).toBe(true);
+    }
+    try {
+      await clickUi(page, 'Start shift');
+      await waitRide(page);
+      await clickUi(page, 'Share mesh');
+      await expect.poll(() => text(page)).toContain('Preparing invitation');
+      releaseRelay();
+      await expect.poll(async () => (await fact(page, 'paket-session'))?.link).toContain('#join=');
+      await expect.poll(async () => Boolean(await region(page,'Copy invitation'))).toBe(true);
+      const {link} = await fact(page, 'paket-session');
+      expect(new URL(link).origin).toBe(new URL(page.url()).origin);
+      expect((await region(page, 'Invitation link')).value).toBe(link);
+      const invite = JSON.parse(Buffer.from(link.split('#join=')[1], 'base64url').toString());
+      expect(invite.origin).toEqual({lat: 40.7265, lon: -73.9815});
+      await expect.poll(() => listings).toEqual(listed ? [invite] : []);
+      await clickUi(page, 'Close · Esc');
+      await clickUi(page, 'Settings');
+      await clickUi(page, 'Change neighbourhood');
+      await expect.poll(async () => (await region(page,'Make public'))?.checked).toBe(false);
+      await clickUi(page, 'Return to your mesh');
+      await waitRide(page);
+      await expect.poll(async () => (await fact(page, 'paket-session'))?.link).toBe(link);
+      expect(listings).toEqual(listed ? [invite] : []);
+    } finally {
+      releaseRelay();
+    }
+  });
+}
+
+test('a relay failure keeps the shift playable and Share can retry the same invitation setup', async ({page}) => {
+  let requests = 0;
+  await page.route('**/mesh/meta_mesh.js', route => ++requests === 1
+    ? route.fulfill({status: 503})
+    : route.fulfill({contentType: 'text/javascript', body: meshModule}));
+  await page.route('**/elevation/**', route => route.fulfill({status: 503}));
+  await page.route('**/api/osm?*', route => route.fulfill({json: {
+    elements: [{type: 'way', id: 1, tags: {highway:'residential'}, geometry: [
+      {lat: 52.4895, lon: 13.389}, {lat: 52.4895, lon: 13.392},
+    ]}],
+  }}));
+  await page.goto('/');
+  await clickUi(page, 'Play');
+  await clickUi(page, 'Start shift');
+  await waitRide(page);
+  await clickUi(page, 'Share mesh');
+  await expect.poll(() => text(page)).toContain('Could not prepare an invitation.');
+  await clickUi(page, 'Retry invitation');
+  await expect.poll(async () => Boolean(await region(page,'Copy invitation'))).toBe(true);
+  expect(requests).toBe(2);
+  expect((await fact(page, 'paket-hud')).ready).toBe(true);
 });

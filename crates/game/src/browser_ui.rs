@@ -150,6 +150,16 @@ pub(crate) fn input(
                 }
             }
             "retry-map" => ride.retry.clear(),
+            "retry-invite" if ride.session.is_none() && ride.connecting.is_none() => {
+                if let Some(listed) = ride.host_listing {
+                    ride.connecting = Some(std::sync::Mutex::new(crate::connect_session(
+                        ride.origin,
+                        None,
+                        listed,
+                    )));
+                    crate::platform::ui_event("paket-session", r#"{"pending":true}"#);
+                }
+            }
             "change-location" if !jobs.interaction_active() => {
                 crate::change_location(&mut commands, &ride, &mut next)
             }

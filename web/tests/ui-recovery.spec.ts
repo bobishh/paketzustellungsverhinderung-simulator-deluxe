@@ -17,7 +17,7 @@ test('Given unavailable welcome artwork, when boot finishes, Play still opens th
   await page.route('**/assets/landing/**', r => r.fulfill({status:404}));
   await page.goto('/');
   await clickUi(page, 'Play');
-  await clickUi(page, 'Play solo');
+  await clickUi(page, 'Start shift');
   await waitRide(page);
   await expect(page.locator('dialog, aside, button:not(#boot-retry)')).toHaveCount(0);
 });

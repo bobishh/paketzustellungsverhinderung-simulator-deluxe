@@ -27,7 +27,7 @@ test('Bevy neighbourhood controls preserve arbitrary addresses and expose recove
  await page.route('**/api/address?*',r=>r.fulfill({status:503}));await page.route('https://photon.komoot.io/**',r=>r.fulfill({status:503}));
  await fillUi(page,'Street address or place','Unavailable address');await clickUi(page,'Find address or place');
  await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.status).toContain('unavailable');
- await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.regions.some((r:any)=>r.label==='Play solo')).toBe(true);
+ await expect.poll(async()=>(await fact(page,'paket-ui-regions'))?.regions.some((r:any)=>r.label==='Start shift')).toBe(true);
  await page.screenshot({path:test.info().outputPath('bevy-map-and-controls.png')});
 });
 test('Bevy panels open in the real game and return to the same shift',async({page})=>{
@@ -61,15 +61,14 @@ for (const viewport of [{width:390,height:780},{width:844,height:390}]) {
     return Boolean(region && region.x>=-1 && region.y>=-1 && region.width>0 && region.height>0 && region.x+region.width<=viewport.width+1 && region.y+region.height<=viewport.height+1);
    }).toBe(true);
   };
-  for(const label of ['Profile','Share mesh','How to play','Settings','My location','Street address or place','Play solo','Play with friends'])await visible(label);
+  for(const label of ['Profile','Share mesh','How to play','Settings','My location','Street address or place','Make public','Start shift'])await visible(label);
   await page.screenshot({path:test.info().outputPath(`bevy-lobby-${viewport.width}.png`)});
-  await clickUi(page,'Friends');
-  for(const label of ['Return to your mesh','Invitation link','Join shift','Play solo','Play with friends'])await visible(label);
-  // Pending directory work reserves its own content area; start controls stay pinned.
-  await page.route('**/api/meshes',async r=>{await new Promise(resolve=>setTimeout(resolve,1500));await r.fulfill({json:[]});});
-  await page.mouse.move(viewport.width-170,viewport.height-175);await page.mouse.wheel(0,180);
-  await clickUi(page,'Refresh');await visible('Play solo');await visible('Play with friends');
-  await page.screenshot({path:test.info().outputPath(`bevy-friends-${viewport.width}.png`)});
+  const start = (await fact(page,'paket-ui-regions')).regions.find((r:any)=>r.label==='Start shift');
+  await page.mouse.move(viewport.width-145,viewport.height-170);
+  await page.mouse.wheel(0,240);
+  await visible('Invitation link');
+  await visible('Start shift');
+  expect((await fact(page,'paket-ui-regions')).regions.find((r:any)=>r.label==='Start shift')).toEqual(start);
   await page.goto('/?lat=52.4895&lon=13.3908');await waitRide(page);
   await expect.poll(async()=>{
    const view=await fact(page,'paket-ui-regions');

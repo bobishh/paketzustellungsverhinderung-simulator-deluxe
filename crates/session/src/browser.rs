@@ -5,17 +5,23 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(
-    inline_js = "export async function streetConnect(origin,invite){return await globalThis.paketMesh.connect(JSON.parse(origin),invite);} export function streetPublish(id,fact){globalThis.paketMesh.publish(id,JSON.parse(fact));} export function streetPoll(id){return JSON.stringify(globalThis.paketMesh.poll(id));} export function streetClose(id){globalThis.paketMesh.close(id);}"
+    inline_js = "export async function streetConnect(origin,invite,listed){return await globalThis.paketMesh.connect(JSON.parse(origin),invite,listed);} export function streetPublish(id,fact){globalThis.paketMesh.publish(id,JSON.parse(fact));} export function streetPoll(id){return JSON.stringify(globalThis.paketMesh.poll(id));} export function streetClose(id){globalThis.paketMesh.close(id);} export function streetOrigin(){return globalThis.location.origin;}"
 )]
 extern "C" {
     #[wasm_bindgen(catch, js_name = streetConnect)]
-    async fn connect(origin: &str, invite: Option<String>) -> Result<JsValue, JsValue>;
+    async fn connect(
+        origin: &str,
+        invite: Option<String>,
+        listed: bool,
+    ) -> Result<JsValue, JsValue>;
     #[wasm_bindgen(catch, js_name = streetPublish)]
     fn publish(id: &str, fact: &str) -> Result<(), JsValue>;
     #[wasm_bindgen(js_name = streetPoll)]
     fn poll(id: &str) -> String;
     #[wasm_bindgen(js_name = streetClose)]
     fn close(id: &str);
+    #[wasm_bindgen(js_name = streetOrigin)]
+    fn browser_origin() -> String;
 }
 #[derive(Deserialize)]
 pub struct SharedStreet {
@@ -30,7 +36,15 @@ pub async fn connect_browser(
     origin: Origin,
     invite: Option<String>,
 ) -> Result<SharedStreet, String> {
-    let result = connect(&serde_json::to_string(&origin).unwrap(), invite)
+    connect_browser_with_listing(origin, invite, false).await
+}
+
+pub async fn connect_browser_with_listing(
+    origin: Origin,
+    invite: Option<String>,
+    listed: bool,
+) -> Result<SharedStreet, String> {
+    let result = connect(&serde_json::to_string(&origin).unwrap(), invite, listed)
         .await
         .map_err(|e| format!("{e:?}"))?;
     serde_json::from_str(&result.as_string().ok_or("invalid session response")?)
@@ -69,7 +83,8 @@ impl Drop for SharedStreet {
 pub fn invite_link(invitation: &str) -> String {
     // Browser invitations are complete HTTPS links and also work from chat messages.
     format!(
-        "https://paketzustellungsverhinderung-simulator-deluxe.meta-uber-engineer.dev/#join={}",
+        "{}/#join={}",
+        browser_origin(),
         URL_SAFE_NO_PAD.encode(invitation)
     )
 }

@@ -20,13 +20,13 @@ use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     text::EditableText,
-    ui_widgets::{Button, TextInput},
+    ui_widgets::{Button, Checkbox, TextInput},
     window::PrimaryWindow,
 };
 use paket_geo::{FIXTURE_LAT, FIXTURE_LON, LatLon, MAUSOHRWEG};
-use paket_session::{Discovery, SharedStreet, invite_link, invite_origin};
+use paket_session::{Discovery, invite_origin};
 
-use crate::{Mode, SessionResult, actors::Role, connect_session, start_ride};
+use crate::{Mode, RideStart, SessionResult, actors::Role, connect_session, start_ride};
 
 const TILE: f64 = 256.0;
 const TOOLBAR: f32 = 42.;
@@ -88,7 +88,7 @@ pub(super) struct MapPane;
 #[derive(Component)]
 pub(super) struct Sidebar;
 #[derive(Component)]
-pub(super) struct LobbyGroup(bool);
+pub(super) struct PublicCheck;
 
 #[derive(Component)]
 pub struct MapStatus;
@@ -113,14 +113,10 @@ pub enum Action {
     ZoomOut,
     Select(LatLon),
     Role(Role),
-    New,
     Join,
-    Copy,
     Start,
-    Solo,
     Nearby(usize),
     Page(isize),
-    LobbyTab(bool),
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -152,11 +148,11 @@ pub struct Map {
     discovery: Option<Discovery>,
     nearby: Vec<(String, LatLon, String)>,
     page: usize,
+    #[cfg(target_arch = "wasm32")]
+    directory_requested: bool,
     connection: Connection,
     status: &'static str,
     role: Role,
-    auto_start: bool,
-    friends: bool,
 }
 
 #[derive(Default)]
@@ -165,12 +161,7 @@ enum Connection {
     Idle,
     Pending {
         origin: LatLon,
-        link: Option<String>,
         receiver: Mutex<mpsc::Receiver<SessionResult>>,
-    },
-    Ready {
-        session: SharedStreet,
-        link: String,
     },
 }
 
@@ -197,11 +188,11 @@ impl Map {
             discovery: Discovery::listen().ok(),
             nearby: Vec::new(),
             page: 0,
+            #[cfg(target_arch = "wasm32")]
+            directory_requested: false,
             connection: Connection::Idle,
             status: "",
             role: Role::Courier,
-            auto_start: false,
-            friends: false,
         }
     }
 
@@ -227,21 +218,13 @@ impl Map {
         }
     }
 
-    fn connect(&mut self, link: Option<String>) -> Result<(), String> {
-        let origin = match &link {
-            Some(link) => invite_origin(link)?.into(),
-            None => self.point(),
-        };
+    fn join(&mut self, link: String, listed: bool) -> Result<(), String> {
+        let origin = invite_origin(&link)?.into();
         self.select(origin);
-        self.status = if link.is_some() {
-            "Connecting to mesh…"
-        } else {
-            "Creating mesh…"
-        };
+        self.status = "Connecting to shift…";
         self.connection = Connection::Pending {
             origin,
-            receiver: Mutex::new(connect_session(origin, link.clone())),
-            link,
+            receiver: Mutex::new(connect_session(origin, Some(link), listed)),
         };
         Ok(())
     }
@@ -318,7 +301,6 @@ fn button_color(primary: bool, hovered: bool) -> Color {
 
 pub fn setup(mut commands: Commands) {
     crate::platform::ui_event("paket-mode", "\"map\"");
-    crate::platform::service(&serde_json::json!({"kind":"refresh"}));
     let muted = Color::srgb(0.68, 0.76, 0.70);
     commands
         .spawn((
@@ -444,17 +426,7 @@ pub fn setup(mut commands: Commands) {
                         ..default()
                     },
                 ));
-                p.spawn(Node {
-                    column_gap: Val::Px(6.),
-                    flex_shrink: 0.,
-                    ..default()
-                })
-                .with_children(|p| {
-                    add_button(p, Action::LobbyTab(false), "Neighbourhood");
-                    add_button(p, Action::LobbyTab(true), "Friends");
-                });
                 p.spawn((
-                    LobbyGroup(false),
                     bevy::ui_widgets::ScrollArea,
                     Node {
                         flex_grow: 1.,
@@ -518,22 +490,6 @@ pub fn setup(mut commands: Commands) {
                             );
                         }
                     });
-                });
-                p.spawn((
-                    LobbyGroup(true),
-                    bevy::ui_widgets::ScrollArea,
-                    Node {
-                        display: Display::None,
-                        flex_grow: 1.,
-                        flex_basis: Val::Px(0.),
-                        min_height: Val::Px(0.),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(6.),
-                        overflow: Overflow::scroll_y(),
-                        ..default()
-                    },
-                ))
-                .with_children(|p| {
                     p.spawn(label("Friend’s invitation", 13., muted));
                     text_input(p, false);
                     p.spawn(Node {
@@ -549,21 +505,16 @@ pub fn setup(mut commands: Commands) {
                             "Return to your mesh",
                         );
                     });
-                    p.spawn(Node {
-                        column_gap: px(6.),
-                        flex_shrink: 0.,
-                        ..default()
-                    })
-                    .with_children(|p| {
-                        add_button(p, Action::Copy, "Copy link");
-                        add_button(p, Action::Start, "Enter mesh");
-                    });
-                    crate::game_ui::add_button(
-                        p,
-                        serde_json::json!({"action":"service","kind":"public"}),
-                        "Public mesh: off",
-                    );
-                    p.spawn(label("Public meshes", 16., Color::WHITE));
+                    p.spawn(label(
+                        if cfg!(target_arch = "wasm32") {
+                            "Public shifts"
+                        } else {
+                            "Nearby shifts"
+                        },
+                        16.,
+                        Color::WHITE,
+                    ));
+                    #[cfg(target_arch = "wasm32")]
                     crate::game_ui::add_button(
                         p,
                         serde_json::json!({"action":"service","kind":"refresh"}),
@@ -620,12 +571,49 @@ pub fn setup(mut commands: Commands) {
                         add_button(p, Action::Role(Role::Dog), "Dog");
                     });
                     p.spawn(Node {
-                        column_gap: Val::Px(6.),
+                        column_gap: px(8),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::SpaceBetween,
                         ..default()
                     })
                     .with_children(|p| {
-                        add_button(p, Action::Solo, "Play solo");
-                        add_button(p, Action::New, "Play with friends");
+                        p.spawn((
+                            Checkbox,
+                            AccessibleLabel::new("Make public"),
+                            bevy::input_focus::tab_navigation::TabIndex(0),
+                            Node {
+                                min_height: px(38),
+                                align_items: AlignItems::Center,
+                                column_gap: px(6),
+                                ..default()
+                            },
+                        ))
+                        .observe(bevy::ui_widgets::checkbox_self_update)
+                        .with_children(|p| {
+                            p.spawn((
+                                Node {
+                                    width: px(17),
+                                    height: px(17),
+                                    border: UiRect::all(px(1)),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BorderColor::all(Color::srgb(0.60, 0.69, 0.62)),
+                            ))
+                            .with_child((
+                                PublicCheck,
+                                Visibility::Hidden,
+                                Node {
+                                    width: px(9),
+                                    height: px(9),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(1., 0.55, 0.23)),
+                            ));
+                            p.spawn(label("Make public", 13., Color::WHITE));
+                        });
+                        add_button(p, Action::Start, "Start shift");
                     });
                 });
             });
@@ -665,13 +653,13 @@ fn text_input(parent: &mut ChildSpawnerCommands, address: bool) {
 }
 pub(crate) fn responsive(
     windows: Query<&Window, With<PrimaryWindow>>,
-    map: Res<Map>,
+    checkboxes: Query<Has<bevy::ui::Checked>, With<Checkbox>>,
+    mut check: Query<&mut Visibility, With<PublicCheck>>,
     mut nodes: Query<(
         &mut Node,
         Has<MapLayout>,
         Has<MapPane>,
         Has<Sidebar>,
-        Option<&LobbyGroup>,
         Has<PickerHint>,
     )>,
 ) {
@@ -680,7 +668,7 @@ pub(crate) fn responsive(
     };
     let portrait = window.width() < 600.;
     let header = crate::game_ui::header_height(window.width());
-    for (mut node, layout, pane, sidebar, group, hint) in &mut nodes {
+    for (mut node, layout, pane, sidebar, hint) in &mut nodes {
         if hint {
             node.display = if window.height() < 560. {
                 Display::None
@@ -734,12 +722,15 @@ pub(crate) fn responsive(
             node.flex_shrink = 0.;
             node.overflow = Overflow::clip();
         }
-        if let Some(group) = group {
-            node.display = if group.0 == map.friends {
-                Display::Flex
-            } else {
-                Display::None
-            };
+    }
+    if let (Ok(checked), Ok(mut mark)) = (checkboxes.single(), check.single_mut()) {
+        let visibility = if checked {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        if *mark != visibility {
+            *mark = visibility;
         }
     }
 }
@@ -774,6 +765,7 @@ pub fn input(
     actions: Query<(Entity, &Action), With<crate::game_ui::Activated>>,
     mut invites: Query<&mut EditableText, With<InviteInput>>,
     mut next: ResMut<NextState<Mode>>,
+    public: Query<Has<bevy::ui::Checked>, With<Checkbox>>,
 ) {
     let window = windows.single().ok();
     let cursor = window.and_then(Window::cursor_position).map(|v| {
@@ -792,7 +784,6 @@ pub fn input(
     if connecting {
         map.drag_start = None;
     }
-    let initial_point = map.point();
     if buttons.just_pressed(MouseButton::Left) && over_map {
         map.drag_start = cursor;
         map.dragged = false;
@@ -851,9 +842,6 @@ pub fn input(
             } else {
                 Role::Courier
             })),
-            Some("new") => requested.push(Action::New),
-            Some("solo") => requested.push(Action::Solo),
-            Some("start") => requested.push(Action::Start),
             Some("zoom-in") => requested.push(Action::ZoomIn),
             Some("zoom-out") => requested.push(Action::ZoomOut),
             Some("join") => {
@@ -864,32 +852,26 @@ pub fn input(
         }
     }
     for action in &requested {
-        if connecting && !matches!(action, Action::Role(_) | Action::LobbyTab(_)) {
+        if connecting {
             continue;
         }
         match *action {
             Action::ZoomIn => map.zoom(1),
             Action::ZoomOut => map.zoom(-1),
             Action::Select(point) => {
+                map.status = "";
                 crate::platform::service(&serde_json::json!({"kind":"selection"}));
                 map.select(point);
             }
             Action::Role(role) => map.role = role,
-            Action::LobbyTab(friends) => map.friends = friends,
-            Action::New => {
-                map.auto_start = true;
-                *invite = EditableText::new("");
-                let _ = map.connect(None);
-                return;
-            }
             Action::Join => {
-                map.auto_start = true;
-                let link = invite.value().to_string().trim().to_owned();
-                if let Connection::Ready { link: hosted, .. } = &map.connection
-                    && hosted == &link
+                if map
+                    .join(
+                        invite.value().to_string().trim().to_owned(),
+                        public.single().unwrap_or(false),
+                    )
+                    .is_err()
                 {
-                    map.status = "Mesh ready. Start ride when you're ready.";
-                } else if map.connect(Some(link)).is_err() {
                     map.status = "Paste a valid Paket invite link.";
                 }
                 return;
@@ -898,66 +880,34 @@ pub fn input(
                 map.page = map.page.saturating_add_signed(delta);
             }
             Action::Nearby(index) => {
-                map.auto_start = true;
                 if let Some((link, _, _)) = map.nearby.get(map.page * RIDE_SLOTS + index).cloned() {
                     *invite = EditableText::new(&link);
-                    let _ = map.connect(Some(link));
+                    if map.join(link, false).is_err() {
+                        map.status = "This invitation is invalid. Refresh the public list.";
+                    }
                 }
                 return;
             }
-            Action::Copy => {
-                let link = invite.value().to_string();
-                map.status = if invite_origin(&link).is_err() {
-                    "Create a mesh or paste an invite first."
-                } else if crate::platform::copy_text(&link) {
-                    "Invite copied."
+            Action::Start => {
+                let session = if map.offline {
+                    RideStart::Local
                 } else {
-                    "Clipboard unavailable."
-                };
-            }
-            Action::Solo | Action::Start => {
-                let origin = map.point();
-                let (origin, session, link) = match (&map.connection, action) {
-                    (_, Action::Solo) => (origin, None, None),
-                    (Connection::Idle, _) => {
-                        map.status = "Create or join a mesh first.";
-                        return;
-                    }
-                    (Connection::Pending { .. }, _) => return,
-                    (Connection::Ready { .. }, _) => {
-                        let Connection::Ready { session, link } =
-                            std::mem::take(&mut map.connection)
-                        else {
-                            unreachable!();
-                        };
-                        (session.origin.into(), Some(session), Some(link))
+                    RideStart::Host {
+                        listed: public.single().unwrap_or(false),
                     }
                 };
                 start_ride(
                     &mut commands,
-                    origin,
+                    map.point(),
                     map.cache.with_file_name("osm"),
                     map.offline,
-                    None,
                     session,
-                    link,
                     map.role,
                 );
                 next.set(Mode::Ride);
                 return;
             }
         }
-    }
-    let selected = map.point();
-    if (selected.lat - initial_point.lat)
-        .abs()
-        .max((selected.lon - initial_point.lon).abs())
-        > 1e-9
-        && !matches!(map.connection, Connection::Idle)
-    {
-        map.connection = Connection::Idle;
-        *invite = EditableText::new("");
-        map.status = "Location changed. Create a mesh for this start.";
     }
 }
 
@@ -967,7 +917,7 @@ pub fn update_lobby(
     results: Query<(Entity, Option<&Children>), With<SearchResults>>,
     mut previous_results: Local<String>,
     mut map: ResMut<Map>,
-    mut invites: Query<&mut EditableText, With<InviteInput>>,
+    mut next: ResMut<NextState<Mode>>,
     mut labels: Query<(
         &mut Text,
         Has<LocationLabel>,
@@ -977,6 +927,11 @@ pub fn update_lobby(
     )>,
     mut actions: Query<(&Action, &mut Node, &Hovered, &mut BackgroundColor)>,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    if !map.directory_requested && !ui.welcome_open() {
+        map.directory_requested = true;
+        crate::platform::service(&serde_json::json!({"kind":"refresh"}));
+    }
     let services = ui.value("paket-services");
     let search = services["places"].to_string();
     if search != *previous_results {
@@ -1017,11 +972,7 @@ pub fn update_lobby(
             .collect();
     }
     let pending = match &map.connection {
-        Connection::Pending {
-            origin,
-            link,
-            receiver,
-        } => receiver
+        Connection::Pending { origin, receiver } => receiver
             .lock()
             .ok()
             .and_then(|rx| match rx.try_recv() {
@@ -1029,51 +980,34 @@ pub fn update_lobby(
                 Err(mpsc::TryRecvError::Disconnected) => Some(Err("session stopped".into())),
                 Err(mpsc::TryRecvError::Empty) => None,
             })
-            .map(|result| (*origin, link.clone(), result)),
-        _ => None,
+            .map(|result| (*origin, result)),
+        Connection::Idle => None,
     };
-    if let Some((origin, link, result)) = pending {
+    if let Some((origin, result)) = pending {
+        map.connection = Connection::Idle;
         match result {
             Ok(session) => {
-                let link = link.unwrap_or_else(|| {
-                    let _ = fs::write("invitation.json", &session.invitation);
-                    invite_link(&session.invitation)
-                });
-                if let Ok(mut input) = invites.single_mut() {
-                    *input = EditableText::new(&link);
-                }
-                map.select(origin);
-                crate::platform::ui_event(
-                    "paket-session",
-                    &serde_json::json!({"link":link,"host":session.is_host,"device":session.device}).to_string(),
+                start_ride(
+                    &mut commands,
+                    origin,
+                    map.cache.with_file_name("osm"),
+                    map.offline,
+                    RideStart::Joined(session),
+                    map.role,
                 );
-                map.connection = Connection::Ready { session, link };
-                map.status = "Mesh ready.";
-                if map.auto_start {
-                    map.auto_start = false;
-                    crate::game_ui::queue(serde_json::json!({"action":"start"}));
-                }
+                next.set(Mode::Ride);
+                return;
             }
             Err(error) => {
                 eprintln!("session: {error}");
-                map.connection = Connection::Idle;
-                map.status = if link.is_some() {
-                    "Could not join. Check that the host is online and try again."
-                } else {
-                    "Could not create a mesh. Try again."
-                };
+                map.status = "Could not join. Keep the host’s game open and try again.";
             }
         }
     }
-    let own = match &map.connection {
-        Connection::Ready { session, .. } => Some(session.device.clone()),
-        _ => None,
-    };
     if let Some(discovery) = &mut map.discovery {
         map.nearby = discovery
             .poll()
             .into_iter()
-            .filter(|(id, _)| Some(*id) != own.as_deref())
             .map(|(id, ride)| {
                 (
                     ride.link.clone(),
@@ -1087,31 +1021,21 @@ pub fn update_lobby(
     map.page = map.page.min(last_page);
     let first = map.page * RIDE_SLOTS;
     let point = map.point();
-    crate::platform::ui_event("paket-lobby",&serde_json::json!({"lat":point.lat,"lon":point.lon,"zoom":map.zoom,"label":location_name(point),"status":map.status,"ready":matches!(map.connection,Connection::Ready{..}),"pending":matches!(map.connection,Connection::Pending{..}),"link":match &map.connection {Connection::Ready{link,..}=>link.as_str(),_=>""}}).to_string());
+    crate::platform::ui_event("paket-lobby",&serde_json::json!({"lat":point.lat,"lon":point.lon,"zoom":map.zoom,"label":location_name(point),"status":map.status,"pending":matches!(map.connection,Connection::Pending{..})}).to_string());
     for (mut text, location, status, nearby, slot) in &mut labels {
         let value = if location {
             location_name(point)
         } else if status {
-            format!(
-                "{}\n{}",
-                map.status,
-                services["status"]
-                    .as_str()
-                    .filter(|status| {
-                        map.friends
-                            || !(status.contains("public mesh") || status.contains("Mesh list"))
-                    })
-                    .unwrap_or("")
-            )
+            if map.status.is_empty() {
+                services["status"].as_str().unwrap_or("").into()
+            } else {
+                map.status.into()
+            }
         } else if nearby {
             if cfg!(target_arch = "wasm32") {
-                format!("{} public meshes", map.nearby.len())
+                services["directoryStatus"].as_str().unwrap_or("").into()
             } else if map.discovery.is_none() {
-                if cfg!(target_arch = "wasm32") {
-                    "Share a ride link to invite friends.".into()
-                } else {
-                    "Local discovery unavailable.".into()
-                }
+                "Local discovery unavailable.".into()
             } else if map.nearby.is_empty() {
                 "No rides on this network yet.".into()
             } else if last_page > 0 {
@@ -1153,10 +1077,7 @@ pub fn update_lobby(
             node.display = display;
         }
         let value = button_color(
-            matches!(action, Action::New if map.friends)
-                || matches!(action, Action::Solo if !map.friends)
-                || matches!(action, Action::Start)
-                || matches!(action,Action::LobbyTab(value) if *value==map.friends)
+            matches!(action, Action::Start)
                 || matches!(action, Action::Role(role) if *role == map.role),
             interaction.0,
         );
@@ -1531,7 +1452,6 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         app.world_mut().resource_mut::<Map>().connection = Connection::Pending {
             origin: CITIES[1].1,
-            link: None,
             receiver: Mutex::new(rx),
         };
         press(&mut app, |action| matches!(action, Action::Start));
@@ -1548,10 +1468,10 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().resource::<Map>().status,
-            "Could not create a mesh. Try again."
+            "Could not join. Keep the host’s game open and try again."
         );
         press(&mut app, |action| matches!(action, Action::Role(Role::Dog)));
-        press(&mut app, |action| matches!(action, Action::Solo));
+        press(&mut app, |action| matches!(action, Action::Start));
         app.update();
         assert_eq!(*app.world().resource::<State<Mode>>().get(), Mode::Ride);
         assert_eq!(app.world().resource::<crate::Ride>().origin, CITIES[1].1);
@@ -1566,8 +1486,7 @@ fn activated(
 ) {
     if let Ok(action) = actions.get(event.entity) {
         let value = match action {
-            Action::Solo => serde_json::json!({"action":"solo"}),
-            Action::New => serde_json::json!({"action":"new"}),
+            Action::Start => serde_json::json!({"action":"start"}),
             Action::Join | Action::Nearby(_) => serde_json::json!({"action":"join"}),
             Action::Role(role) => {
                 serde_json::json!({"action":"role","role":if matches!(role,Role::Dog){"dog"}else{"courier"}})

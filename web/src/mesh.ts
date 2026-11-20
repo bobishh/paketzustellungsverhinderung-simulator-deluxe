@@ -28,7 +28,7 @@ export function inviteLink(invite: Invite, base: string): string {
 }
 const previousHostKey='paket.mesh.host.v1';
 const previousGuestKey='paket.mesh.guest.v1';
-type HostResume={invite:Invite; seed:string; token:string; listed:boolean; shift?:Fact; route?:Fact};
+type HostResume={invite:Invite; seed:string; token:string; shift?:Fact; route?:Fact};
 type GuestResume={invite:Invite; seed:string};
 const hex=(bytes:Uint8Array)=>[...bytes].map(byte=>byte.toString(16).padStart(2,'0')).join('');
 const isKey=(value:unknown):value is string=>typeof value==='string' && /^[a-f0-9]{64}$/.test(value);
@@ -142,7 +142,7 @@ function incoming(s: State, fact: Fact) {
   if (s.inbox.length > 256) s.inbox.shift();
 }
 export const mesh = {
-  async connect(origin: Origin, invitation?: string) {
+  async connect(origin: Origin, invitation?: string, makePublic = false) {
     if (!profile) throw new Error('Identity is not ready');
     const bootstrap = invitation ? decodeInvite(invitation) : null;
     const previousHost=bootstrap?loadResume<HostResume>(previousHostKey):undefined;
@@ -233,10 +233,9 @@ export const mesh = {
         s.timer = setTimeout(tick, 0);
       }
       if(host){
-        const listed=resume?.listed ?? Boolean(globalThis.paketPublicMesh);
-        const record:HostResume={...resume,invite,seed,token:ownerToken,listed};
+        const record:HostResume={invite,seed,token:ownerToken,shift:resume?.shift,route:resume?.route};
         saveResume(previousHostKey,record);
-        if(listed)s.unlist=publishMesh(invite,ownerToken);
+        if(makePublic)s.unlist=publishMesh(invite,ownerToken);
       }else saveResume(previousGuestKey,{invite,seed});
       sessions.set(node.endpointId, s);
       const json = JSON.stringify(invite);

@@ -41,7 +41,11 @@ pub struct SharedStreet {
 }
 
 pub fn host(origin: Origin) -> Result<SharedStreet, String> {
-    spawn_session(origin, None)
+    host_with_listing(origin, true)
+}
+
+pub fn host_with_listing(origin: Origin, listed: bool) -> Result<SharedStreet, String> {
+    spawn_session(origin, None, listed)
 }
 
 pub fn invite_link(invitation: &str) -> String {
@@ -73,7 +77,7 @@ pub fn invite_origin(input: &str) -> Result<Origin, String> {
 
 pub fn join(invitation: &str) -> Result<SharedStreet, String> {
     let invite = decode_invite(invitation)?;
-    spawn_session(invite.origin, Some(invite))
+    spawn_session(invite.origin, Some(invite), false)
 }
 
 impl SharedStreet {
@@ -99,7 +103,11 @@ impl SharedStreet {
     }
 }
 
-fn spawn_session(origin: Origin, bootstrap: Option<Invitation>) -> Result<SharedStreet, String> {
+fn spawn_session(
+    origin: Origin,
+    bootstrap: Option<Invitation>,
+    listed: bool,
+) -> Result<SharedStreet, String> {
     let is_host = bootstrap.is_none();
     let (outbound, outbound_rx) = mpsc::channel();
     let (inbound_tx, inbound) = mpsc::channel();
@@ -118,6 +126,7 @@ fn spawn_session(origin: Origin, bootstrap: Option<Invitation>) -> Result<Shared
         if let Err(error) = runtime.block_on(run(
             origin,
             bootstrap,
+            listed,
             outbound_rx,
             inbound_tx,
             ready_tx.clone(),
@@ -142,6 +151,7 @@ fn spawn_session(origin: Origin, bootstrap: Option<Invitation>) -> Result<Shared
 async fn run(
     origin: Origin,
     bootstrap: Option<Invitation>,
+    listed: bool,
     outbound_rx: Receiver<Fact>,
     inbound_tx: Sender<Fact>,
     ready_tx: Sender<Result<(String, String), String>>,
@@ -176,10 +186,7 @@ async fn run(
         addr: node.addr(),
         room,
     };
-    let advertiser = bootstrap
-        .is_none()
-        .then(discovery::advertiser)
-        .and_then(Result::ok);
+    let advertiser = listed.then(discovery::advertiser).and_then(Result::ok);
     let mut last_announcement = Instant::now() - Duration::from_secs(2);
     let invitation = serde_json::to_string(&advertisement).map_err(|error| error.to_string())?;
     let _ = ready_tx.send(Ok((device.clone(), invitation)));

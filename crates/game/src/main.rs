@@ -166,15 +166,17 @@ fn main() {
             .map(Into::into)
             .unwrap_or_else(|| resolve_origin(&args, &cache));
         let mut commands = app.world_mut().commands();
-        let pending = connect_session(origin, invite.clone());
+        let session = match invite {
+            Some(link) => RideStart::JoinPending(link),
+            None if args.offline => RideStart::Local,
+            None => RideStart::Host { listed: false },
+        };
         start_ride(
             &mut commands,
             origin,
             cache,
             args.offline,
-            Some(pending),
-            None,
-            invite,
+            session,
             args.role,
         );
         app.world_mut().flush();
@@ -301,21 +303,33 @@ fn travel(
 
 type SessionResult = Result<SharedStreet, String>;
 
-fn connect_session(origin: LatLon, invite: Option<String>) -> Receiver<SessionResult> {
+fn connect_session(
+    origin: LatLon,
+    invite: Option<String>,
+    listed: bool,
+) -> Receiver<SessionResult> {
     let (tx, rx) = mpsc::channel();
     #[cfg(not(target_arch = "wasm32"))]
     thread::spawn(move || {
         let result = match invite {
             Some(input) => paket_session::join(&input),
-            None => paket_session::host(origin.into()),
+            None => paket_session::host_with_listing(origin.into(), listed),
         };
         let _ = tx.send(result);
     });
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_futures::spawn_local(async move {
-        let _ = tx.send(paket_session::connect_browser(origin.into(), invite).await);
+        let _ = tx
+            .send(paket_session::connect_browser_with_listing(origin.into(), invite, listed).await);
     });
     rx
+}
+
+enum RideStart {
+    Local,
+    Host { listed: bool },
+    Joined(SharedStreet),
+    JoinPending(String),
 }
 
 fn start_ride(
@@ -323,29 +337,36 @@ fn start_ride(
     origin: LatLon,
     cache: PathBuf,
     offline: bool,
-    pending: Option<Receiver<SessionResult>>,
-    session: Option<SharedStreet>,
-    invite: Option<String>,
+    start: RideStart,
     role: Role,
 ) {
-    let invite = invite.map(|input| {
-        if input.trim().starts_with('{') {
-            paket_session::invite_link(input.trim())
-        } else {
-            input.trim().to_owned()
+    let (session, pending, guest, host_listing) = match start {
+        RideStart::Local => (None, None, false, None),
+        RideStart::Host { listed } => (
+            None,
+            Some(connect_session(origin, None, listed)),
+            false,
+            Some(listed),
+        ),
+        RideStart::Joined(session) => {
+            let guest = !session.is_host;
+            (Some(session), None, guest, None)
         }
-    });
-    let invite_status = if session.is_some() {
-        "Copy invite link"
-    } else if pending.is_some() {
-        "Preparing invite…"
-    } else {
-        "Solo ride"
+        RideStart::JoinPending(link) => (
+            None,
+            Some(connect_session(origin, Some(link), false)),
+            true,
+            None,
+        ),
     };
-    let guest = session
-        .as_ref()
-        .map_or(invite.is_some(), |session| !session.is_host);
     platform::ui_event("paket-mode", "\"ride\"");
+    if let Some(session) = &session {
+        show_invitation(session);
+    } else if pending.is_some() {
+        platform::ui_event("paket-session", r#"{"pending":true}"#);
+    } else {
+        platform::ui_event("paket-session", "null");
+    }
     #[cfg(not(target_arch = "wasm32"))]
     let ride_origin = origin;
     #[cfg(not(target_arch = "wasm32"))]
@@ -415,8 +436,7 @@ fn start_ride(
         guest,
         session,
         connecting: pending.map(Mutex::new),
-        invite,
-        invite_status,
+        host_listing,
         loaded: HashMap::new(),
         pending: HashMap::new(),
         retry: HashMap::new(),
@@ -508,29 +528,45 @@ fn change_location(commands: &mut Commands, ride: &Ride, next: &mut NextState<Mo
     next.set(Mode::Map);
 }
 
+fn show_invitation(session: &SharedStreet) {
+    #[cfg(not(target_arch = "wasm32"))]
+    if session.is_host {
+        let _ = fs::write("invitation.json", &session.invitation);
+    }
+    platform::ui_event(
+        "paket-session",
+        &serde_json::json!({
+            "link": paket_session::invite_link(&session.invitation),
+            "host": session.is_host,
+            "device": session.device
+        })
+        .to_string(),
+    );
+}
+
 fn invite_control(mut ride: ResMut<Ride>) {
     let result = ride
         .connecting
         .as_ref()
-        .and_then(|rx| rx.lock().ok()?.try_recv().ok());
+        .and_then(|rx| match rx.lock().ok()?.try_recv() {
+            Ok(result) => Some(result),
+            Err(mpsc::TryRecvError::Disconnected) => Some(Err("session stopped".into())),
+            Err(mpsc::TryRecvError::Empty) => None,
+        });
     if let Some(result) = result {
         ride.connecting = None;
         match result {
             Ok(session) => {
-                if ride.invite.is_none() {
-                    ride.invite = Some(paket_session::invite_link(&session.invitation));
-                    let _ = fs::write("invitation.json", &session.invitation);
-                }
-                platform::ui_event(
-                    "paket-session",
-                    &serde_json::json!({"link":ride.invite,"host":session.is_host,"device":session.device}).to_string(),
-                );
+                show_invitation(&session);
                 ride.session = Some(session);
-                ride.invite_status = "Copy invite link";
             }
             Err(error) => {
                 eprintln!("session: {error}");
-                ride.invite_status = "Session unavailable";
+                platform::ui_event(
+                    "paket-session",
+                    &serde_json::json!({"failed":true,"retry":ride.host_listing.is_some()})
+                        .to_string(),
+                );
             }
         }
     }
@@ -585,8 +621,7 @@ struct Ride {
     guest: bool,
     session: Option<SharedStreet>,
     connecting: Option<Mutex<Receiver<SessionResult>>>,
-    invite: Option<String>,
-    invite_status: &'static str,
+    host_listing: Option<bool>,
     loaded: HashMap<TileId, Vec<String>>,
     pending: HashMap<TileId, Mutex<Receiver<Result<MapScene, String>>>>,
     retry: HashMap<TileId, f32>,
@@ -1882,9 +1917,7 @@ mod ride_tests {
                 origin,
                 PathBuf::new(),
                 true,
-                None,
-                None,
-                None,
+                RideStart::Local,
                 role,
             );
         }

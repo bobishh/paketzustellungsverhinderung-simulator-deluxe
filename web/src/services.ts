@@ -5,9 +5,8 @@ import {requestNeighbourhood} from './geolocation';
 import {emitProfile, newFace} from './profile';
 import {signIn} from './identity';
 export type Command={action:string;[key:string]:unknown};
-declare global {var paketCommands:Command[];var paketPublicMesh:boolean;var paketNotify:(text:string)=>void;}
+declare global {var paketCommands:Command[];var paketNotify:(text:string)=>void;}
 globalThis.paketCommands=[];
-globalThis.paketPublicMesh=false;
 export const send=(command:Command)=>paketCommands.push(command);
 export const publish=(name:string,data:unknown)=>send({action:'ui-event',name,data});
 let mode='',invitation='',locationGeneration=0,searchGeneration=0,refreshing=false,searching=false;
@@ -31,14 +30,14 @@ export function initServices(ready:Promise<unknown>){
      case 'release':if(document.pointerLockElement)document.exitPointerLock();break;
      case 'capture':break; // Trusted canvas pointerdown owns this permission request.
      case 'download-photo':download();break;
-     case 'public':globalThis.paketPublicMesh=Boolean(request.listed);status(paketPublicMesh?'Mesh will be listed publicly.':'Invitation-only mesh.');break;
      case 'sound':localStorage.setItem('paket.sound',request.enabled?'on':'off');window.dispatchEvent(new CustomEvent('paket-sound-setting',{detail:Boolean(request.enabled)}));publish('paket-settings',{sound:Boolean(request.enabled)});break;
      case 'sensitivity':localStorage.setItem('paket.sensitivity',String(request.value));break;
      case 'resume':{const link=savedInvitation();if(!link)throw new Error('No saved mesh. Create one or paste an invitation.');send({action:'join',link});break;}
      case 'selection':locationGeneration++;searchGeneration++;status('',{locationPending:false,searchPending:false,places:[]});break;
      case 'refresh':{
-       if(refreshing)return;refreshing=true;status('Looking for public meshes…',{directoryPending:true});
-       try{const meshes=await availableMeshes();status(meshes.length?'Choose a public mesh.':'No public meshes yet.',{meshes:meshes.map(v=>({link:JSON.stringify(v),lat:v.origin.lat,lon:v.origin.lon,name:v.room.slice(0,6)}))});}
+       if(refreshing)return;refreshing=true;publish('paket-services',{directoryStatus:'Looking for public meshes…',directoryPending:true});
+       try{const meshes=await availableMeshes();publish('paket-services',{directoryStatus:meshes.length?`${meshes.length} public meshes`:'No public meshes yet.',meshes:meshes.map(v=>({link:JSON.stringify(v),lat:v.origin.lat,lon:v.origin.lon,name:v.room.slice(0,6)}))});}
+       catch(error){publish('paket-services',{directoryStatus:message(error)});}
        finally{refreshing=false;publish('paket-services',{directoryPending:false});}break;
      }
      case 'location':{
