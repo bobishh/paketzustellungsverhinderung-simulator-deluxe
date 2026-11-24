@@ -23,6 +23,12 @@ The deployment configuration targets:
 
 Run `npx wrangler deploy` from `web/` with the existing Cloudflare account. This creates the separate Worker and its custom domain; it does not replace the blog Worker.
 
+## Regional facades
+
+Each neighbourhood selects one of 18 facade kits from its starting coordinates. Each kit mixes three painted wall finishes with its own palette, window proportions and trim. Supported OpenStreetMap material and colour tags take precedence on individual buildings. The same building mesh still supplies the mapped foundations, doors and passages.
+
+The Eiffel Tower and Berlin TV Tower have dedicated 3D geometry at the Champ de Mars and Alexanderplatz. They stream in as the player approaches. Landmark models replace the generic building geometry at those sites.
+
 ## Identity and multiplayer
 
 Play as a guest or choose **Sign in with Identity**. The existing Identity portal signs authorization for this browser's device. The app verifies the challenge, origin, certificate chain and signed approval before adopting the identity. Private keys stay in browser storage. Returning from sign-in preserves a ride invitation.

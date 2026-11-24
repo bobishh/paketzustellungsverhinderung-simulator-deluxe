@@ -7,9 +7,11 @@ mod buildings;
 mod characters;
 mod dogs;
 mod elevation;
+mod facades;
 mod game_ui;
 mod graphics;
 mod jobs;
+mod landmarks;
 mod map;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_audio;
@@ -207,7 +209,13 @@ fn install_ride(app: &mut App) {
             Update,
             (
                 (
-                    (elevation::finish, follow_floor, stream_tiles).chain(),
+                    (
+                        elevation::finish,
+                        follow_floor,
+                        landmarks::update,
+                        stream_tiles,
+                    )
+                        .chain(),
                     browser_ui::input,
                     (shift::tick, jobs::new_day).chain(),
                     jobs::service_update,
@@ -718,6 +726,8 @@ fn jitter(index: u32) -> LatLon {
 
 fn setup(
     mut commands: Commands,
+    ride: Res<Ride>,
+    facade_library: Option<Res<facades::Library>>,
     assets: Res<AssetServer>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut images: ResMut<Assets<Image>>,
@@ -743,7 +753,15 @@ fn setup(
         let earth = scattering.add(ScatteringMedium::earth(256, 256));
         commands.spawn((Atmosphere::earth(earth), DespawnOnExit(Mode::Ride)));
     }
+    if facade_library.is_none() {
+        commands.insert_resource(facades::Library::new(
+            &mut images,
+            &mut materials,
+            !full_fidelity,
+        ));
+    }
     commands.insert_resource(StreetMaterials {
+        facades: facades::Neighbourhood::at(ride.origin),
         buildings: materials.add(surfaces::material(
             &mut images,
             surfaces::Surface::Plaster,
@@ -844,6 +862,7 @@ fn setup(
 
 #[derive(Resource)]
 struct StreetMaterials {
+    facades: facades::Neighbourhood,
     places: places::Kit,
     buildings: Handle<StandardMaterial>,
     asphalt: Handle<StandardMaterial>,
@@ -859,6 +878,7 @@ fn stream_tiles(
     mut meshes: ResMut<Assets<Mesh>>,
     models: Res<Models>,
     street_materials: Res<StreetMaterials>,
+    facade_library: Res<facades::Library>,
     mut jobs: ResMut<Jobs>,
     mut roads: ResMut<roads::Roads>,
     elevation: Res<elevation::Elevation>,
@@ -1005,6 +1025,7 @@ fn stream_tiles(
             &mut commands,
             &mut meshes,
             &street_materials,
+            &facade_library,
             &models,
             &scene,
             &mut ride.spawned,
@@ -1481,6 +1502,7 @@ fn spawn_tile(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     street_materials: &StreetMaterials,
+    facade_library: &facades::Library,
     models: &Models,
     scene: &MapScene,
     spawned: &mut HashMap<String, (Entity, usize)>,
@@ -1528,7 +1550,9 @@ fn spawn_tile(
         let link = raised_building(building, heights);
         let height = link.threshold.y - building_link(building).threshold.y;
         let foundation = buildings::foundation_bottom(building, |point| heights.at(point), height);
-        let mesh = meshes.add(shapes::lit(buildings::mesh(building, foundation)));
+        let (finish, tint, windows) = street_materials.facades.building(building);
+        let (details, walls) = buildings::exterior(building, foundation, tint, windows);
+        let mesh = meshes.add(shapes::lit(details));
         let collider = building_collider(building, foundation);
         let mut entity = commands.spawn((
             DespawnOnExit(Mode::Ride),
@@ -1542,6 +1566,14 @@ fn spawn_tile(
             entity.insert(collider);
         }
         let entity = entity.id();
+        if walls.count_vertices() > 0 {
+            commands.spawn((
+                Mesh3d(meshes.add(walls)),
+                MeshMaterial3d(facade_library.material(finish)),
+                Transform::IDENTITY,
+                ChildOf(entity),
+            ));
+        }
         if !building.accessory && !building.open_sided {
             jobs::spawn_door(commands, models, &building_link(building), entity);
         }

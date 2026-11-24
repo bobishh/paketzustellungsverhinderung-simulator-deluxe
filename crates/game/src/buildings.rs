@@ -6,16 +6,7 @@ use bevy::{
 };
 use paket_geo::{Building, Roof};
 
-use crate::to_world;
-
-const PLASTER: [[u8; 3]; 6] = [
-    [205, 196, 175],
-    [219, 208, 185],
-    [181, 166, 147],
-    [214, 197, 159],
-    [172, 124, 108],
-    [195, 194, 179],
-];
+use crate::{facades::Windows, to_world};
 
 pub(crate) const DOOR_WIDTH: f32 = 1.28;
 pub(crate) const DOOR_HEIGHT: f32 = 2.18;
@@ -155,8 +146,14 @@ pub(crate) fn wall_sections(
         .collect()
 }
 
-pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
+pub(crate) fn exterior(
+    building: &Building,
+    foundation: f32,
+    tint: [u8; 3],
+    windows: Windows,
+) -> (Mesh, Mesh) {
     let mut mesh = BuildingMesh::default();
+    let mut walls = BuildingMesh::default();
     let points: Vec<_> = building
         .footprint
         .iter()
@@ -171,7 +168,7 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
     let hash = building.id.bytes().fold(0usize, |hash, byte| {
         hash.wrapping_mul(31).wrapping_add(byte.into())
     });
-    let wall = linear(building.wall_color.unwrap_or(PLASTER[hash % PLASTER.len()]));
+    let wall = linear(tint);
     let roof = linear(building.roof_color.unwrap_or(match building.roof {
         Roof::Flat => [86, 84, 77],
         _ if hash % 4 == 0 => [75, 76, 72],
@@ -180,7 +177,6 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
     let eave = building.height as f32;
     let corners: Vec<_> = points.iter().map(|point| point.with_y(eave)).collect();
     let inside = inside_corners(&points, winding);
-    let (door_edge, _, _) = doorway(building);
 
     for (index, &a) in points.iter().enumerate() {
         let b = points[(index + 1) % points.len()];
@@ -193,12 +189,11 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
             for side in [along, outward, -along, -outward] {
                 let width = Vec3::Y.cross(side) * size;
                 let start = base + side * size * 0.5 - width * 0.5 + Vec3::Y * foundation;
-                mesh.wall_panel(start, width, eave - foundation, side, wall);
+                walls.wall_panel(start, width, eave - foundation, side, wall);
             }
             mesh.wall_panel(a + Vec3::Y * (eave - 0.16), b - a, 0.16, outward, roof);
         } else {
             let width = a.distance(b);
-            let door = !building.accessory && index == door_edge && width > DOOR_WIDTH + 0.2;
             let interior = linear([214, 210, 196]);
             let sections = wall_sections(building, index, foundation);
             let back = |distance: f32| {
@@ -212,7 +207,7 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
             };
             for (section, &(start, span, bottom, top)) in sections.iter().enumerate() {
                 let base = a + along * start + Vec3::Y * bottom;
-                mesh.wall_panel(base, along * span, top - bottom, outward, wall);
+                walls.wall_panel(base, along * span, top - bottom, outward, wall);
                 let inner_start = back(start).with_y(bottom);
                 let inner_end = back(start + span).with_y(bottom);
                 mesh.wall_panel(
@@ -249,7 +244,7 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
                 }
             }
             if !building.accessory {
-                mesh.facade(a, b, eave, outward, door, &openings(building, index));
+                mesh.facade(a, b, eave, outward, windows, &openings(building, index));
             }
         }
     }
@@ -303,7 +298,14 @@ pub(crate) fn mesh(building: &Building, foundation: f32) -> Mesh {
             }
         }
     }
-    mesh.finish()
+    (mesh.finish(), walls.finish())
+}
+
+#[cfg(test)]
+fn mesh(building: &Building, foundation: f32) -> Mesh {
+    let (mut details, walls) = exterior(building, foundation, [205, 196, 175], Windows::DEFAULT);
+    details.merge(&walls).unwrap();
+    details
 }
 
 fn linear([r, g, b]: [u8; 3]) -> [f32; 4] {
@@ -333,7 +335,17 @@ impl BuildingMesh {
         .with_inserted_indices(Indices::U32(self.indices))
     }
 
-    fn face<const N: usize>(&mut self, mut points: [Vec3; N], outward: Vec3, color: [f32; 4]) {
+    fn face<const N: usize>(&mut self, points: [Vec3; N], outward: Vec3, color: [f32; 4]) {
+        self.projected_face(points, outward, color, None);
+    }
+
+    fn projected_face<const N: usize>(
+        &mut self,
+        mut points: [Vec3; N],
+        outward: Vec3,
+        color: [f32; 4],
+        wall_axis: Option<Vec3>,
+    ) {
         let mut normal = (points[1] - points[0]).cross(points[2] - points[0]);
         if normal.dot(outward) < 0.0 {
             points.reverse();
@@ -344,10 +356,15 @@ impl BuildingMesh {
         }
         let start = self.positions.len() as u32;
         let normal = normal.normalize();
-        let u = (points[1] - points[0]).normalize();
-        let v = normal.cross(u);
+        let (u, v, scale) = wall_axis.map_or_else(
+            || {
+                let u = (points[1] - points[0]).normalize();
+                (u, normal.cross(u), 1.5)
+            },
+            |axis| (axis, Vec3::NEG_Y, 1.0),
+        );
         self.uv
-            .extend(points.iter().map(|p| Vec2::new(p.dot(u), p.dot(v)) / 1.5));
+            .extend(points.iter().map(|p| Vec2::new(p.dot(u), p.dot(v)) / scale));
         self.positions.extend(points);
         self.normals.extend([normal; N]);
         self.colors.extend([color; N]);
@@ -365,10 +382,11 @@ impl BuildingMesh {
         color: [f32; 4],
     ) {
         let up = Vec3::Y * height;
-        self.face(
+        self.projected_face(
             [start, start + width, start + width + up, start + up],
             outward,
             color,
+            Some(width.normalize_or_zero()),
         );
     }
 
@@ -378,7 +396,7 @@ impl BuildingMesh {
         b: Vec3,
         height: f32,
         outward: Vec3,
-        _door: bool,
+        windows: Windows,
         openings: &[(f32, f32, f32)],
     ) {
         let edge = b - a;
@@ -387,7 +405,7 @@ impl BuildingMesh {
             return;
         }
         let along = edge / width;
-        let trim = linear([212, 207, 192]);
+        let trim = linear(windows.trim);
         let glass = linear([53, 72, 78]);
         let plinth = linear([117, 112, 103]);
         let mut boundaries = vec![0.0, width];
@@ -407,10 +425,10 @@ impl BuildingMesh {
                 );
             }
         }
-        let bays = (width / 3.2).floor().max(1.0) as usize;
+        let bays = (width / windows.spacing).floor().max(1.0) as usize;
         let floors = (height / 2.8).round().max(1.0) as usize;
         let floor_height = height / floors as f32;
-        let window_width = (width / bays as f32 * 0.42).min(1.42);
+        let window_width = (width / bays as f32 * 0.42).min(windows.width);
         for floor in 0..floors {
             for bay in 0..bays {
                 let x = (bay as f32 + 0.5) * width / bays as f32 - window_width * 0.5;
@@ -421,7 +439,7 @@ impl BuildingMesh {
                     continue;
                 }
                 let corner = a + along * x + Vec3::Y * y;
-                let window_height = (floor_height * 0.46).min(1.5);
+                let window_height = (floor_height * 0.64).min(windows.height);
                 self.wall_panel(
                     corner + outward * 0.025,
                     along * window_width,
@@ -549,6 +567,7 @@ mod tests {
             roof: Roof::Flat,
             roof_height: None,
             wall_color: None,
+            wall_finish: None,
             roof_color: None,
         }
     }

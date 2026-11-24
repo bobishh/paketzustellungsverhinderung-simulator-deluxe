@@ -3,6 +3,7 @@
 //! Tiles are only a fetch size. The session origin stays fixed while the
 //! bicycle crosses them.
 
+pub mod architecture;
 mod entrances;
 pub mod landscape;
 pub mod places;
@@ -59,6 +60,7 @@ pub struct Building {
     pub roof: Roof,
     pub roof_height: Option<f32>,
     pub wall_color: Option<[u8; 3]>,
+    pub wall_finish: Option<architecture::WallFinish>,
     pub roof_color: Option<[u8; 3]>,
 }
 
@@ -217,13 +219,28 @@ pub fn parse_overpass(bytes: &[u8], origin: LatLon) -> Result<Scene, String> {
             })
             .collect();
         let id = format!("way/{}", element.id);
+        if architecture::Landmark::ALL
+            .iter()
+            .any(|tower| tower.osm_id() == id)
+        {
+            continue;
+        }
         if element
             .tags
             .get("building")
             .is_some_and(|kind| kind != "no")
         {
             match building_from_ring(&id, &element.tags, points, origin) {
-                Some(building) => buildings.push(building),
+                Some(building) => {
+                    const VECTOR_FEATURE_ID_START: u64 = 1_000_000_000_000_000;
+                    if element.id < VECTOR_FEATURE_ID_START
+                        || !architecture::Landmark::ALL
+                            .iter()
+                            .any(|tower| tower.replaces_vector_part(&building, origin))
+                    {
+                        buildings.push(building);
+                    }
+                }
                 None => skipped += 1,
             }
         } else if let Some(highway) = element.tags.get("highway")
@@ -607,6 +624,9 @@ fn building_from_ring(
         roof,
         roof_height,
         wall_color: color_tag(tags, "building:colour"),
+        wall_finish: tags
+            .get("building:material")
+            .and_then(|material| architecture::WallFinish::from_osm(material)),
         roof_color: color_tag(tags, "roof:colour"),
     })
 }

@@ -119,7 +119,7 @@ fn noise(x: u32, y: u32) -> f32 {
     (n & 65535) as f32 / 32767.5 - 1.0
 }
 
-fn mipmapped(side: usize, mut pixels: Vec<u8>, srgb: bool) -> Image {
+pub(crate) fn mipmapped(side: usize, mut pixels: Vec<u8>, srgb: bool) -> Image {
     let mut image = Image::new_uninit(
         Extent3d {
             width: side as u32,

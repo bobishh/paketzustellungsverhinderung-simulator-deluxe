@@ -26,3 +26,6 @@ The Körtestraße fixture records public map geometry used to regress courtyard 
 The Humboldtstraße and Jasperallee bridge fixtures are © OpenStreetMap contributors under the ODbL.
 Elevation tiles come from the [Mapzen Terrain Tiles open dataset](https://registry.opendata.aws/terrain-tiles/).
 The dataset combines multiple regional and global elevation sources. See [Mapzen's data attribution and licenses](https://github.com/tilezen/joerd/blob/master/docs/attribution.md) for the source notices, including Copernicus EU-DEM.
+
+The facade region boundaries use the [Natural Earth 1:50m Admin 0 Map Units](https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/) (v5.1.2, [public domain](https://www.naturalearthdata.com/about/terms-of-use/)). They are bundled as quantized and grouped land outlines. The painted PNG swatches in `assets/facades/` were generated for the games.
+The [Eiffel Tower](https://www.openstreetmap.org/way/5013364) and [Berlin TV Tower](https://www.openstreetmap.org/way/556435241) use OpenStreetMap positions. Their original low-poly geometry follows dimensions published by the [Eiffel Tower operator](https://www.toureiffel.paris/en/the-monument/key-figures) and [Berlin's monument register](https://denkmaldatenbank.berlin.de/daobj.php?obj_dok_nr=09065023).
