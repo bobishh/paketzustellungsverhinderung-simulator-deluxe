@@ -78,9 +78,11 @@ fn compose(
         let courier_heading = rotation * Quat::from_rotation_y(0.91);
         let courier_position =
             ground(base + right * 0.58) + Vec3::Y * crate::roads::surface_rise(&elevation.heights);
+        let courier_pose = Transform::from_translation(courier_position + Vec3::Y * 0.035)
+            .with_rotation(courier_heading * Quat::from_rotation_x(-0.18));
         let courier = commands
             .spawn((
-                Transform::from_translation(courier_position).with_rotation(courier_heading),
+                courier_pose,
                 Visibility::default(),
                 HoldingParcel,
                 DespawnOnExit(Mode::Ride),
@@ -95,10 +97,7 @@ fn compose(
             ))
             .id();
         models.parcel(&mut commands, box_root);
-        let dog_position = ground(base + forward * 0.96 + right * 1.09)
-            + Vec3::Y * crate::roads::surface_rise(&elevation.heights);
-        let dog_pose =
-            Transform::from_translation(dog_position).looking_to(forward - right * 0.35, Vec3::Y);
+        let dog_pose = bite_pose(courier_pose, courier_heading);
         let dog = commands
             .spawn((dog_pose, Visibility::default(), DespawnOnExit(Mode::Ride)))
             .id();
@@ -124,13 +123,24 @@ fn compose(
     let forward = rotation * Vec3::NEG_Z;
     let right = rotation * Vec3::X;
     if let Ok((mut camera, mut projection)) = cameras.single_mut() {
-        let focus = base - forward * 1.1 + right * 0.69 + Vec3::Y * 0.80;
-        *camera = Transform::from_translation(base + forward * 4.5 + right * 0.25 + Vec3::Y * 1.36)
+        let focus = base - forward * 1.1 + right * 0.70 + Vec3::Y * 0.91;
+        *camera = Transform::from_translation(base + forward * 4.5 + right * 0.95 + Vec3::Y * 1.36)
             .looking_at(focus, Vec3::Y);
         if let Projection::Perspective(lens) = &mut *projection {
             lens.fov = 39_f32.to_radians();
         }
     }
+}
+
+fn bite_pose(courier: Transform, heading: Quat) -> Transform {
+    // Frame the terrier mid-lunge with its muzzle against the back of the trousers.
+    // These points are in the actor roots' coordinates with their meshes facing -Z.
+    let trousers = courier.transform_point(Vec3::new(0.155, 0.84, 0.185));
+    let muzzle = Vec3::new(0.13, 0.36, -0.26);
+    let direction = heading * Vec3::new(-0.36, 0.53, -1.0);
+    let mut pose = Transform::IDENTITY.looking_to(direction, Vec3::Y);
+    pose.translation = trousers - pose.rotation * muzzle;
+    pose
 }
 
 fn dress_chamissoplatz(
