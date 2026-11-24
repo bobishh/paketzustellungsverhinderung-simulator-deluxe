@@ -2,13 +2,13 @@ import {observeGame,clickUi,fact,hud,selected,waitRide} from './bevy-ui';
 import {expect, test} from '@playwright/test';
 
 test.beforeEach(async({page})=>{await observeGame(page);});
-test('a real shift loads the Quaternius pedestrians and traffic models', async ({page}) => {
+test('a real shift loads the new courier, adult and child pedestrians, and the van decal', async ({page}) => {
   test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU build.');
   const models = new Set<string>();
   const errors: string[] = [];
   page.on('response', response => {
     const path = new URL(response.url()).pathname;
-    if (path.startsWith('/assets/street/') && response.ok()) models.add(path.split('/').pop()!);
+    if ((path.startsWith('/assets/street/') || path === '/assets/branding/drehlss-van.png') && response.ok()) models.add(path.split('/').pop()!);
   });
   page.on('console', message => {
     if (message.type() === 'error' && /assets\/street|gltf/i.test(message.text())) {
@@ -19,17 +19,23 @@ test('a real shift loads the Quaternius pedestrians and traffic models', async (
   await waitRide(page);
   await expect.poll(async()=>(await hud(page)).navigation).toBeTruthy();
   await expect.poll(() => [...models].sort()).toEqual([
+    'apricot-pullover.glb', 'blue-coat.glb', 'blue-sweatshirt.glb',
     'car-compact.glb', 'car-sedan.glb', 'car-sport.glb', 'car-suv.glb', 'car-taxi.glb',
-    'courier.glb', 'delivery-van.glb', 'man-casual.glb', 'man-hoodie.glb',
-    'shiba.glb', 'woman-casual.glb', 'woman-formal.glb',
+    'courier.glb', 'delivery-van.glb', 'drehlss-van.png', 'green-overshirt.glb',
+    'ochre-sweatshirt.glb', 'plum-hoodie.glb', 'raspberry-jacket.glb', 'shiba.glb',
   ]);
   expect(errors).toEqual([]);
   const courier = await page.request.get('/assets/street/courier.glb');
   expect(courier.ok()).toBeTruthy();
   const glb = await courier.body();
   const model = JSON.parse(glb.toString('utf8', 20, 20 + glb.readUInt32LE(12)));
-  expect(model.nodes.some((node: {name: string}) => node.name === 'CourierHead')).toBeTruthy();
-  expect(model.nodes.some((node: {name: string}) => node.name === 'Worker_Head')).toBeFalsy();
+  expect(model.skins[0].joints).toHaveLength(28);
+  expect(model.animations.map((clip: {name: string}) => clip.name)).toEqual([
+    'Idle', 'Walk', 'Run', 'CarryIdle', 'CarryWalk', 'CarryRun', 'Recoil',
+  ]);
+  expect(model.nodes.map((node: {name: string}) => node.name)).toEqual(expect.arrayContaining([
+    'CourierSkin', 'PalmLeft', 'PalmRight', 'SoleLeft', 'SoleRight',
+  ]));
 
   await page.locator('#game').screenshot({path: test.info().outputPath('street-models.png')});
   await page.keyboard.press('v');
@@ -53,7 +59,11 @@ test('the courier walks with both hands on the parcel and both soles clear of th
     });
   });
   await page.goto('/?lat=52.4895&lon=13.3908&inspect-courier');
-  await expect.poll(async()=>(await hud(page)).prompt,{timeout:45_000}).toContain('Collect this parcel');
+  await waitRide(page);
+  await expect.poll(async () => {
+    const ui = await fact<{texts: {text: string}[]}>(page, 'paket-ui-regions');
+    return ui?.texts.some(({text}) => text.includes('Collect this parcel'));
+  }).toBe(true);
   const samples = () => page.evaluate(() => (window as unknown as Window & {courierSamples: Sample[]}).courierSamples);
   await page.keyboard.press('e');
   await expect.poll(async()=>(await selected(page))?.state).toBe('carrying');

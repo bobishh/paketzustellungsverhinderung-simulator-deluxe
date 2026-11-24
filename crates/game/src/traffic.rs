@@ -157,7 +157,9 @@ pub(crate) fn spawn(
                         ChildOf(root),
                     ))
                     .id();
-                models.citizens.spawn(&mut commands, visual, world.people);
+                models
+                    .citizens
+                    .spawn_pedestrian(&mut commands, visual, world.people);
                 world.people += 1;
             } else {
                 commands.entity(root).insert(Car);

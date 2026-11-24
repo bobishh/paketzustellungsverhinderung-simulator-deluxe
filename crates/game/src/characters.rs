@@ -9,6 +9,7 @@ use crate::actors::{HoldingParcel, Player};
 
 pub(crate) struct Kit {
     residents: [Model; 4],
+    young_pedestrians: [Model; 3],
     pub courier: Model,
 }
 
@@ -60,18 +61,36 @@ enum Rig {
 impl Kit {
     pub(crate) fn new(assets: &AssetServer, graphs: &mut Assets<AnimationGraph>) -> Self {
         let residents = [
-            "street/man-casual.glb",
-            "street/woman-casual.glb",
-            "street/man-hoodie.glb",
-            "street/woman-formal.glb",
+            "street/green-overshirt.glb",
+            "street/apricot-pullover.glb",
+            "street/plum-hoodie.glb",
+            "street/blue-coat.glb",
+        ]
+        .map(|path| Model::load(assets, graphs, path, Rig::Resident));
+        let young_pedestrians = [
+            "street/blue-sweatshirt.glb",
+            "street/raspberry-jacket.glb",
+            "street/ochre-sweatshirt.glb",
         ]
         .map(|path| Model::load(assets, graphs, path, Rig::Resident));
         let courier = Model::load(assets, graphs, "street/courier.glb", Rig::Courier);
-        Self { residents, courier }
+        Self {
+            residents,
+            young_pedestrians,
+            courier,
+        }
     }
 
     pub(crate) fn spawn(&self, commands: &mut Commands, parent: Entity, variant: usize) {
         self.residents[variant % self.residents.len()].spawn(commands, parent);
+    }
+    pub(crate) fn spawn_pedestrian(&self, commands: &mut Commands, parent: Entity, index: usize) {
+        let group = index / 3;
+        if index % 3 == 2 {
+            self.young_pedestrians[group % self.young_pedestrians.len()].spawn(commands, parent);
+        } else {
+            self.spawn(commands, parent, index - group);
+        }
     }
 }
 
@@ -109,8 +128,8 @@ impl Model {
             recoil: clip(6),
         });
         let (scale, lift, stride_speed, run_threshold) = match rig {
-            Rig::Resident => (0.95, 0., 1.4, f32::INFINITY),
-            Rig::Courier => (0.95, 0., 2.15, 4.2),
+            Rig::Resident => (1., 0., 1.4, f32::INFINITY),
+            Rig::Courier => (1., 0., 2.15, 4.2),
             Rig::Dog => (0.22, 0.03, 1.5, 3.1),
         };
         Self {

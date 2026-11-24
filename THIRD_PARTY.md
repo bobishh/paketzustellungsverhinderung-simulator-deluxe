@@ -2,11 +2,11 @@ SquareFrameBicycle is from the Public Transport pack by Quaternius, February 201
 Source: https://opengameart.org/content/lowpoly-public-transport
 The original prototype asset, `assets/bicycle.glb`, was converted from `SquareFrameBicycle.obj` and scaled to 0.66 m wheels.
 
-The four animated characters in `assets/street/` come from Quaternius's [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) and [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html) packs (CC0). The GLB exports include the original meshes, skins, materials, and Idle and Walk clips.
+The animated courier and seven pedestrian models were generated for Paket. They use the Human skeleton and Idle, Walk, Sprint, and Hit Chest motion from [Mesh2Motion](https://github.com/Mesh2Motion/mesh2motion-app) (CC0). The courier's carrying clips adapt the motion to the in-game parcel. The van decal features the game's original courier illustration.
 
 The compact car, sedan, and SUV in `assets/street/` were converted from `NormalCar2.blend`, `NormalCar1.blend`, and `SUV.blend` in the [Quaternius Cars Pack](https://quaternius.com/packs/cars.html) (CC0). The GLB exports are aligned with the game's traffic orientation and scale.
 
-The courier combines the Worker body and Casual head from [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularcharacters.html) (CC0), with an orange shirt and game-specific parcel poses. The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
+The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
 
 The delivery van is an adapted ambulance from the [Public Transport Pack](https://quaternius.com/packs/publictransport.html) (CC0). The taxi and sports car are from the Cars Pack above. The gameplay exports use names and pivots for the turning wheels.
 
