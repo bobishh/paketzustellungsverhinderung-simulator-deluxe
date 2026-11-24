@@ -75,6 +75,9 @@ pub(crate) fn update(
         paket_session::Avatar::Dog => "dog",
         _ => "courier",
     });
+    if p.form == paket_session::Avatar::Dog {
+        hud["dogBreed"] = serde_json::json!(p.dog_breed);
+    }
     hud["photo"] = serde_json::json!(p.photo);
     hud["photoReady"] = serde_json::json!(jobs.photo_ready);
     hud["stunSeconds"] = serde_json::json!((p.stunned_until - clock.elapsed_secs()).max(0.0));

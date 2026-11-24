@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 use paket_geo::Street;
+use paket_session::DogBreed;
+use rand::prelude::IndexedRandom;
 
 use crate::{actors::Player, to_world};
 
@@ -38,11 +40,32 @@ pub(crate) fn leap_height(progress: f32) -> f32 {
     (progress.clamp(0., 1.) * std::f32::consts::PI).sin() * 0.65
 }
 
-pub(crate) struct DogKit(crate::characters::Model);
+const BREEDS: [DogBreed; 3] = [DogBreed::JackRussell, DogBreed::Beagle, DogBreed::Labrador];
+
+pub(crate) fn random_breed() -> DogBreed {
+    *BREEDS.choose(&mut rand::rng()).unwrap()
+}
+
+pub(crate) fn body_size(breed: DogBreed) -> (f32, f32) {
+    match breed {
+        DogBreed::JackRussell => (0.13, 0.23),
+        DogBreed::Beagle => (0.16, 0.27),
+        DogBreed::Labrador => (0.22, 0.36),
+    }
+}
+
+pub(crate) struct DogKit {
+    terrier: crate::characters::Model,
+    street_breeds: [crate::characters::Model; 2],
+}
 
 impl DogKit {
     pub(crate) fn new(assets: &AssetServer, graphs: &mut Assets<AnimationGraph>) -> Self {
-        Self(crate::characters::Model::shiba(assets, graphs))
+        Self {
+            terrier: crate::characters::Model::dog(assets, graphs, "street/dog-jack-russell.glb"),
+            street_breeds: ["street/dog-beagle.glb", "street/dog-labrador.glb"]
+                .map(|path| crate::characters::Model::dog(assets, graphs, path)),
+        }
     }
 
     pub(crate) fn spawn(&self, commands: &mut Commands, street: &Street, parent: Entity) {
@@ -92,7 +115,7 @@ impl DogKit {
                 ChildOf(parent),
             ))
             .id();
-        self.model(commands, dog);
+        self.model(commands, dog, BREEDS[((hash / 3) % 3) as usize]);
     }
 
     pub(crate) fn at_door(&self, commands: &mut Commands, position: Vec3, outward: Vec3) {
@@ -114,11 +137,16 @@ impl DogKit {
                 DeliveryDog,
             ))
             .id();
-        self.model(commands, dog);
+        self.model(commands, dog, DogBreed::JackRussell);
     }
 
-    pub(crate) fn model(&self, commands: &mut Commands, root: Entity) {
-        self.0.spawn(commands, root);
+    pub(crate) fn model(&self, commands: &mut Commands, root: Entity, breed: DogBreed) {
+        let model = match breed {
+            DogBreed::JackRussell => &self.terrier,
+            DogBreed::Beagle => &self.street_breeds[0],
+            DogBreed::Labrador => &self.street_breeds[1],
+        };
+        model.spawn(commands, root);
     }
 }
 

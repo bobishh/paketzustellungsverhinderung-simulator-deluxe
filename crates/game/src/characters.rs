@@ -95,8 +95,12 @@ impl Kit {
 }
 
 impl Model {
-    pub(crate) fn shiba(assets: &AssetServer, graphs: &mut Assets<AnimationGraph>) -> Self {
-        Self::load(assets, graphs, "street/shiba.glb", Rig::Dog)
+    pub(crate) fn dog(
+        assets: &AssetServer,
+        graphs: &mut Assets<AnimationGraph>,
+        path: &'static str,
+    ) -> Self {
+        Self::load(assets, graphs, path, Rig::Dog)
     }
 
     fn load(
@@ -130,7 +134,7 @@ impl Model {
         let (scale, lift, stride_speed, run_threshold) = match rig {
             Rig::Resident => (1., 0., 1.4, f32::INFINITY),
             Rig::Courier => (1., 0., 2.15, 4.2),
-            Rig::Dog => (0.22, 0.03, 1.5, 3.1),
+            Rig::Dog => (1., 0., 1.5, 3.1),
         };
         Self {
             scene,

@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
     world_serialization::WorldInstanceReady,
 };
-use paket_session::{ActorPose, Avatar, VanPose};
+use paket_session::{ActorPose, Avatar, DogBreed, VanPose};
 
 use crate::{Mode, Ride, StreetMaterials, east_north};
 use paket_geo::tile_id;
@@ -19,11 +19,18 @@ pub(crate) enum Role {
 #[derive(Component)]
 pub(crate) struct Player {
     pub form: Avatar,
+    pub dog_breed: DogBreed,
     pub photo: bool,
     pub pitch: f32,
     pub stunned_until: f32,
     pub visual: Entity,
     pub parked: Option<Entity>,
+}
+
+impl Player {
+    pub(crate) fn half_height(&self) -> f32 {
+        half_height(self.form, self.dog_breed)
+    }
 }
 
 #[derive(Component)]
@@ -143,6 +150,7 @@ impl Models {
         commands: &mut Commands,
         parent: Entity,
         form: Avatar,
+        dog_breed: DogBreed,
         dogs: &crate::dogs::DogKit,
         y: f32,
     ) -> Entity {
@@ -158,7 +166,7 @@ impl Models {
                 commands.entity(root).insert(CourierGround(y));
                 self.citizens.courier.spawn(commands, root);
             }
-            Avatar::Dog => dogs.model(commands, root),
+            Avatar::Dog => dogs.model(commands, root, dog_breed),
             Avatar::Van => self.van(commands, root),
         }
         root
@@ -421,18 +429,21 @@ pub(crate) fn animate_vehicles(
     }
 }
 
-pub(crate) fn half_height(form: Avatar) -> f32 {
+pub(crate) fn half_height(form: Avatar, dog_breed: DogBreed) -> f32 {
     match form {
         Avatar::Courier => 0.87,
-        Avatar::Dog => 0.30,
+        Avatar::Dog => crate::dogs::body_size(dog_breed).1,
         Avatar::Van => 0.94,
     }
 }
 
-fn collider(form: Avatar) -> Collider {
+fn collider(form: Avatar, dog_breed: DogBreed) -> Collider {
     match form {
         Avatar::Courier => Collider::capsule(0.30, 1.14),
-        Avatar::Dog => Collider::capsule(0.19, 0.22),
+        Avatar::Dog => {
+            let (radius, half_height) = crate::dogs::body_size(dog_breed);
+            Collider::capsule(radius, 2.0 * (half_height - radius))
+        }
         Avatar::Van => Collider::cuboid(1.86, 1.88, 4.2),
     }
 }
@@ -450,13 +461,18 @@ pub(crate) fn spawn(
     } else {
         Avatar::Courier
     };
+    let dog_breed = if role == Role::Dog {
+        crate::dogs::random_breed()
+    } else {
+        DogBreed::default()
+    };
     let rotation = heading(direction);
     let ground = point;
     let entity = commands
         .spawn((
             RigidBody::Dynamic,
-            collider(form),
-            Transform::from_translation(ground + Vec3::Y * half_height(form))
+            collider(form, dog_breed),
+            Transform::from_translation(ground + Vec3::Y * half_height(form, dog_breed))
                 .with_rotation(rotation),
             Visibility::default(),
             LockedAxes::new().lock_rotation_x().lock_rotation_z(),
@@ -478,9 +494,9 @@ pub(crate) fn spawn(
                 Visibility::default(),
                 RigidBody::Static,
                 Collider::compound(vec![(
-                    Vec3::Y * half_height(Avatar::Van),
+                    Vec3::Y * half_height(Avatar::Van, DogBreed::default()),
                     Quat::IDENTITY,
-                    collider(Avatar::Van),
+                    collider(Avatar::Van, DogBreed::default()),
                 )]),
                 ParkedVan,
                 DespawnOnExit(Mode::Ride),
@@ -489,9 +505,17 @@ pub(crate) fn spawn(
         models.van(commands, van);
         van
     });
-    let visual = models.avatar(commands, entity, form, dogs, -half_height(form));
+    let visual = models.avatar(
+        commands,
+        entity,
+        form,
+        dog_breed,
+        dogs,
+        -half_height(form, dog_breed),
+    );
     commands.entity(entity).insert(Player {
         form,
+        dog_breed,
         photo: false,
         pitch: 0.0,
         stunned_until: 0.0,
@@ -597,7 +621,8 @@ pub(crate) fn interact(
             return;
         }
         let filter = SpatialQueryFilter::from_excluded_entities([entity, parked]);
-        let ground = transform.translation - Vec3::Y * half_height(Avatar::Van);
+        let ground =
+            transform.translation - Vec3::Y * half_height(Avatar::Van, DogBreed::default());
         let Some(exit) = [transform.right(), -transform.right()]
             .into_iter()
             .find(|direction| {
@@ -612,7 +637,8 @@ pub(crate) fn interact(
         van.rotation = transform.rotation;
         *visible = Visibility::Inherited;
         commands.entity(parked).remove::<ColliderDisabled>();
-        transform.translation = ground + exit * 1.55 + Vec3::Y * half_height(Avatar::Courier);
+        transform.translation =
+            ground + exit * 1.55 + Vec3::Y * half_height(Avatar::Courier, DogBreed::default());
         Avatar::Courier
     } else {
         if horizontal_distance(transform.translation, van.translation) > 3.5 {
@@ -620,20 +646,24 @@ pub(crate) fn interact(
         }
         *visible = Visibility::Hidden;
         commands.entity(parked).insert(ColliderDisabled);
-        transform.translation = van.translation + Vec3::Y * half_height(Avatar::Van);
+        transform.translation =
+            van.translation + Vec3::Y * half_height(Avatar::Van, DogBreed::default());
         transform.rotation = van.rotation;
         Avatar::Van
     };
     velocity.0 = Vec3::ZERO;
     spin.0 = Vec3::ZERO;
-    commands.entity(entity).insert(collider(next));
+    commands
+        .entity(entity)
+        .insert(collider(next, player.dog_breed));
     commands.entity(player.visual).despawn();
     player.visual = models.avatar(
         &mut commands,
         entity,
         next,
+        player.dog_breed,
         &street.dogs,
-        -half_height(next),
+        -half_height(next, player.dog_breed),
     );
     player.form = next;
     player.pitch = 0.0;
@@ -856,7 +886,13 @@ pub(crate) fn camera_follow(
         if let Ok(mut visible) = visuals.get_mut(player.visual) {
             *visible = Visibility::Hidden;
         }
-        let eye = actor.translation + Vec3::Y * if indoors { 0.22 } else { 0.69 };
+        let eye = actor.translation
+            + Vec3::Y
+                * if indoors {
+                    player.half_height() * 0.72
+                } else {
+                    0.69
+                };
         *camera = Transform::from_translation(eye + forward * if indoors { 0.18 } else { 0.12 })
             .with_rotation(actor.rotation * Quat::from_rotation_x(player.pitch) * jolt);
         return;
@@ -865,7 +901,11 @@ pub(crate) fn camera_follow(
         && (keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight));
     let (back, height, shoulder) = match player.form {
         Avatar::Van => (7.1, 0.70, 0.0),
-        Avatar::Dog => (2.5, 0.26, 0.14),
+        Avatar::Dog => (
+            1.75 + 2.5 * player.half_height(),
+            0.86 * player.half_height(),
+            0.14,
+        ),
         Avatar::Courier => (3.6, if crouching { 0.22 } else { 0.61 }, 0.45),
     };
     let pivot = actor.translation + Vec3::Y * height;
@@ -919,9 +959,10 @@ pub(crate) fn pose(
     let yaw = |t: &Transform| t.rotation.to_euler(EulerRot::YXZ).0;
     ActorPose {
         avatar: player.form,
+        dog_breed: (player.form == Avatar::Dog).then_some(player.dog_breed),
         east: point.x,
         north: -point.z,
-        up: point.y - half_height(player.form),
+        up: point.y - player.half_height(),
         heading: yaw(transform),
         velocity_east: velocity.0.x,
         velocity_north: -velocity.0.z,

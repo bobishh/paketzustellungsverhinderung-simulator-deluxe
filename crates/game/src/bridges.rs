@@ -466,7 +466,7 @@ pub(crate) fn rebuild(
     }
     // The first tile can spawn a player on a bridge before its deck is built.
     for (mut transform, player) in &mut actors {
-        let half = player.map_or(0., |p| crate::actors::half_height(p.form));
+        let half = player.map_or(0., Player::half_height);
         // Streaming a neighbouring tile must not pull somebody standing
         // underneath an already loaded overpass onto its roof.
         if previous
@@ -619,6 +619,7 @@ mod tests {
             .spawn((
                 Player {
                     form,
+                    dog_breed: Default::default(),
                     photo: false,
                     pitch: 0.,
                     stunned_until: 0.,
@@ -628,8 +629,12 @@ mod tests {
                 crate::actors::Controller::default(),
                 RigidBody::Dynamic,
                 collider,
-                Transform::from_xyz(-35., crate::actors::half_height(form), 0.)
-                    .looking_to(Vec3::X, Vec3::Y),
+                Transform::from_xyz(
+                    -35.,
+                    crate::actors::half_height(form, Default::default()),
+                    0.,
+                )
+                .looking_to(Vec3::X, Vec3::Y),
                 LinearVelocity::ZERO,
                 AngularVelocity::ZERO,
                 LockedAxes::new().lock_rotation_x().lock_rotation_z(),

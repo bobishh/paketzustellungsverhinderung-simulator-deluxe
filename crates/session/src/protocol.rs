@@ -39,6 +39,15 @@ pub enum Avatar {
     Van,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DogBreed {
+    #[default]
+    JackRussell,
+    Beagle,
+    Labrador,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct VanPose {
     pub east: f32,
@@ -55,6 +64,8 @@ fn legacy_ground_height() -> f32 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActorPose {
     pub avatar: Avatar,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dog_breed: Option<DogBreed>,
     pub east: f32,
     pub north: f32,
     pub up: f32,
@@ -216,6 +227,23 @@ impl Fact {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dog_breed_round_trips_and_older_poses_can_omit_it() {
+        let pose: ActorPose = serde_json::from_str(
+            r#"{"avatar":"dog","east":1,"north":2,"up":0,"heading":0,"velocity_east":0,"velocity_north":0,"parked_van":null}"#,
+        )
+        .unwrap();
+        assert_eq!(pose.dog_breed, None);
+
+        let pose = ActorPose {
+            dog_breed: Some(DogBreed::Labrador),
+            ..pose
+        };
+        let decoded: ActorPose =
+            serde_json::from_str(&serde_json::to_string(&pose).unwrap()).unwrap();
+        assert_eq!(decoded, pose);
+    }
+
     #[test]
     fn parked_van_elevation_round_trips_and_old_peers_stay_on_the_ground() {
         let pose: VanPose = serde_json::from_str(r#"{"east":1,"north":2,"heading":0}"#).unwrap();

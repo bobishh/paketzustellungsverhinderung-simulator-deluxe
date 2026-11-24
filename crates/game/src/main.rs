@@ -657,6 +657,7 @@ struct BuildingLink {
 struct RemoteActor {
     device: String,
     form: Avatar,
+    dog_breed: paket_session::DogBreed,
     position: Vec3,
     velocity: Vec3,
     rotation: Quat,
@@ -1068,7 +1069,7 @@ fn stay_on_ground(
         transform.translation = Vec3::ZERO;
     }
     transform.translation.y =
-        elevation.heights.at(transform.translation) + actors::half_height(player.form) + 0.15;
+        elevation.heights.at(transform.translation) + player.half_height() + 0.15;
     linear.0 = Vec3::ZERO;
     angular.0 = Vec3::ZERO;
 }
@@ -1173,6 +1174,7 @@ fn sync_peers(
                 sequence,
                 ActorPose {
                     avatar: Avatar::Courier,
+                    dog_breed: None,
                     east,
                     north,
                     up: up - 0.7,
@@ -1275,6 +1277,7 @@ fn sync_peers(
             RemoteActor {
                 device,
                 form: pose.avatar,
+                dog_breed: pose.dog_breed.unwrap_or_default(),
                 position,
                 velocity,
                 rotation: Quat::from_rotation_y(pose.heading),
@@ -1300,7 +1303,7 @@ fn sync_peers(
         if let Some(mut snapshot) = snapshots.remove(&remote.device)
             && (snapshot.sequence == 0 || snapshot.sequence > remote.sequence)
         {
-            if remote.form == snapshot.form {
+            if remote.form == snapshot.form && remote.dog_breed == snapshot.dog_breed {
                 snapshot.visual = remote.visual;
                 let mut motion = std::mem::replace(
                     &mut remote.motion,
@@ -1366,12 +1369,13 @@ fn remote_visuals(
     remote: &mut RemoteActor,
 ) {
     if remote.visual.is_none() {
-        remote.visual = Some(models.avatar(commands, entity, remote.form, dogs, 0.0));
+        remote.visual =
+            Some(models.avatar(commands, entity, remote.form, remote.dog_breed, dogs, 0.0));
     }
     if let Some(van) = remote.parked {
-        let visual = *remote
-            .van_visual
-            .get_or_insert_with(|| models.avatar(commands, entity, Avatar::Van, dogs, 0.0));
+        let visual = *remote.van_visual.get_or_insert_with(|| {
+            models.avatar(commands, entity, Avatar::Van, remote.dog_breed, dogs, 0.0)
+        });
         let inverse = transform.rotation.inverse();
         let ground = Vec3::new(van.east, van.up, -van.north);
         commands.entity(visual).insert(

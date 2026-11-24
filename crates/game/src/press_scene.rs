@@ -75,14 +75,12 @@ fn compose(
         };
         let forward = rotation * Vec3::NEG_Z;
         let right = rotation * Vec3::X;
-        let courier_heading = rotation * Quat::from_rotation_y(1.23);
-        let running = courier_heading * Vec3::NEG_Z;
+        let courier_heading = rotation * Quat::from_rotation_y(0.91);
+        let courier_position =
+            ground(base + right * 0.58) + Vec3::Y * crate::roads::surface_rise(&elevation.heights);
         let courier = commands
             .spawn((
-                Transform::from_translation(
-                    base + Vec3::Y * crate::roads::surface_rise(&elevation.heights),
-                )
-                .with_rotation(courier_heading * Quat::from_rotation_x(-0.14)),
+                Transform::from_translation(courier_position).with_rotation(courier_heading),
                 Visibility::default(),
                 HoldingParcel,
                 DespawnOnExit(Mode::Ride),
@@ -97,14 +95,16 @@ fn compose(
             ))
             .id();
         models.parcel(&mut commands, box_root);
-        // Stage the muzzle against the back of the courier's hip.
-        let hip = base - running * 0.04 + forward * 0.11 + Vec3::Y * 0.85;
-        let mut jump = Transform::IDENTITY.looking_to(running + Vec3::Y * 0.24, Vec3::Y);
-        jump.translation = hip - jump.rotation * Vec3::new(0., 0.54, -0.41);
+        let dog_position = ground(base + forward * 0.96 + right * 1.09)
+            + Vec3::Y * crate::roads::surface_rise(&elevation.heights);
+        let dog_pose =
+            Transform::from_translation(dog_position).looking_to(forward - right * 0.35, Vec3::Y);
         let dog = commands
-            .spawn((jump, Visibility::default(), DespawnOnExit(Mode::Ride)))
+            .spawn((dog_pose, Visibility::default(), DespawnOnExit(Mode::Ride)))
             .id();
-        materials.dogs.model(&mut commands, dog);
+        materials
+            .dogs
+            .model(&mut commands, dog, paket_session::DogBreed::JackRussell);
         commands.spawn((
             PointLight {
                 intensity: 180000.,
@@ -124,11 +124,11 @@ fn compose(
     let forward = rotation * Vec3::NEG_Z;
     let right = rotation * Vec3::X;
     if let Ok((mut camera, mut projection)) = cameras.single_mut() {
-        let focus = base - forward * 1.5 + right * 0.92 + Vec3::Y * 0.85;
-        *camera = Transform::from_translation(base + forward * 4.8 + right * 0.3 + Vec3::Y * 1.62)
+        let focus = base - forward * 1.1 + right * 0.69 + Vec3::Y * 0.80;
+        *camera = Transform::from_translation(base + forward * 4.5 + right * 0.25 + Vec3::Y * 1.36)
             .looking_at(focus, Vec3::Y);
         if let Projection::Perspective(lens) = &mut *projection {
-            lens.fov = 46_f32.to_radians();
+            lens.fov = 39_f32.to_radians();
         }
     }
 }

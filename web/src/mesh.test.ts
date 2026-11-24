@@ -13,6 +13,15 @@ it('rejects unrelated world coordinates, spoofed actor devices and oversized fac
   expect(validFact({ ...fact, pose: { ...fact.pose, east: NaN } }, origin)).toBe(false);
   expect(validFact({ ...fact, sequence: -1 }, origin)).toBe(false);
 });
+it('accepts the three dog breeds and a missing breed from older clients', () => {
+  const fact = {kind: 'actor', origin, device: 'alice', sequence: 2,
+    pose: {avatar: 'dog', east: 1, north: 2, up: 0, heading: 0, velocity_east: 0, velocity_north: 0, parked_van: null}};
+  expect(validFact(fact, origin)).toBe(true);
+  for (const dog_breed of ['jackRussell', 'beagle', 'labrador']) {
+    expect(validFact({...fact, pose: {...fact.pose, dog_breed}}, origin)).toBe(true);
+  }
+  expect(validFact({...fact, pose: {...fact.pose, dog_breed: 'unknown'}}, origin)).toBe(false);
+});
 it('recognizes a browser invite and rejects incompatible native or malformed invites', () => {
   const invite = { protocol: 'paket-web/3', origin, host: 'a'.repeat(64), room: 'b'.repeat(64), relay: 'https://relay.example/' };
   expect(decodeInvite(JSON.stringify(invite))).toEqual(invite);

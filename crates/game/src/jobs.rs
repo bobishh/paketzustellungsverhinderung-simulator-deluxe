@@ -2943,6 +2943,7 @@ mod tests {
         let mut jobs = Jobs::default();
         let mut actor = Player {
             form: Avatar::Courier,
+            dog_breed: Default::default(),
             photo: false,
             pitch: 0.0,
             stunned_until: 0.0,

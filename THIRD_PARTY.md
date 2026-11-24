@@ -6,7 +6,7 @@ The animated courier and seven pedestrian models were generated for Paket. They 
 
 The compact car, sedan, and SUV in `assets/street/` were converted from `NormalCar2.blend`, `NormalCar1.blend`, and `SUV.blend` in the [Quaternius Cars Pack](https://quaternius.com/packs/cars.html) (CC0). The GLB exports are aligned with the game's traffic orientation and scale.
 
-The Shiba Inu and its locomotion clips come from the [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) (CC0).
+The Jack Russell, beagle and Labrador models were generated for Paket. They use the Fox skeleton and adapted Idle, Walk and Run clips from Mesh2Motion (CC0).
 
 The delivery van is an adapted ambulance from the [Public Transport Pack](https://quaternius.com/packs/publictransport.html) (CC0). The taxi and sports car are from the Cars Pack above. The gameplay exports use names and pivots for the turning wheels.
 

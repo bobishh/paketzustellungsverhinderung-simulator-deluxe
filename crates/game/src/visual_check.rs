@@ -59,7 +59,9 @@ fn capture(
                 Visibility::default(),
             ))
             .id();
-        materials.dogs.model(&mut commands, root);
+        materials
+            .dogs
+            .model(&mut commands, root, paket_session::DogBreed::JackRussell);
         check.dog = Some(point);
     }
     let (focus, offset) = match check.shot {

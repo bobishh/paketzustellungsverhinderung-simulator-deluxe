@@ -21,8 +21,9 @@ test('a real shift loads the new courier, adult and child pedestrians, and the v
   await expect.poll(() => [...models].sort()).toEqual([
     'apricot-pullover.glb', 'blue-coat.glb', 'blue-sweatshirt.glb',
     'car-compact.glb', 'car-sedan.glb', 'car-sport.glb', 'car-suv.glb', 'car-taxi.glb',
-    'courier.glb', 'delivery-van.glb', 'drehlss-van.png', 'green-overshirt.glb',
-    'ochre-sweatshirt.glb', 'plum-hoodie.glb', 'raspberry-jacket.glb', 'shiba.glb',
+    'courier.glb', 'delivery-van.glb', 'dog-beagle.glb', 'dog-jack-russell.glb',
+    'dog-labrador.glb', 'drehlss-van.png', 'green-overshirt.glb',
+    'ochre-sweatshirt.glb', 'plum-hoodie.glb', 'raspberry-jacket.glb',
   ]);
   expect(errors).toEqual([]);
   const courier = await page.request.get('/assets/street/courier.glb');
@@ -46,6 +47,51 @@ test('a real shift loads the new courier, adult and child pedestrians, and the v
   } finally {
     await page.keyboard.up('w');
   }
+});
+
+test('the dog role starts with one of the three breeds and can move', async ({page}) => {
+  test.skip(!process.env.PAKET_REAL_GAME, 'Requires the real WebGPU build.');
+  const loaded = new Set<string>();
+  page.on('response', response => {
+    const file = new URL(response.url()).pathname.split('/').at(-1)!;
+    if (response.ok() && file.startsWith('dog-')) loaded.add(file);
+  });
+  await page.goto('/');
+  await clickUi(page, 'Play');
+  await clickUi(page, 'Dog');
+  await clickUi(page, 'Start shift');
+  await waitRide(page);
+  expect((await hud(page)).form).toBe('dog');
+  const paths: Record<string, string> = {
+    jackRussell: 'dog-jack-russell.glb', beagle: 'dog-beagle.glb', labrador: 'dog-labrador.glb',
+  };
+  const breed = (await hud(page)).dogBreed;
+  expect(paths[breed]).toBeDefined();
+  await expect.poll(() => loaded.has(paths[breed])).toBe(true);
+  const position = async () => (await fact<{position: [number, number]}>(page, 'paket-radar'))?.position;
+  await expect.poll(position).toBeDefined();
+  const start = (await position())!;
+  const distanceFromStart = async () => {
+    const current = (await position())!;
+    return Math.hypot(current[0] - start[0], current[1] - start[1]);
+  };
+  await page.keyboard.down('w');
+  try {
+    await expect.poll(distanceFromStart).toBeGreaterThan(0.75);
+  } finally {
+    await page.keyboard.up('w');
+  }
+  for (const status of ['Door rattles · 1/3', 'Door rattles · 2/3', 'Door latch gave way.']) {
+    await page.keyboard.press('e', {delay: 60});
+    await expect.poll(async () => (await hud(page)).status).toBe(status);
+  }
+  await page.keyboard.down('w');
+  try {
+    await expect.poll(distanceFromStart).toBeGreaterThan(3);
+  } finally {
+    await page.keyboard.up('w');
+  }
+  await page.locator('#game').screenshot({path: test.info().outputPath(`${breed}.png`)});
 });
 
 test('the courier walks with both hands on the parcel and both soles clear of the road', async ({page}) => {

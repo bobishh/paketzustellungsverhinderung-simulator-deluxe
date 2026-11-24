@@ -69,7 +69,11 @@ pub(crate) fn update(
         };
         let point = if player.form == Avatar::Van {
             // The van collider reaches the roof. Leave clearance for the mesh on slopes.
-            Some(actor.translation + Vec3::Y * (crate::actors::half_height(Avatar::Van) + 0.55))
+            Some(
+                actor.translation
+                    + Vec3::Y
+                        * (crate::actors::half_height(Avatar::Van, Default::default()) + 0.55),
+            )
         } else {
             let forward = actor.forward().as_vec3().with_y(0.).normalize_or_zero();
             let right = actor.right().as_vec3().with_y(0.).normalize_or_zero();

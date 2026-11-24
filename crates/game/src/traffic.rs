@@ -323,6 +323,7 @@ mod tests {
             .id();
         app.world_mut().spawn(Player {
             form: paket_session::Avatar::Courier,
+            dog_breed: Default::default(),
             photo: false,
             pitch: 0.,
             stunned_until: 0.,

@@ -115,10 +115,14 @@ test('the Bevy welcome artwork and Play remain inside desktop and phone screens'
     await expect.poll(async()=>{
       const view=await ui(page);
       const play=view?.regions.find((r:any)=>r.label==='Play');
-      const art=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('landing/delivery-day.png'));
+      const art=view?.images.find((image:any)=>image.loaded&&image.path?.endsWith('landing/chamissoplatz.png'));
+      const title=view?.texts.find((t:any)=>t.text.includes('Paketzustellungs-'));
+      const portrait=size.width<620||size.width<size.height*0.95;
       const logo=view?.images.some((image:any)=>image.path?.endsWith('branding/drehlss-van.png'));
       return Boolean(play&&play.x>=0&&play.y>=0&&play.x+play.width<=size.width&&play.y+play.height<=size.height&&
-        play.width<=220&&art?.width===size.width&&art?.height===size.height&&!logo&&
+        title&&art&&title.x>=0&&title.y>=0&&title.x+title.width<=size.width&&
+        play.width<=220&&!logo&&
+        (portrait ? art.y+art.height<=title.y+1 : title.x+title.width<=art.x+1)&&
         !view.regions.some((r:any)=>['Profile','Share mesh','Fullscreen'].includes(r.label)));
     }).toBe(true);
     expect(await page.evaluate(()=>[document.documentElement.scrollWidth-innerWidth,document.documentElement.scrollHeight-innerHeight])).toEqual([0,0]);
@@ -132,6 +136,14 @@ test('the Bevy welcome artwork and Play remain inside desktop and phone screens'
   await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href','/favicon.svg?v=cardboard-transparent');
   const icon=await page.request.get('/favicon.svg');expect(icon.ok()).toBe(true);
   expect(icon.headers()['content-type']).toContain('image/svg+xml');
+});
+
+test('the player can reach the map when the welcome artwork is unavailable', async ({page}) => {
+  await page.route('**/assets/landing/chamissoplatz.png', route => route.fulfill({status: 503}));
+  await page.route('**/api/meshes', route => route.fulfill({json: []}));
+  await page.goto('/');
+  await clickUi(page, 'Play');
+  await expect.poll(async () => Boolean(await region(page, 'Start shift'))).toBe(true);
 });
 
 test('guest play needs no Identity portal, while the real profile offers optional sign-in',async({page})=>{
