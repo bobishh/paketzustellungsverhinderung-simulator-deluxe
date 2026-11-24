@@ -2522,8 +2522,10 @@ mod tests {
         meet_resident(&mut app, address, 1.8);
         let van = app.world().get::<Player>(actor).unwrap().parked.unwrap();
         let position = app.world().get::<Transform>(actor).unwrap().translation;
-        app.world_mut().get_mut::<Transform>(van).unwrap().translation =
-            position + Vec3::Y * 10.;
+        app.world_mut()
+            .get_mut::<Transform>(van)
+            .unwrap()
+            .translation = position + Vec3::Y * 10.;
         press(&mut app, KeyCode::KeyE);
         let jobs = app.world().resource::<Jobs>();
         assert_eq!(jobs.parcels[1].state, ParcelState::Handed(0));
@@ -2535,7 +2537,10 @@ mod tests {
         press(&mut app, KeyCode::KeyE);
         let actor = player(&mut app);
         let courier = app.world().get::<Player>(actor).unwrap();
-        let van = *app.world().get::<Transform>(courier.parked.unwrap()).unwrap();
+        let van = *app
+            .world()
+            .get::<Transform>(courier.parked.unwrap())
+            .unwrap();
         let drop_site = van.translation + Vec3::X * 20.;
         {
             let mut jobs = app.world_mut().resource_mut::<Jobs>();
@@ -2556,8 +2561,10 @@ mod tests {
         let courier = world.get::<Player>(actor).unwrap();
         let jobs = world.resource::<Jobs>();
         assert_eq!(jobs.navigation_target(courier, Some(&van)), Some(drop_site));
-        app.world_mut().get_mut::<Transform>(actor).unwrap().translation =
-            drop_site.with_y(0.83);
+        app.world_mut()
+            .get_mut::<Transform>(actor)
+            .unwrap()
+            .translation = drop_site.with_y(0.83);
         press(&mut app, KeyCode::KeyE);
         let jobs = app.world().resource::<Jobs>();
         assert!(jobs.complete());

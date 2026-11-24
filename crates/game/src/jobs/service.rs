@@ -508,7 +508,8 @@ pub(crate) fn service_update(
                     if let Some(target) = target {
                         jobs.service.rare_used = true;
                         jobs.service.bulk = Some((target, false));
-                        jobs.status = "Broken intercom reported. Collect the batch at your van.".into();
+                        jobs.status =
+                            "Broken intercom reported. Collect the batch at your van.".into();
                         keep = false;
                     }
                 }
